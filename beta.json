@@ -1,0 +1,11 @@
+{
+ "product": "Track & Detect",
+ "company": "Thermal Vision Ecology",
+ "version": "0.9.0",
+ "channel": "beta",
+ "build_date": "",
+ "trial_days": 90,
+ "hard_expiry_days": 180,
+ "feedback_email": "enquiry@thermalvisionecology.co.uk",
+ "licence_version": 1
+}

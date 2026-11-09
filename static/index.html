@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Track &amp; Detect – Thermal Vision Ecology</title>
+<script>
+  // apply the saved colour scheme and dark/light mode before the page draws
+  try { var a = JSON.parse(localStorage.getItem("td-look") || "{}");
+        document.documentElement.dataset.scheme = a.scheme || "forest";
+        document.documentElement.dataset.theme = a.theme || "dark"; } catch (e) {}
+</script>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/favicon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#114400">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <img src="/static/tve-logo.png" alt="Thermal Vision Ecology" class="brand-logo logo-dark">
+    <img src="/static/tve-logo-dark.png" alt="Thermal Vision Ecology" class="brand-logo logo-light">
+    <span class="brand-sep" aria-hidden="true"></span>
+    <span class="brand-name">Track &amp; Detect</span>
+    <span id="beta-badge" class="beta-badge" hidden>BETA</span>
+    <span id="beta-days" class="small warn" hidden></span>
+  </div>
+  <nav class="crumbs" aria-label="Recording">
+    <span id="crumb-folder">No recording open</span>
+    <span id="crumb-file" class="strong"></span>
+    <span id="crumb-meta" class="mono muted"></span>
+    <label id="fps-wrap" class="fps" hidden>fps <input id="fps" type="number" min="1" max="200" step="0.1"></label>
+  </nav>
+  <div class="actions">
+    <button id="btn-feedback" class="btn" aria-haspopup="dialog" title="Report a problem or suggest a feature">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+      Feedback</button>
+    <button id="btn-settings" class="btn" aria-haspopup="dialog">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Settings</button>
+    <button id="btn-open" class="btn">Add recordings</button>
+    <button id="btn-quit" class="btn" title="Close Track &amp; Detect">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
+      Quit</button>
+    <button id="btn-scan-all" class="btn primary" disabled>Analyse all listed</button>
+  </div>
+</header>
+
+<div id="update-banner" class="update-banner" role="alert" hidden>
+  <b>Track &amp; Detect has been updated, but the old version is still running.</b>
+  Close the black window, start it again with <b>Run Track and Detect.bat</b>, then press Ctrl + F5.
+</div>
+<div class="layout">
+  <aside class="col-left">
+    <section class="panel">
+      <h2>Recordings</h2>
+      <div id="files" class="files"><p class="muted small">Add .ats files, or a whole folder of them.</p></div>
+    </section>
+
+    <section class="panel">
+      <h2>Region of interest</h2>
+      <p id="roi-status" class="small muted">Open a recording, then draw around the roost features.</p>
+      <div class="row wrap">
+        <button id="btn-roi-draw" class="btn sm" disabled>Draw ROI</button>
+        <button id="btn-roi-clear" class="btn sm" disabled>Clear</button>
+      </div>
+      <div id="roi-tools" class="roi-tools" hidden>
+        <div class="seg" role="group" aria-label="ROI shape">
+          <button class="mode" data-shape="poly" aria-pressed="true">Points</button>
+          <button class="mode" data-shape="rect" aria-pressed="false">Rectangle</button>
+          <button class="mode" data-shape="ellipse" aria-pressed="false">Circle</button>
+        </div>
+        <p id="roi-hint" class="small muted"></p>
+        <div class="row wrap">
+          <button id="btn-roi-undo" class="btn sm" hidden>Undo point</button>
+          <button id="btn-roi-cancel" class="btn sm" hidden>Cancel</button>
+          <button id="btn-roi-done" class="btn sm primary" hidden>Finish</button>
+        </div>
+      </div>
+      <label class="check"><input id="roi-all" type="checkbox"> Use this ROI for every listed file from the same folder</label>
+      <p class="small muted">Tip: keep the sky out, but leave a thin strip above the roofline.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Detection</h2>
+      <button id="btn-scan" class="btn sm primary" disabled>Scan recording</button>
+      <label class="small" for="level-slider">Detection level <span id="level-unit" class="muted"></span></label>
+      <div class="row small muted between"><span>More events</span><span>Fewer events</span></div>
+      <input id="level-slider" type="range" min="0" max="1" step="0.01" value="0" disabled aria-label="Detection level">
+      <div class="row">
+        <input id="level" type="number" step="0.1" class="num" disabled>
+        <button id="btn-level-reset" class="btn sm" disabled>Suggested</button>
+      </div>
+      <p id="level-info" class="small muted">Or drag the blue line on the activity plot.</p>
+      <p id="scan-note" class="small warn" hidden></p>
+      <button id="btn-start-over" class="btn sm" disabled title="Undo every decision on this recording and scan it again">Start over…</button>
+    </section>
+
+    <section class="panel" id="jobs-panel" hidden>
+      <h2>Working</h2>
+      <div id="jobs"></div>
+      <button id="btn-cancel" class="btn sm">Cancel current</button>
+    </section>
+  </aside>
+
+  <main class="col-main">
+    <section class="panel viewer">
+      <div class="review-bar">
+        <h2 class="h2-plain">Viewing Mode</h2>
+        <div class="seg" role="group" aria-label="View">
+          <button class="mode" data-mode="raw" aria-pressed="true">Thermal <kbd>1</kbd></button>
+          <span class="hsm-wrap">
+            <button class="mode hsm" data-mode="review" aria-pressed="false">High Sensitivity Mode <kbd>2</kbd></button><button
+              id="btn-persist" class="mode caret" type="button" aria-haspopup="true" aria-expanded="false"
+              aria-controls="persist-menu" title="Frame persistence settings" data-for="review">▾</button>
+            <div id="persist-menu" class="persist-menu" role="dialog" aria-label="Frame persistence" hidden>
+              <span class="small strong">Frame persistence</span>
+              <label class="small">Max frame interval <span><input id="f-mfi" type="number" min="1" max="60" step="1" value="5" class="num sm"> frames</span></label>
+              <label class="small">Sliding subtraction <span><input id="f-ss" type="number" min="1" max="60" step="1" value="5" class="num sm"> frames</span></label>
+              <button id="btn-f-reset" class="btn sm" type="button">Reset to 5 / 5</button>
+              <span class="small muted">Used by High Sensitivity Mode and exports. Scanning always uses Window Average + Sliding Subtraction 5.</span>
+            </div>
+          </span>
+          <button class="mode" data-mode="path" aria-pressed="false">Flight path <kbd>3</kbd></button>
+          <button class="mode" data-mode="blend" aria-pressed="false">Blended <kbd>4</kbd></button>
+        </div>
+        <label class="small pal">Palette <select id="palette" aria-label="Colour palette"></select></label>
+        <span class="pal enh" id="enh-wrap" title="Image clean-up for viewing and exports. The scan is never affected.">
+          <label class="check small"><input id="dde-on" type="checkbox"> Detail enhancement</label>
+          <select id="dde-level" aria-label="Detail enhancement strength" disabled><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High</option></select>
+          <label class="check small"><input id="tnr-on" type="checkbox"> Noise reduction</label>
+          <select id="tnr-level" aria-label="Noise reduction strength" disabled><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High</option></select>
+        </span>
+        <span class="pal" id="opacity-wrap" hidden>
+          <label class="small pal" title="Overlay lays the trails over the thermal picture. Crossfade mixes the two whole pictures.">Blend
+            <select id="blend" aria-label="Blend type"><option value="overlay" selected>Overlay</option><option value="crossfade">Crossfade</option></select></label>
+          <label class="small pal" id="opacity-label">Opacity
+            <select id="opacity" aria-label="High Sensitivity opacity">
+              <option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option>
+              <option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option>
+              <option value="0.8" selected>80%</option><option value="0.9">90%</option><option value="1">100%</option>
+            </select></label>
+        </span>
+      </div>
+      <div class="stage" id="stage">
+        <img id="view" alt="Current frame">
+        <svg id="roi-svg" aria-hidden="true"></svg>
+        <div class="badges">
+          <span id="badge-frame" class="badge mono"></span>
+        </div>
+        <div id="empty" class="empty">Add recordings and choose one to start.</div>
+        <div id="cbar" class="cbar" hidden>
+          <span id="cb-hi" class="cb-val mono"></span>
+          <div id="cb-track" class="cb-track" title="Drag the top handle to set the hottest visible value, the bottom handle for the coldest">
+            <div id="cb-grad" class="cb-grad"></div>
+            <button id="cb-top" class="cb-h" aria-label="Top of visible range"></button>
+            <button id="cb-bot" class="cb-h" aria-label="Bottom of visible range"></button>
+          </div>
+          <span id="cb-lo" class="cb-val mono"></span>
+          <span id="cb-unit" class="cb-unit"></span>
+          <button id="cb-auto" class="cb-auto" type="button" title="Set the range automatically for each frame">Auto</button>
+        </div>
+      </div>
+
+      <div class="plot-wrap">
+        <div class="transport">
+          <div class="tgroup" role="group" aria-label="Playback">
+            <button id="btn-start" class="icon" aria-label="Go to start" title="Go to start (Home)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h2v14H5zM14 5v14L7 12zM21 5v14l-7-7z"/></svg></button>
+            <button id="btn-rev" class="icon" aria-label="Play backwards" title="Play backwards"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 5v14L6 12z"/></svg></button>
+            <button id="btn-step-back" class="icon" aria-label="Back one frame" title="Back one frame (←)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 6L6 12l8 6zM16 6h2v12h-2z"/></svg></button>
+            <button id="btn-play" class="icon play" aria-label="Play" title="Play / pause (Space)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l11-7z"/></svg></button>
+            <button id="btn-step" class="icon" aria-label="Forward one frame" title="Forward one frame (→)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zM10 6l8 6-8 6z"/></svg></button>
+            <button id="btn-end" class="icon" aria-label="Go to end" title="Go to end (End)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 5h2v14h-2zM10 5v14l7-7zM3 5v14l7-7z"/></svg></button>
+            <label class="small speed">Speed
+              <select id="speed"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+            </label>
+          </div>
+          <div class="tgroup" role="group" aria-label="Events">
+            <button id="btn-prev" class="btn sm" aria-label="Previous event">‹ Prev event</button>
+            <button id="btn-next" class="btn sm" aria-label="Next event">Next event ›</button>
+            <label class="check small" id="loop-wrap"><input id="in-window" type="checkbox" checked> Stay in event window</label>
+          </div>
+        </div>
+        <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Frame">
+      </div>
+    </section>
+
+    <section class="panel plot-panel" id="plot-panel">
+      <div class="row wrap between">
+        <div class="row wrap">
+          <h2 class="h2-plain">Activity in ROI</h2>
+          <span id="plot-range" class="mono small muted"></span>
+        </div>
+        <div class="row wrap">
+          <button id="btn-zoom-in" class="icon" aria-label="Zoom in" title="Zoom in">+</button>
+          <button id="btn-zoom-out" class="icon" aria-label="Zoom out" title="Zoom out">−</button>
+          <button id="btn-zoom-fit" class="btn sm">Whole recording</button>
+          <button id="btn-enlarge" class="btn sm" aria-pressed="false">Enlarge</button>
+        </div>
+      </div>
+      <div class="plot" id="plot">
+        <canvas id="plot-canvas"></canvas>
+        <div id="markers"></div>
+        <div id="cursor" class="cursor"></div>
+        <div id="level-tag" class="level-tag" hidden></div>
+      </div>
+      <div class="row between mono small muted" id="plot-axis"></div>
+      <div class="plot-ctl">
+        <label class="small" for="t-a">Time window <span id="t-label" class="mono muted"></span></label>
+        <div class="dual" id="t-track">
+          <div class="dual-rail"></div>
+          <div class="dual-fill" id="t-fill" title="Drag to slide the window"></div>
+          <input id="t-a" type="range" min="0" max="1" value="0" aria-label="Window start">
+          <input id="t-b" type="range" min="0" max="1" value="1" aria-label="Window end">
+        </div>
+      </div>
+      <div class="plot-ctl">
+        <div class="row wrap">
+          <span class="small strong">Y-axis</span>
+          <div class="seg" role="group" aria-label="Y-axis">
+            <button class="mode" data-y="auto" aria-pressed="true">Auto</button>
+            <button class="mode" data-y="full" aria-pressed="false">Full height</button>
+            <button class="mode" data-y="log" aria-pressed="false">Log</button>
+          </div>
+          <span id="cap-label" class="small muted"></span>
+        </div>
+        <label class="small" for="plot-cap">Or set your own cap</label>
+        <input id="plot-cap" type="range" min="0" max="1" step="0.01" value="1" disabled aria-label="Plot height cap">
+      </div>
+      <p class="small muted plot-help">Drag the <span class="blue">blue line</span> to set the detection level: spikes above it become events, spikes below it (grey) are ignored. Scroll to zoom, drag to pan, click to jump to that moment. Use the time window to pick a stretch of the recording. The y-axis options stop one tall spike flattening the rest: <b>Auto</b> cuts off spikes that dwarf the others (marked ▲), <b>Log</b> squeezes tall spikes down. They only change the view, not which events are found.</p>
+    </section>
+  </main>
+
+  <aside class="col-right">
+    <div class="row between baseline">
+      <h2 class="h2-plain">Events</h2>
+      <span id="reviewed" class="small muted"></span>
+    </div>
+    <div id="events" class="events"><p class="muted small">Scan a recording to find events.</p></div>
+    <button id="btn-export" class="btn primary big" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+      Export event pack
+    </button>
+    <div class="row wrap">
+      <button id="btn-export-confirmed" class="btn sm" disabled>Export all confirmed</button>
+      <button id="btn-csv" class="btn sm" disabled>Save events CSV</button>
+      <button id="btn-report" class="btn sm" disabled>Create PDF report</button>
+    </div>
+      <section class="panel comments" style="margin-top:4px">
+      <div class="row between baseline"><h2>Other comments</h2><span id="c-count" class="small muted"></span></div>
+      <label class="small" for="c-text">Add a comment at <span id="c-at" class="mono"></span></label>
+      <textarea id="c-text" rows="3" placeholder="What you can see at this moment…" disabled></textarea>
+      <div class="row between"><span class="small muted">Ctrl + Enter to add</span><button id="btn-c-add" class="btn sm primary" disabled>Add comment</button></div>
+      <div id="c-list" class="c-list"></div>
+    </section>
+  </aside>
+</div>
+
+<dialog id="dlg-folder">
+  <form method="dialog" class="dlg wide">
+    <h2>Add recordings</h2>
+    <div class="row wrap">
+      <button id="btn-browse-files" type="button" class="btn">Choose files…</button>
+      <button id="btn-browse-folder" type="button" class="btn">Choose a folder…</button>
+    </div>
+    <p id="pick-msg" class="small muted" role="status" hidden></p>
+    <label class="small">Or paste paths, one per line (a .ats file or a folder of them)
+      <textarea id="folder-input" rows="5" placeholder="C:\Users\...\St Fagans 10.8.26\front 2.ats&#10;C:\Users\...\BCT\19.10.26"></textarea>
+    </label>
+    <label class="check"><input id="add-replace" type="checkbox"> Clear the current list first</label>
+    <div class="row wrap end">
+      <button value="cancel" class="btn">Cancel</button>
+      <button id="btn-folder-ok" value="ok" class="btn primary">Add</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-export">
+  <form method="dialog" class="dlg wide">
+    <h2 id="exp-title">Export event pack</h2>
+    <p id="exp-sub" class="small muted"></p>
+    <fieldset class="items">
+      <legend class="small muted">Include</legend>
+      <label class="check"><input type="checkbox" name="items" value="path_still" checked> Flight path still <span class="muted small">(JPEG)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="path_clip" checked> Flight path clip <span class="muted small">(MP4)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="review_clip" checked> High sensitivity clip <span class="muted small">(MP4)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="blend_still" checked> Blended still <span class="muted small exp-blend-jpg">(JPEG)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="blend_clip" checked> Blended clip <span id="exp-blend-note" class="muted small">(MP4)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="entry_frames" checked> Frame where each animal first appears <span class="muted small">(JPEG)</span></label>
+    </fieldset>
+    <div class="grid2">
+      <label class="small">Seconds either side<input id="exp-pad" type="number" min="0" max="60" step="0.5" value="3"></label>
+      <label class="small">Overlays
+        <select id="exp-overlays"><option value="roi+time">ROI + timestamp</option><option value="time">Timestamp only</option><option value="none">None</option></select>
+      </label>
+      <label class="small">Video quality %<input id="exp-quality" type="number" min="10" max="100" value="75"></label>
+      <label class="small">Save to<input id="exp-folder" type="text"></label>
+    </div>
+    <div class="row wrap end">
+      <button value="cancel" class="btn">Cancel</button>
+      <button id="btn-exp-go" value="ok" class="btn primary">Export</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-report">
+  <form method="dialog" class="dlg wide">
+    <h2>Create PDF report</h2>
+    <p class="small muted">The report has a methodology introduction, the activity plot with your detection level, a table of every event, and for each event its decision, classification, comments and stills.</p>
+    <div class="grid2">
+      <label class="small">Company name<input id="rp-company" type="text" autocomplete="organization"></label>
+      <label class="small">Company contact<input id="rp-contact" type="text" placeholder="Name, email or phone"></label>
+      <label class="small">Survey location<input id="rp-location" type="text"></label>
+      <label class="small">Camera and lens<input id="rp-camera" type="text" placeholder="e.g. FLIR A700, 24° lens"></label>
+      <label class="small">Analyst name<input id="rp-analyst" type="text" autocomplete="name"></label>
+      <label class="small">Save to<input id="rp-folder" type="text"></label>
+    </div>
+    <label class="check"><input id="rp-rejected" type="checkbox" checked> Include images for rejected events</label>
+    <p id="rp-warn" class="small warn" hidden>Some events haven't been reviewed yet. They'll be listed as "Not reviewed".</p>
+    <p class="small muted">Company, contact, camera and analyst are remembered for next time.</p>
+    <div class="row wrap end">
+      <button value="cancel" class="btn">Cancel</button>
+      <button value="ok" class="btn primary">Create report</button>
+    </div>
+  </form>
+</dialog>
+
+
+<dialog id="dlg-settings" aria-labelledby="st-title">
+  <form method="dialog" class="dlg settings" id="st-form">
+    <div class="st-head"><h2 id="st-title">Settings</h2><span id="st-dirty" class="small warn" hidden>Unsaved changes</span></div>
+    <div class="st-body">
+      <nav class="st-nav" aria-label="Settings sections">
+        <button type="button" data-sec="appearance" aria-current="true">Appearance</button>
+        <button type="button" data-sec="viewing">Viewing</button>
+        <button type="button" data-sec="detection">Detection</button>
+        <button type="button" data-sec="exports">Exports</button>
+        <button type="button" data-sec="time">Time &amp; units</button>
+        <button type="button" data-sec="classes">Classifications</button>
+        <button type="button" data-sec="review">Review</button>
+        <button type="button" data-sec="report">Report details</button>
+        <button type="button" data-sec="shortcuts">Shortcuts</button>
+      </nav>
+      <div class="st-panes">
+        <section data-pane="appearance">
+          <h3>Appearance</h3>
+          <label>Colour scheme
+            <select id="st-scheme"><option value="forest">Forest (Thermal Vision Ecology)</option><option value="ocean">Ocean</option>
+              <option value="teal">Teal</option><option value="heather">Heather</option><option value="slate">Slate</option></select></label>
+          <fieldset class="st-radio"><legend>Mode</legend>
+            <label class="check"><input type="radio" name="st-theme" value="dark"> Dark</label>
+            <label class="check"><input type="radio" name="st-theme" value="light"> Light</label></fieldset>
+          <fieldset class="st-radio"><legend>Open Track &amp; Detect in</legend>
+            <label class="check"><input type="radio" name="st-window" value="app"> Its own window</label>
+            <label class="check"><input type="radio" name="st-window" value="browser"> A browser tab</label></fieldset>
+          <p class="small muted">"Its own window" uses Microsoft Edge, which is part of Windows, to show Track &amp; Detect as an app with its own taskbar button. Closing the window closes the program. Takes effect next time it starts.</p>
+          <p class="small muted">Changes show straight away. Click Save to keep them.</p>
+        </section>
+
+        <section data-pane="viewing" hidden>
+          <h3>Viewing</h3>
+          <p class="small muted">How each recording looks when it opens. You can still change these from the Viewing Mode bar while you work.</p>
+          <button type="button" id="st-from-view" class="btn sm">Use the current view settings</button>
+          <div class="grid2">
+            <label>Palette <select id="st-palette"></select></label>
+            <label>Playback speed <select id="st-speed"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+            <label>Detail enhancement <select id="st-dde"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3">High</option></select></label>
+            <label>Noise reduction <select id="st-tnr"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3">High</option></select></label>
+            <label>Blended: blend type <select id="st-blend"><option value="overlay">Overlay</option><option value="crossfade">Crossfade</option></select></label>
+            <label>Blended: opacity <select id="st-opacity"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1">100%</option></select></label>
+            <label>High Sensitivity: Max frame interval (frames) <input id="st-mfi" type="number" min="1" max="60" step="1"></label>
+            <label>High Sensitivity: Sliding subtraction (frames) <input id="st-ss" type="number" min="1" max="60" step="1"></label>
+          </div>
+        </section>
+
+        <section data-pane="detection" hidden>
+          <h3>Detection</h3>
+          <p class="small warn">These change which events are found. Decisions and comments you've already made are kept.</p>
+          <div class="grid2">
+            <label>Suggested level sensitivity
+              <select id="st-sens"><option value="low">Low (fewer events)</option><option value="normal">Normal (recommended)</option><option value="high">High (more events)</option></select></label>
+            <label>Merge spikes closer than (seconds) <input id="st-merge" type="number" min="0" max="30" step="0.5"></label>
+            <label>Ignore events shorter than (frames) <input id="st-minf" type="number" min="1" max="100" step="1"></label>
+            <label>Review window either side of an event (seconds) <input id="st-window" type="number" min="0" max="60" step="0.5"></label>
+          </div>
+          <button type="button" id="st-detect-reset" class="btn sm">Reset detection to recommended</button>
+        </section>
+
+        <section data-pane="exports" hidden>
+          <h3>Exports</h3>
+          <label>Default export folder
+            <span class="row"><input id="st-folder" type="text" placeholder="Blank = an 'exports' folder beside each recording"><button type="button" id="st-folder-pick" class="btn sm">Choose…</button></span></label>
+          <fieldset class="st-items"><legend>Ticked by default in the export dialog</legend>
+            <label class="check"><input type="checkbox" name="st-items" value="path_still"> Flight path still</label>
+            <label class="check"><input type="checkbox" name="st-items" value="path_clip"> Flight path clip</label>
+            <label class="check"><input type="checkbox" name="st-items" value="review_clip"> High sensitivity clip</label>
+            <label class="check"><input type="checkbox" name="st-items" value="blend_still"> Blended still</label>
+            <label class="check"><input type="checkbox" name="st-items" value="blend_clip"> Blended clip</label>
+            <label class="check"><input type="checkbox" name="st-items" value="entry_frames"> Frame where each animal first appears</label>
+          </fieldset>
+          <div class="grid2">
+            <label>Overlays <select id="st-overlays"><option value="roi+time">ROI + timestamp</option><option value="time">Timestamp only</option><option value="none">None</option></select></label>
+            <label>Timestamp text size <select id="st-textsize"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
+            <label>File names
+              <select id="st-naming"><option value="site_recording">Site, recording, event, time</option><option value="date_site">Date, site, recording, event</option><option value="recording_event">Recording, event, time</option></select></label>
+            <label>Video quality % <input id="st-quality" type="number" min="10" max="100" step="5"></label>
+            <label>Video speed <select id="st-slowmo"><option value="1">Normal</option><option value="0.5">½ speed (slow motion)</option><option value="0.25">¼ speed (slow motion)</option></select></label>
+          </div>
+          <p class="small muted">Example file name: <span id="st-naming-eg" class="mono"></span></p>
+        </section>
+
+        <section data-pane="time" hidden>
+          <h3>Time &amp; units</h3>
+          <div class="grid2">
+            <label>Temperature <select id="st-temp"><option value="C">°C</option><option value="F">°F</option></select></label>
+            <label>Times shown in <select id="st-zone"><option value="uk">UK time (BST / GMT)</option><option value="utc">UTC</option></select></label>
+            <label>Camera clock correction (seconds) <input id="st-offset" type="number" step="1"></label>
+          </div>
+          <p class="small muted">If a camera's clock was wrong, enter the correction to add: for example −90 if it was 1½ minutes fast, or 3600 if it was still on GMT during BST. Every time shown, exported and reported uses it. <span id="st-offset-eg"></span></p>
+        </section>
+
+        <section data-pane="classes" hidden>
+          <h3>Classifications</h3>
+          <label>Options in the Classification menu, one per line
+            <textarea id="st-classes" rows="9"></textarea></label>
+          <p class="small muted">For example, add species groups such as Pipistrellus, Myotis or Long-eared. Events already classified keep their classification.</p>
+        </section>
+
+        <section data-pane="review" hidden>
+          <h3>Review</h3>
+          <label class="check"><input id="st-autoadv" type="checkbox"> After Confirm or Reject, go to the next event that still needs review</label>
+          <label class="check"><input id="st-autoplay" type="checkbox"> Start playing as soon as an event is selected</label>
+        </section>
+
+        <section data-pane="report" hidden>
+          <h3>Report details</h3>
+          <p class="small muted">Filled in for you on every PDF report.</p>
+          <div class="grid2">
+            <label>Company <input id="st-company" type="text"></label>
+            <label>Contact <input id="st-contact" type="text"></label>
+            <label>Analyst <input id="st-analyst" type="text"></label>
+            <label>Camera <input id="st-camera" type="text" placeholder="Blank = read from each recording"></label>
+          </div>
+        </section>
+
+        <section data-pane="shortcuts" hidden>
+          <h3>Keyboard shortcuts</h3>
+          <table class="keys">
+            <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+            <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back / forward one frame (hold Shift for 1 s)</td></tr>
+            <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start / end of the event window</td></tr>
+            <tr><td><kbd>n</kbd> <kbd>p</kbd></td><td>Next / previous event</td></tr>
+            <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Thermal, High Sensitivity, Flight path, Blended</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Add the comment you're typing</td></tr>
+            <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> / <kbd>Esc</kbd></td><td>While drawing an ROI: finish / remove last point / cancel</td></tr>
+          </table>
+        </section>
+      </div>
+    </div>
+    <div class="st-foot">
+      <div class="row wrap">
+        <button type="button" id="st-reset" class="btn sm">Reset all to defaults</button>
+        <button type="button" id="st-export" class="btn sm">Export settings…</button>
+        <button type="button" id="st-import" class="btn sm">Import settings…</button>
+        <input id="st-import-file" type="file" accept=".json,application/json" hidden>
+      </div>
+      <div class="row wrap">
+        <button type="button" id="st-cancel" class="btn">Cancel</button>
+        <button type="button" id="st-save" class="btn primary">Save settings</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlg-start-over" aria-labelledby="so-title">
+  <form method="dialog" class="dlg">
+    <h2 id="so-title">Start over on this recording?</h2>
+    <p class="small">This undoes every Confirm, Reject and classification on <b id="so-name"></b> (<span id="so-count"></span>), then scans it again with your current settings. It can't be undone.</p>
+    <label class="check small"><input id="so-level" type="checkbox" checked> Reset the detection level to the new suggested level</label>
+    <label class="check small"><input id="so-comments" type="checkbox"> Also delete all comments (<span id="so-ncom"></span>)</label>
+    <p class="small muted">Files you've already exported are kept.</p>
+    <div class="row wrap end">
+      <button value="cancel" class="btn">Cancel</button>
+      <button type="button" id="so-go" class="btn danger">Start over</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-feedback" aria-labelledby="fb-title">
+  <form method="dialog" class="dlg wide" id="fb-form">
+    <h2 id="fb-title">Send feedback</h2>
+    <div id="fb-entry" class="fb-entry">
+      <p class="small muted">Tell us about a problem or an idea. This makes a small file and opens an email to Thermal Vision Ecology for you to send. It never includes your recordings, images or file names.</p>
+      <fieldset class="fb-types"><legend class="small">What is it?</legend>
+        <label class="check"><input type="radio" name="fb-type" value="bug" checked> Bug or error</label>
+        <label class="check"><input type="radio" name="fb-type" value="broken"> Something isn't working</label>
+        <label class="check"><input type="radio" name="fb-type" value="idea"> Feature idea</label>
+        <label class="check"><input type="radio" name="fb-type" value="other"> Other</label>
+      </fieldset>
+      <label class="small">Summary (one line) <input id="fb-summary" type="text" maxlength="200" placeholder="e.g. Export stops at 90% on long events"></label>
+      <label class="small">Details <textarea id="fb-details" rows="4" placeholder="What happened, or what would you like it to do?"></textarea></label>
+      <label class="small" id="fb-steps-wrap">Steps to make it happen again <textarea id="fb-steps" rows="3" placeholder="1. Opened a recording&#10;2. Clicked …&#10;3. …"></textarea></label>
+      <label class="small">Which recording or event? (optional) <input id="fb-where" type="text" placeholder="e.g. event 4 of a 40-minute A70 recording"></label>
+      <div class="grid2">
+        <label class="small">Your name (optional) <input id="fb-name" type="text"></label>
+        <label class="small">Email for our reply (optional) <input id="fb-email" type="text"></label>
+      </div>
+      <label class="check small"><input id="fb-diag" type="checkbox" checked> Include technical details: software version, Windows version, settings and error logs (helps us fix bugs)</label>
+      <p id="fb-err" class="small err" hidden></p>
+      <div class="row wrap end">
+        <button type="button" id="fb-cancel" class="btn">Cancel</button>
+        <button type="button" id="fb-send" class="btn primary">Prepare email</button>
+      </div>
+    </div>
+    <div id="fb-done" hidden>
+      <p><b>Your email is ready.</b> Your email program should have opened with the message filled in.</p>
+      <p class="small">Please attach this file before sending (it's on your desktop):<br><span id="fb-zip" class="mono"></span></p>
+      <p id="fb-noemail" class="small warn" hidden></p>
+      <div class="row wrap">
+        <a id="fb-mailto" class="btn sm" href="#">Open the email again</a>
+        <button type="button" id="fb-copy" class="btn sm">Copy the message</button>
+      </div>
+      <div class="row wrap end"><button type="button" id="fb-close" class="btn primary">Done</button></div>
+    </div>
+  </form>
+</dialog>
+
+<div id="beta-gate" class="beta-gate" hidden role="dialog" aria-modal="true" aria-labelledby="bg-title">
+  <div class="bg-card">
+    <img src="/static/tve-logo.png" alt="Thermal Vision Ecology" class="logo-dark bg-logo">
+    <img src="/static/tve-logo-dark.png" alt="Thermal Vision Ecology" class="logo-light bg-logo">
+    <h1 id="bg-title"></h1>
+    <p id="bg-intro" class="muted"></p>
+    <pre id="bg-licence" class="bg-licence" tabindex="0"></pre>
+    <div class="row wrap end" id="bg-actions"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

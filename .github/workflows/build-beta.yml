@@ -1,0 +1,130 @@
+# Builds the Track & Detect customer beta on a Windows machine:
+#   1. scrambles and minifies the screen's HTML, CSS and JavaScript
+#   2. compiles the Python into machine code with Nuitka (no readable source)
+#   3. wraps it in an installer with Inno Setup
+#
+# Run it from GitHub: Actions > "Build customer beta" > Run workflow, and type a
+# version number. Or push a tag such as v0.9.1. The installer appears under the
+# run's "Artifacts", and for tags also as a downloadable GitHub Release.
+#
+# Optional repository variable FEEDBACK_EMAIL (Settings > Secrets and variables
+# > Actions > Variables) sets where customer feedback emails go.
+name: Build customer beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number, e.g. 0.9.1"
+        required: true
+        default: "0.9.0"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ github.event.inputs.version }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+          npm install --no-save terser@5 csso@5 html-minifier-terser@7
+          choco install innosetup -y --no-progress
+
+      - name: Stamp version, date and feedback address
+        run: python tools/stamp_beta.py --version "${{ steps.ver.outputs.version }}" --email "${{ vars.FEEDBACK_EMAIL }}"
+
+      - name: Minify and scramble the screen files
+        run: node tools/minify.mjs
+
+      - name: Nuitka cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Nuitka
+          key: nuitka-${{ runner.os }}-${{ hashFiles('requirements-build.txt') }}
+
+      - name: Compile with Nuitka
+        shell: pwsh
+        run: |
+          $ff = python -c "import imageio_ffmpeg, os; print(os.path.join(os.path.dirname(imageio_ffmpeg.__file__), 'binaries'))"
+          $v = "${{ steps.ver.outputs.version }}"
+          $fv = ($v -replace '[^0-9.]', '') ; if (($fv -split '\.').Count -lt 4) { $fv = "$fv.0" }
+          python -m nuitka app.py `
+            --standalone `
+            --assume-yes-for-downloads `
+            --output-dir=build `
+            --output-filename="Track and Detect.exe" `
+            --windows-console-mode=disable `
+            --windows-icon-from-ico=static/app.ico `
+            --company-name="Thermal Vision Ecology" `
+            --product-name="Track & Detect (Beta)" `
+            --file-description="Track & Detect" `
+            --product-version="$fv" --file-version="$fv" `
+            --copyright="Thermal Vision Ecology" `
+            --include-package=emergence `
+            --include-package-data=reportlab `
+            --include-data-files="$ff\*.exe=imageio_ffmpeg/binaries/" `
+            --include-data-dir=build/static=static `
+            --include-data-files=build/beta.json=beta.json `
+            --include-data-files=LICENCE-BETA.txt=LICENCE-BETA.txt `
+            --include-data-files=emergence/tve-logo-print.png=emergence/tve-logo-print.png `
+            --nofollow-import-to=tkinter `
+            --nofollow-import-to=pytest `
+            --nofollow-import-to=IPython `
+            --nofollow-import-to=matplotlib
+
+      - name: Check the program starts
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "build\app.dist\Track and Detect.exe" -ArgumentList "--no-browser","--port","8799" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
+            try { $r = Invoke-RestMethod http://127.0.0.1:8799/api/about; if ($r.version) { $ok = $true; break } } catch {}
+          }
+          if ($ok) { Invoke-RestMethod http://127.0.0.1:8799/api/beta | ConvertTo-Json | Write-Output }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { Write-Error "The compiled program did not start"; exit 1 }
+
+      - name: Make the installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.version }}" "/DSourceDir=..\build\app.dist" installer\TrackAndDetect.iss
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Track-and-Detect-Beta-${{ steps.ver.outputs.version }}-Setup
+          path: dist/*.exe
+          retention-days: 90
+
+      - name: Publish as a GitHub Release (tags only)
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
+          prerelease: true
+          name: Track & Detect ${{ steps.ver.outputs.version }} beta

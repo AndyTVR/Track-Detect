@@ -1,0 +1,22 @@
+# build output
+build/
+dist/
+*.spec.bak
+node_modules/
+# local environments and caches
+.venv/
+.venv-build/
+__pycache__/
+*.pyc
+# per-user files the program writes
+settings.json
+error_log.txt
+program_log.txt
+build_log.txt
+beta_state.json
+window/
+# recordings and their sidecars never belong in the repository
+*.ats
+*.ats.*
+*.mp4
+exports/

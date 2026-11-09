@@ -1,0 +1,63 @@
+TRACK & DETECT - BETA TEST LICENCE
+Thermal Vision Ecology
+
+DRAFT FOR REVIEW - please have this checked before it is sent to customers.
+
+Thank you for helping to test Track & Detect. By clicking "I accept", or by
+installing or using the software, you agree to these terms.
+
+1. What this is
+   Track & Detect is pre-release ("beta") software for reviewing thermal
+   recordings. It is still being developed, and it may contain errors, change
+   without notice, or not work as described.
+
+2. Your licence
+   We give you a free, non-exclusive, non-transferable licence to install and
+   use this beta for evaluation and testing, for the trial period shown in
+   the software (90 days from installation). After the trial period the
+   software will stop working, and you should uninstall it.
+
+3. Please do not
+   - share, sell, rent or pass the software to anyone else;
+   - copy, decompile, reverse engineer or try to obtain its source code,
+     except where the law allows this and cannot be excluded;
+   - remove or hide any notices, branding or the "BETA" label;
+   - use it as the only basis for decisions that need a verified result.
+
+4. Check your results
+   Results, events and reports produced by the beta must be checked by a
+   suitably qualified person before they are relied on, including in survey
+   reports, planning applications or licence applications.
+
+5. Your data
+   The software runs on your own computer. Your recordings, images and
+   reports are not uploaded to us. Nothing is sent to us unless you choose to
+   send feedback; feedback includes only what is shown in the feedback form
+   and, if you tick the box, basic technical details (software version,
+   Windows version, settings and error logs). It never includes recordings
+   or images.
+
+6. Feedback
+   You don't have to send feedback, but if you do, we may use it to improve
+   our products without any obligation to you.
+
+7. Confidentiality
+   Please keep the software, and anything you learn about unreleased
+   features, confidential until it is publicly released.
+
+8. No warranty
+   The beta is provided "as is", without warranties of any kind, to the
+   extent permitted by law.
+
+9. Liability
+   To the extent permitted by law, we are not liable for any loss of data,
+   profit, business or any indirect or consequential loss arising from use of
+   the beta. Nothing in this licence limits liability that cannot legally be
+   limited, such as for death or personal injury caused by negligence.
+
+10. Ending
+   This licence ends at the end of the trial period, or earlier if you break
+   these terms. You may stop using the software at any time.
+
+11. Law
+   This licence is governed by the law of England and Wales.

@@ -6,9 +6,11 @@
 <title>Track &amp; Detect – Thermal Vision Ecology</title>
 <script>
   // apply the saved colour scheme and dark/light mode before the page draws
-  try { var a = JSON.parse(localStorage.getItem("td-look") || "{}");
-        document.documentElement.dataset.scheme = a.scheme || "forest";
-        document.documentElement.dataset.theme = a.theme || "dark"; } catch (e) {}
+  (function () {
+    try { var look = JSON.parse(localStorage.getItem("td-look") || "{}");
+          document.documentElement.dataset.scheme = look.scheme || "forest";
+          document.documentElement.dataset.theme = look.theme || "dark"; } catch (e) {}
+  })();
 </script>
 <link rel="stylesheet" href="/static/app.css">
 <link rel="icon" href="/static/favicon.png">

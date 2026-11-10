@@ -17,7 +17,9 @@ for (const name of fs.readdirSync(SRC)) {
   const from = path.join(SRC, name), to = path.join(OUT, name);
   const text = () => fs.readFileSync(from, "utf8");
   if (name.endsWith(".js")) {
-    const r = await terser(text(), {
+    // wrapped in its own function so its scrambled names can't clash with
+    // any other script on the page
+    const r = await terser("(() => {\n" + text() + "\n})();", {
       compress: { passes: 2, drop_debugger: true },
       mangle: { toplevel: true },          // rename functions and variables
       format: { comments: false },

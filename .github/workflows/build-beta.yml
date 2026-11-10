@@ -29,7 +29,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Work out the version
         id: ver
@@ -38,15 +38,15 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ github.event.inputs.version }}"; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: requirements-build.txt
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install build tools
         run: |
@@ -70,7 +70,6 @@ jobs:
       - name: Compile with Nuitka
         shell: pwsh
         run: |
-          $ff = python -c "import imageio_ffmpeg, os; print(os.path.join(os.path.dirname(imageio_ffmpeg.__file__), 'binaries'))"
           $v = "${{ steps.ver.outputs.version }}"
           $fv = ($v -replace '[^0-9.]', '') ; if (($fv -split '\.').Count -lt 4) { $fv = "$fv.0" }
           python -m nuitka app.py `
@@ -87,7 +86,6 @@ jobs:
             --copyright="Thermal Vision Ecology" `
             --include-package=emergence `
             --include-package-data=reportlab `
-            --include-data-files="$ff\*.exe=imageio_ffmpeg/binaries/" `
             --include-data-dir=build/static=static `
             --include-data-files=build/beta.json=beta.json `
             --include-data-files=LICENCE-BETA.txt=LICENCE-BETA.txt `

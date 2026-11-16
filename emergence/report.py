@@ -262,14 +262,14 @@ def build_report(rec, out_path, opts=None, progress=None):
         "recording's background noise)" if sugg is not None else "") + ". Spikes below the level were "
         "not reviewed." if level is not None else "<b>3. Detection level.</b> The recording had not been scanned.",
         f"<b>4. Review.</b> Each event was reviewed by the analyst in a window from 3 seconds before to 3 seconds "
-        f"after it, in the plain thermal view and in High Sensitivity Mode (Max Frame Interval {filters['mfi']} "
-        f"frames with Sliding Subtraction {filters['ss']} frames, which shows moving animals as bright trails). "
+        f"after it, in the Default (plain thermal) view, the Tracking view and the Detection view, whose trails use "
+        f"Max Frame Interval {filters['mfi']} frames with Sliding Subtraction {filters['ss']} frames to show moving animals brightly. "
         "Each event was then accepted with a classification, or rejected (for example as an insect, "
         "vegetation movement or noise). Comments record what the analyst observed.",
-        "<b>5. Images.</b> For each event this report shows a <i>flight path</i> image (the hottest value of "
-        "every pixel across the event window, building up the whole route) and a <i>blended</i> "
+        "<b>5. Images.</b> For each event this report shows a <i>tracking</i> image (the hottest value of "
+        "every pixel across the event window, building up the whole route) and a <i>detection</i> "
         "frame (taken at the event's peak activity for an overlay, or a Max Frame Interval's worth of frames "
-        "after activity was first seen for a crossfade): the thermal picture with the High Sensitivity Mode trails "
+        "after activity was first seen for a crossfade): the thermal picture with the moving-animal trails "
         "combined with it, so the moving animal can be seen in its setting.",
     ]
     for p in paras:
@@ -348,11 +348,11 @@ def build_report(rec, out_path, opts=None, progress=None):
                              rng=opts.get("blend_range"), opacity=op, blend=how, enh=opts.get("enh"))
             if img_dir:
                 base = os.path.join(img_dir, safe_name(f"event{e['n']}_{src.time_label(e['f0'])[:8].replace(':', '-')}"))
-                cv2.imwrite(base + "_flightpath.jpg", path_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
-                cv2.imwrite(base + f"_blended-{how}_frame{bf}.jpg", hs_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                cv2.imwrite(base + "_tracking.jpg", path_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                cv2.imwrite(base + f"_detection-{how}_frame{bf}.jpg", hs_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
             imgs = Table([[_jpeg(path_img, 84), _jpeg(hs_img, 84)],
-                          [Paragraph(f"Flight path, {src.time_label(ws)[:8]}–{src.time_label(we)[:8]}", st["small"]),
-                           Paragraph(f"Blended ({how} {round(op * 100)}%), frame {bf:,} ({bf_note})", st["small"])]],
+                          [Paragraph(f"Tracking, {src.time_label(ws)[:8]}–{src.time_label(we)[:8]}", st["small"]),
+                           Paragraph(f"Detection ({how} {round(op * 100)}%), frame {bf:,} ({bf_note})", st["small"])]],
                          colWidths=[87 * mm, 87 * mm])
             imgs.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
             block += [Spacer(1, 2 * mm), imgs]
@@ -387,8 +387,8 @@ def build_report(rec, out_path, opts=None, progress=None):
         ["Suggested level", f"{sugg:.3f} {_unit(src.units)}" if sugg is not None else "–"],
         ["Event merge gap", "2 s"],
         ["Review window", "3 s either side of each event"],
-        ["High Sensitivity Mode", f"Max Frame Interval {filters['mfi']} frames + Sliding Subtraction {filters['ss']} frames"],
-        ["Blended images", ("Crossfade" if opts.get("blend") == "crossfade" else "Overlay")
+        ["Detection trails", f"Max Frame Interval {filters['mfi']} frames + Sliding Subtraction {filters['ss']} frames"],
+        ["Detection images", ("Crossfade" if opts.get("blend") == "crossfade" else "Overlay")
                            + f" at {round(float(opts.get('opacity', 0.8)) * 100)}% opacity"],
         ["Software", f"Track & Detect {_version_label()}"],
         ["Image clean-up", _enh_text(opts.get("enh"))],

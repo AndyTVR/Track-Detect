@@ -2,10 +2,7 @@
 const $ = (s) => document.querySelector(s);
 const S = { files: [], rec: null, mode: "raw", frame: 0, sel: null, ws: 0, we: 0,
             drawing: false, pts: [], playing: false, act: [], polling: null, lastJobs: "" };
-const MODE_HINT = { review: "Moving animals show as bright trails.",
-                    path: "The whole route builds up across the event.",
-                    raw: "The original footage, with no filters." };
-const MODES_ORDER = ["raw", "review", "path", "blend"];
+const MODES_ORDER = ["raw", "path", "blend"];   // Default, Tracking, Detection (keys 1–3)
 let CLASSES = ["Emergence", "Re-entry", "Flight through / commuting", "Passes behind structure",
                "Foraging", "Bird", "Insect / noise", "Other"];   // replaced by Settings > Classifications
 
@@ -41,7 +38,10 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp
 
 // ------------------------------------------------------------ recordings list
 function parentName(p) { const parts = p.split(/[\\/]/); return parts.slice(-3, -1).join(" › "); }
-$("#btn-open").onclick = () => { $("#folder-input").value = ""; $("#pick-msg").hidden = true; $("#dlg-folder").showModal(); };
+function openAdd() { $("#folder-input").value = ""; $("#pick-msg").hidden = true; $("#dlg-folder").showModal(); }
+$("#btn-open").onclick = openAdd;
+$("#btn-empty-add").onclick = openAdd;
+function setEmpty(msg, button) { $("#empty-msg").textContent = msg; $("#btn-empty-add").hidden = !button; }
 async function browse(kind) {
   const btns = [$("#btn-browse-files"), $("#btn-browse-folder")], msg = $("#pick-msg");
   btns.forEach((b) => (b.disabled = true));
@@ -91,20 +91,21 @@ async function refreshFiles() { try { const r = await api("/api/files"); S.files
 
 async function openRec(path) {
   stopPlay();
-  $("#empty").textContent = "Opening…";
+  setEmpty("Opening…", false);
   try {
     S.rec = await api("/api/open", { path });
     S.rng = { raw: null, review: null, path: null, blend: null }; S.track = {}; S.info = null;   // each recording starts on Auto
-    S.frame = 0; S.sel = null; S.ws = 0; S.we = S.rec.frames - 1; S.pts = S.rec.roi || [];
+    S.frame = 0; S.sel = null; S.ws = 0; S.we = S.rec.frames - 1; S.pts = S.rec.roi || []; S.lim = null;
     $("#scrub").max = S.rec.frames - 1;
     $("#crumb-folder").textContent = parentName(S.rec.path);
     $("#crumb-file").textContent = "› " + S.rec.name;
     setCrumbMeta();
     $("#fps-wrap").hidden = false; $("#fps").value = S.rec.fps;
-    ["#btn-roi-draw", "#btn-roi-clear", "#btn-scan"].forEach((s) => ($(s).disabled = false));
+    ["#btn-roi-clear", "#btn-scan"].forEach((s) => ($(s).disabled = false));
+    document.querySelectorAll(".shape-btn").forEach((b) => (b.disabled = false));
     $("#empty").hidden = true;
     renderFiles(); updateRoiStatus(); await loadActivity(); renderEvents(); renderComments(); renderFilters(); showFrame();
-  } catch (e) { $("#empty").textContent = "Could not open this file."; err(e); }
+  } catch (e) { setEmpty("Could not open this file.", true); err(e); }
 }
 $("#fps").onchange = async () => { try { S.rec = await api("/api/fps", { fps: +$("#fps").value }); renderEvents(); showFrame(); } catch (e) { err(e); } };
 
@@ -137,7 +138,7 @@ function showFrame() {
   $("#badge-frame").textContent = `${fmtStamp(S.frame)} · frame ${S.frame.toLocaleString()}`;
   $("#scrub").value = S.frame;
   positionCursor();
-  $("#loop-wrap").hidden = !S.sel;
+  syncLock(); drawLimits();
   updateCommentBox();
 }
 img.onload = () => { pending = false; drawRoi(); if (queued) { queued = false; showFrame(); } if (S.playing) S._onFrame && S._onFrame(); };
@@ -147,22 +148,30 @@ window.addEventListener("resize", () => { drawRoi(); drawPlot(); });
 function setMode(m) {
   S.mode = m;
   document.querySelectorAll(".mode[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
-  $("#btn-persist").classList.toggle("on", m === "review");
+  $("#btn-persist").classList.toggle("on", m === "blend");
   $("#opacity-wrap").hidden = m !== "blend";
   syncEnh();
   showFrame();
 }
 document.querySelectorAll(".mode[data-mode]").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
-// frame persistence dropdown on the High Sensitivity Mode tab
-function togglePersist(open) {
-  const m = $("#persist-menu"), want = open ?? m.hidden;
-  m.hidden = !want; $("#btn-persist").setAttribute("aria-expanded", String(want));
-  if (want) $("#f-mfi").focus();
+// dropdowns: trail persistence (the ▾ on Detection) and Palette & image
+function toggleMenu(menu, btn, open, focus) {
+  const m = $(menu), want = open ?? m.hidden;
+  m.hidden = !want; $(btn).setAttribute("aria-expanded", String(want));
+  if (want && focus) $(focus).focus();
 }
-$("#btn-persist").onclick = (e) => { e.stopPropagation(); togglePersist(); };
+const togglePersist = (open) => toggleMenu("#persist-menu", "#btn-persist", open, "#f-mfi");
+const toggleImage = (open) => toggleMenu("#image-menu", "#btn-image", open, "#palette");
+$("#btn-persist").onclick = (e) => { e.stopPropagation(); toggleImage(false); togglePersist(); };
+$("#btn-image").onclick = (e) => { e.stopPropagation(); togglePersist(false); toggleImage(); };
 $("#persist-menu").addEventListener("click", (e) => e.stopPropagation());
-document.addEventListener("click", () => togglePersist(false));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#persist-menu").hidden) { togglePersist(false); $("#btn-persist").focus(); } });
+$("#image-menu").addEventListener("click", (e) => e.stopPropagation());
+document.addEventListener("click", () => { togglePersist(false); toggleImage(false); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("#persist-menu").hidden) { togglePersist(false); $("#btn-persist").focus(); }
+  if (!$("#image-menu").hidden) { toggleImage(false); $("#btn-image").focus(); }
+});
 $("#scrub").oninput = () => { stopPlay(); S.frame = +$("#scrub").value; showFrame(); };
 $("#btn-step").onclick = () => S.rec && goFrame(S.frame + 1);
 $("#btn-step-back").onclick = () => S.rec && goFrame(S.frame - 1);
@@ -170,9 +179,66 @@ $("#btn-step-back").onclick = () => S.rec && goFrame(S.frame - 1);
 // playback: frames are requested one after another, so the server keeps filter state
 const PLAY_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l11-7z"/></svg>';
 const PAUSE_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+// Play limits: playback runs between the start and end handles on the
+// progress bar. "Lock Play Limits to Current Event" makes them follow the
+// selected event's window; otherwise they stay where the user put them.
+function locked() { return !!(S.sel && $("#in-window").checked); }
 function playBounds() {
-  return S.sel && $("#in-window").checked ? [S.ws, S.we] : [0, S.rec.frames - 1];
+  if (!S.rec) return [0, 0];
+  if (locked()) return [S.ws, S.we];
+  return S.lim ? [...S.lim] : [0, S.rec.frames - 1];
 }
+function isWhole(b) { return !S.rec || (b[0] <= 0 && b[1] >= S.rec.frames - 1); }
+function syncLock() {
+  const on = !!S.sel;
+  $("#in-window").disabled = !on;
+  $("#loop-wrap").classList.toggle("off", !on);
+  $("#loop-wrap").title = on ? "Keep the play limits on the selected event's window" : "Select an event to use this";
+}
+function limPos(f) { const n = Math.max(1, S.rec.frames - 1); return `calc(8px + (100% - 16px) * ${f / n})`; }
+function drawLimits() {
+  const has = !!S.rec;
+  for (const id of ["#lim-a", "#lim-b", "#lim-fill"]) $(id).hidden = !has;
+  if (!has) { $("#lim-label").textContent = ""; $("#btn-lim-reset").hidden = true; $("#btn-scan-lim").disabled = true; return; }
+  const [a, b] = playBounds(), n = Math.max(1, S.rec.frames - 1);
+  $("#lim-a").style.left = limPos(a); $("#lim-b").style.left = limPos(b);
+  $("#lim-fill").style.left = limPos(a); $("#lim-fill").style.width = `calc((100% - 16px) * ${(b - a) / n})`;
+  const whole = isWhole([a, b]);
+  $("#lim-label").textContent = whole ? "Play limits: whole recording. Drag the blue markers to set your own."
+    : `Play limits: ${fmtTime(a)} → ${fmtTime(b)} (${fmtDur((b - a + 1) / S.rec.fps)})${locked() ? " · locked to event " + S.sel : ""}`;
+  $("#btn-lim-reset").hidden = whole || locked();
+  $("#btn-scan-lim").disabled = whole;
+  $("#btn-scan-lim").title = whole ? "Drag the blue markers on the progress bar to set play limits first" : `Scan only ${fmtTime(a)} → ${fmtTime(b)}`;
+}
+function limDrag(which, e) {
+  if (!S.rec) return;
+  e.preventDefault(); e.stopPropagation();
+  if (locked()) { S.lim = playBounds(); $("#in-window").checked = false; }   // moving a marker unlocks it from the event
+  if (!S.lim) S.lim = [0, S.rec.frames - 1];
+  const wrap = $("#scrub-wrap"), n = S.rec.frames - 1;
+  const move = (ev) => {
+    const r = wrap.getBoundingClientRect(), f = Math.round(Math.max(0, Math.min(1, (ev.clientX - r.left - 8) / (r.width - 16))) * n);
+    if (which === "a") S.lim[0] = Math.min(f, S.lim[1] - 1); else S.lim[1] = Math.max(f, S.lim[0] + 1);
+    drawLimits();
+  };
+  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); drawLimits(); };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+}
+$("#lim-a").addEventListener("pointerdown", (e) => limDrag("a", e));
+$("#lim-b").addEventListener("pointerdown", (e) => limDrag("b", e));
+for (const [id, k] of [["#lim-a", 0], ["#lim-b", 1]]) {   // arrow keys nudge a marker (Shift = 1 s)
+  $(id).addEventListener("keydown", (e) => {
+    if (!S.rec || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (locked()) { S.lim = playBounds(); $("#in-window").checked = false; }
+    if (!S.lim) S.lim = [0, S.rec.frames - 1];
+    const step = (e.shiftKey ? Math.round(S.rec.fps) : 1) * (e.key === "ArrowRight" ? 1 : -1), n = S.rec.frames - 1;
+    const v = Math.max(0, Math.min(n, S.lim[k] + step));
+    if (k === 0 && v < S.lim[1]) S.lim[0] = v; if (k === 1 && v > S.lim[0]) S.lim[1] = v;
+    drawLimits();
+  });
+}
+$("#btn-lim-reset").onclick = () => { S.lim = null; drawLimits(); };
 // play button on each event card: plays that event's window from its start
 async function playEvent(n) {
   if (S.playing && S.dir > 0 && S.sel === n) return stopPlay();
@@ -223,7 +289,7 @@ $("#btn-play").onclick = () => startPlay(1);
 $("#btn-rev").onclick = () => startPlay(-1);
 $("#btn-start").onclick = () => S.rec && goFrame(playBounds()[0]);
 $("#btn-end").onclick = () => S.rec && goFrame(playBounds()[1]);
-$("#in-window").onchange = () => showFrame();
+$("#in-window").onchange = () => { if (!$("#in-window").checked && S.sel && !S.lim) S.lim = [S.ws, S.we]; showFrame(); };
 
 // ------------------------------------------------------------ colour scheme & dark/light mode
 function applyLook(scheme, theme) {
@@ -329,8 +395,8 @@ syncEnh();
 // Blended mode: blend type and opacity
 function opacityTitle() {
   $("#opacity-label").title = $("#blend").value === "crossfade"
-    ? "0% = thermal only, 100% = High Sensitivity only"
-    : "How solid the High Sensitivity trails are over the thermal picture";
+    ? "0% = thermal only, 100% = trails only"
+    : "How solid the trails are over the thermal picture";
 }
 $("#opacity").onchange = () => showFrame();
 $("#blend").onchange = () => { opacityTitle(); showFrame(); };
@@ -343,7 +409,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.09-startover";
+const APP_VERSION = "2026.11.16-layout";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -385,6 +451,9 @@ function drawRoi() {
       const [lx, ly] = S.pts[S.pts.length - 1], [hx, hy] = S.hover;
       h += `<line x1="${lx}" y1="${ly}" x2="${hx}" y2="${hy}" ${st}/>`;
       if (S.pts.length >= 2) h += `<line x1="${hx}" y1="${hy}" x2="${S.pts[0][0]}" y2="${S.pts[0][1]}" stroke="#E5484D" stroke-width="1.5" stroke-dasharray="6 5" opacity=".7" vector-effect="non-scaling-stroke"/>`;
+    } else if (S.pts.length >= 3) {   // the line that will close the shape when it's finished
+      const [lx, ly] = S.pts[S.pts.length - 1];
+      h += `<line x1="${lx}" y1="${ly}" x2="${S.pts[0][0]}" y2="${S.pts[0][1]}" stroke="#E5484D" stroke-width="1.5" stroke-dasharray="6 5" opacity=".7" vector-effect="non-scaling-stroke"/>`;
     }
     h += S.pts.map((q, k) => `<circle cx="${q[0]}" cy="${q[1]}" r="${k ? hr * 0.6 : hr * 0.85}" fill="${k ? "#E5484D" : "#fff"}" stroke="#E5484D" stroke-width="2" vector-effect="non-scaling-stroke"/>`).join("");
   } else {
@@ -403,7 +472,7 @@ function drawRoi() {
   svg.innerHTML = h;
 }
 svg.addEventListener("pointerdown", (e) => {
-  if (!S.drawing || S.shape === "poly") return;
+  if (!S.drawing || S.shape === "poly" || e.button !== 0) return;   // right-click finishes instead
   const t = e.target, p = toImg(e);
   if (t.dataset.h) S.drag = { kind: t.dataset.h, p0: p, b0: { ...S.box } };
   else if (t.dataset.body) S.drag = { kind: "move", p0: p, b0: { ...S.box } };
@@ -440,27 +509,33 @@ svg.addEventListener("click", (e) => {
 });
 function setShape(sh) {
   S.shape = sh; if (sh !== "poly" && !S.box) S.box = defaultBox();
-  document.querySelectorAll("[data-shape]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.shape === sh)));
-  $("#btn-roi-undo").hidden = !S.drawing || sh !== "poly";
-  $("#roi-hint").textContent = sh === "poly" ? "Click to add points around the roost features. Backspace removes the last one, Enter finishes."
-    : "Drag the middle to move it, drag a handle to resize, or drag on the picture to draw a new one.";
+  document.querySelectorAll("[data-shape]").forEach((b) => b.setAttribute("aria-pressed", String(S.drawing && b.dataset.shape === sh)));
+  toggleRoiButtons();
+  updateRoiStatus();
   drawRoi();
 }
-document.querySelectorAll("[data-shape]").forEach((b) => (b.onclick = () => setShape(b.dataset.shape)));
-$("#btn-roi-draw").onclick = () => {
-  S.drawing = true; S.pts = []; S.box = null; S.hover = null;
-  $("#stage").classList.add("drawing"); toggleRoiButtons(); setMode("raw"); setShape(S.shape);
-};
+// picking a shape from the ROI toolbar starts drawing it; picking another while drawing switches shape
+function startRoi(sh) {
+  if (!S.rec) return;
+  if (!S.drawing) {
+    S.drawing = true; S.pts = []; S.box = null; S.hover = null;
+    $("#stage").classList.add("drawing"); setMode("raw");
+  }
+  setShape(sh);
+}
+document.querySelectorAll("[data-shape]").forEach((b) => (b.onclick = () => startRoi(b.dataset.shape)));
+// right-click on the picture finishes the ROI; an open polygon is closed back to its first point
+$("#stage").addEventListener("contextmenu", (e) => { if (!S.drawing) return; e.preventDefault(); finishRoi(); });
 $("#btn-roi-undo").onclick = () => { S.pts.pop(); drawRoi(); };
 async function finishRoi() {
   const pts = shapePoints();
-  if (pts.length < 3) return toast("Add at least 3 points first.");
-  S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); toggleRoiButtons();
+  if (pts.length < 3) return toast("Add at least 3 points first, then right-click to finish.");
+  S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); setShape(S.shape);
   try { S.rec = await api("/api/roi", { points: pts, all_files: $("#roi-all").checked }); updateRoiStatus(); refreshFiles(); showFrame(); toast("ROI saved. Press Scan recording."); }
   catch (e) { err(e); }
 }
 $("#btn-roi-done").onclick = finishRoi;
-$("#btn-roi-cancel").onclick = () => { S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); toggleRoiButtons(); showFrame(); };
+$("#btn-roi-cancel").onclick = () => { S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); setShape(S.shape); showFrame(); };
 document.addEventListener("keydown", (e) => {
   if (!S.drawing || e.target.closest("input, select, textarea, dialog")) return;
   if (e.key === "Enter") { e.preventDefault(); finishRoi(); }
@@ -469,21 +544,35 @@ document.addEventListener("keydown", (e) => {
 }, true);
 $("#btn-roi-clear").onclick = async () => { try { S.pts = []; S.rec = await api("/api/roi", { points: [] }); updateRoiStatus(); showFrame(); } catch (e) { err(e); } };
 function toggleRoiButtons() {
-  $("#btn-roi-done").hidden = $("#btn-roi-cancel").hidden = $("#roi-tools").hidden = !S.drawing;
+  $("#btn-roi-done").hidden = $("#btn-roi-cancel").hidden = !S.drawing;
   $("#btn-roi-undo").hidden = !S.drawing || S.shape !== "poly";
-  $("#btn-roi-draw").hidden = $("#btn-roi-clear").hidden = S.drawing;
+  $("#btn-roi-clear").hidden = S.drawing;
+  $("#btn-roi-clear").disabled = !(S.rec && (S.rec.roi || []).length);
 }
-function updateRoiStatus() { const n = (S.rec && S.rec.roi || []).length; $("#roi-status").textContent = n ? `ROI set (${n} points).` : "No ROI yet: draw around the roost features."; }
+function updateRoiStatus() {
+  const el = $("#roi-status");
+  if (S.drawing) {
+    el.textContent = S.shape === "poly"
+      ? "Click round the roost to add points. Right-click (or Enter) to finish: the last point joins back to the first. Backspace removes a point."
+      : "Drag on the picture to draw, drag the middle to move, drag a handle to resize. Right-click (or Enter) to finish.";
+    return;
+  }
+  if (!S.rec) { el.textContent = "Open a recording, then pick a shape to draw round the roost."; return; }
+  const n = (S.rec.roi || []).length;
+  el.textContent = n ? "ROI set. Pick a shape to draw a new one." : "No ROI yet: pick a shape, then draw round the roost.";
+  toggleRoiButtons();
+}
 
 // ------------------------------------------------------------ scan, jobs
 $("#btn-scan").onclick = () => startScan(false);
 $("#btn-scan-all").onclick = () => startScan(true);
-async function startScan(all) {
+$("#btn-scan-lim").onclick = () => startScan(false, playBounds());
+async function startScan(all, lim) {
   if (!S.rec && !all) return;
   try {
-    const r = await api("/api/scan", { all });
-    if (!r.jobs.length) return toast("Draw an ROI first. Tick 'Use this ROI for every listed file' to share it.");
-    toast(`Scanning ${r.jobs.length} recording${r.jobs.length > 1 ? "s" : ""}…`); pollJobs();
+    const r = await api("/api/scan", lim ? { all: false, a: lim[0], b: lim[1] } : { all });
+    if (!r.jobs.length) return toast("Draw an ROI first. Tick 'Use for every file from this folder' to share it.");
+    toast(lim ? `Scanning ${fmtTime(lim[0])} → ${fmtTime(lim[1])}…` : `Scanning ${r.jobs.length} recording${r.jobs.length > 1 ? "s" : ""}…`); pollJobs();
   } catch (e) { err(e); }
 }
 $("#btn-cancel").onclick = () => api("/api/jobs/cancel", {}).catch(err);
@@ -641,20 +730,23 @@ function drawPlot() {
   ctx.clearRect(0, 0, g.W, g.H); $("#markers").innerHTML = "";
   const tag = $("#level-tag");
   if (!S.rec || !P.data.length) {
-    ctx.fillStyle = cssv("--muted"); ctx.font = "12px sans-serif"; ctx.fillText(S.rec ? "Not scanned yet" : "", 12, 24);
+    ctx.fillStyle = cssv("--muted"); ctx.font = "12px sans-serif"; ctx.fillText(S.rec ? "Not scanned yet: press Scan recording, or Scan play limits for part of it" : "", 12, 24);
     $("#plot-axis").innerHTML = ""; $("#plot-range").textContent = ""; tag.hidden = true; return;
   }
-  // ignored spike at the end of the recording: grey hatching
-  const cut = endCut();
-  if (cut != null && g.x(cut) < g.W) {
-    const x0 = Math.max(0, g.x(cut));
-    ctx.save(); ctx.fillStyle = cssv("--plot-hatch-bg"); ctx.fillRect(x0, 0, g.W - x0, g.H);
-    ctx.beginPath(); ctx.rect(x0, 0, g.W - x0, g.H); ctx.clip();
+  // grey hatching: stretches not scanned (a play-limits scan), and an ignored spike at the end
+  const hatch = (f0, f1, note) => {
+    const x0 = Math.max(0, g.x(f0)), x1 = Math.min(g.W, g.x(f1 + 1));
+    if (x1 <= 0 || x0 >= g.W || x1 - x0 < 1) return;
+    ctx.save(); ctx.fillStyle = cssv("--plot-hatch-bg"); ctx.fillRect(x0, 0, x1 - x0, g.H);
+    ctx.beginPath(); ctx.rect(x0, 0, x1 - x0, g.H); ctx.clip();
     ctx.strokeStyle = cssv("--plot-hatch"); ctx.lineWidth = 1;
-    for (let x = x0 - g.H; x < g.W; x += 9) { ctx.beginPath(); ctx.moveTo(x, g.H); ctx.lineTo(x + g.H, 0); ctx.stroke(); }
+    for (let x = x0 - g.H; x < x1; x += 9) { ctx.beginPath(); ctx.moveTo(x, g.H); ctx.lineTo(x + g.H, 0); ctx.stroke(); }
     ctx.restore();
-    if (g.W - x0 > 150) { ctx.fillStyle = cssv("--plot-note"); ctx.font = "11px sans-serif"; ctx.fillText("Ignored: end of recording", x0 + 6, 52); }
-  }
+    if (x1 - x0 > 110) { ctx.fillStyle = cssv("--plot-note"); ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillText(note, (x0 + x1) / 2, 52); ctx.textAlign = "start"; }
+  };
+  for (const [a, b] of S.rec.unscanned || []) hatch(a, b, "Not scanned");
+  const cut = endCut();
+  if (cut != null && g.x(cut) < g.W) hatch(cut, P.b, "Ignored: end of recording");
   // event windows shaded
   for (const e of S.rec.events) {
     const x0 = g.x(e.f0), x1 = Math.max(g.x(e.f1), x0 + 2);
@@ -1055,7 +1147,7 @@ $("#c-text").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ct
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("input, select, textarea, dialog")) return;
   const k = e.key;
-  if (k >= "1" && k <= "4") setMode(MODES_ORDER[+k - 1]);
+  if (k >= "1" && k <= "3") setMode(MODES_ORDER[+k - 1]);
   else if (k === "ArrowRight") { stopPlay(); S.frame += e.shiftKey ? Math.round(S.rec ? S.rec.fps : 16) : 1; showFrame(); }
   else if (k === "ArrowLeft") { stopPlay(); S.frame -= e.shiftKey ? Math.round(S.rec ? S.rec.fps : 16) : 1; showFrame(); }
   else if (k === " ") { e.preventDefault(); startPlay(1); }
@@ -1226,7 +1318,7 @@ function stRead() {
 function stExamples() {
   const site = S.rec ? S.rec.path.split(/[\\/]/).slice(-2, -1)[0] : "St Fagans", recn = S.rec ? S.rec.name.replace(/\.ats$/i, "") : "front 2";
   const eg = { site_recording: `${site}_${recn}_event1_21-14-05`, date_site: `${(S.rec && fmtDate(0) ? fmtDate(0) : "10/08/2026").replace(/\//g, "-")}_${site}_${recn}_event1`, recording_event: `${recn}_event1_21-14-05` };
-  $("#st-naming-eg").textContent = (eg[$("#st-naming").value] || "").replace(/[^A-Za-z0-9_.-]+/g, "_") + "_flightpath.mp4";
+  $("#st-naming-eg").textContent = (eg[$("#st-naming").value] || "").replace(/[^A-Za-z0-9_.-]+/g, "_") + "_tracking.mp4";
   const o = +$("#st-offset").value || 0, a = Math.abs(o);
   $("#st-offset-eg").textContent = o ? `Times will move ${o > 0 ? "later" : "earlier"} by ${a >= 3600 ? Math.floor(a / 3600) + " h " : ""}${a % 3600 >= 60 ? Math.floor((a % 3600) / 60) + " min " : ""}${a % 60 ? (a % 60) + " s" : ""}.` : "";
 }
@@ -1312,4 +1404,5 @@ $("#st-import-file").onchange = async () => {
   setInterval(checkBeta, 3600e3);   // the trial can end while the program is open
   refreshFiles().then(() => api("/api/files").then((r) => { if (r.current) openRec(r.current); })).catch(() => {});
 })();
+syncLock(); drawLimits();
 pollJobs();

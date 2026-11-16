@@ -43,26 +43,38 @@ Double-click the **Track and Detect** desktop shortcut, or **Run Track and
 Detect.bat**. The app opens in its own window. Closing that window, or
 clicking **Quit** in the top bar, closes it.
 
-1. **Add recordings.** Choose individual `.ats` files, a whole survey
-   folder, or paste paths, one per line. Remove a file from the list with
-   its **×**. Each file shows its status.
-2. **Draw ROI.** Click **Draw ROI**, then pick a shape:
-   - **Points**: click around the roost features. A line follows your cursor
-     from the last point, with a dashed line back to the start.
-     Backspace removes the last point.
+1. **Add recordings.** Click **Add recordings** in the top bar, or **Add
+   Recording** in the middle of the empty picture. Choose individual `.ats`
+   files, a whole survey folder, or paste paths, one per line. Remove a file
+   from the list with its **×**. Each file shows its status.
+2. **Draw the region of interest (ROI).** The ROI toolbar sits just under
+   the Viewing Mode buttons. Click the picture of the shape you want:
+   - **Polygon**: click round the roost features. A line follows your cursor
+     from the last point, with a dashed line back to the start. Backspace
+     removes the last point.
    - **Rectangle** or **Circle**: a shape appears in the middle of the
      picture. Drag the middle to move it, drag an edge or corner handle to
      resize it, or drag on the picture to draw a new one.
 
-   Click **Finish** (or press Enter) to save it, or **Cancel** (Esc) to leave
-   the current ROI as it is. Keep the sky out, but leave a thin strip above
-   the roofline. If the camera didn't move, tick *Use this ROI for every
-   listed file from the same folder*.
-3. **Scan recording** or **Analyse all listed.** One pass builds the
-   activity plot for the ROI and shows progress as it goes. The scan always
-   uses **Window Average (3×3) + Sliding Subtraction (5 frames)**, whichever
-   mode is showing. Recordings scanned with older settings are flagged in
-   the Detection panel so you can scan them again.
+   **Right-click** on the picture to finish (or press Enter, or click
+   **Finish**). An open polygon is joined back to its first point
+   automatically. **Cancel** (Esc) leaves the current ROI as it is. Keep the
+   sky out, but leave a thin strip above the roofline. If the camera didn't
+   move, tick *Use for every file from this folder*.
+3. **Scan.** The scan buttons sit beside the **Event Log** heading:
+   - **Scan recording** scans the whole recording. **Analyse all listed**
+     in the top bar scans every listed file.
+   - **Scan play limits** scans only between the two blue play-limit
+     markers on the progress bar (see step 5). Use it to scan just the
+     emergence period of a long recording. Parts not scanned are hatched
+     grey and marked "Not scanned" on the plot, and no events are found
+     there. Scanning another stretch later adds to it. If you redraw the
+     ROI, the next part scan starts afresh.
+
+   One pass builds the activity plot for the ROI and shows progress as it
+   goes. The scan always uses **Window Average (3×3) + Sliding Subtraction
+   (5 frames)**, whichever mode is showing. Recordings scanned with older
+   settings are flagged in the Detection panel so you can scan them again.
    A very large spike at the end of a recording is always left out of the
    analysis. This is typically someone walking up to the camera, or the
    camera being moved or switched off. The spike has to run to within 2 s of
@@ -89,16 +101,24 @@ clicking **Quit** in the top bar, closes it.
      - The slider sets your own cap.
    - Use **Enlarge** for a bigger plot.
 5. **Review each event.** Click a marker or event card. The app jumps to the
-   event and plays within a window 3 s either side. Untick *Stay in event
-   window* to play past it. Use the controls under the picture to watch it:
+   event and plays within a window 3 s either side. Use the controls under
+   the picture to watch it:
 
    | Button | Does |
    |---|---|
-   | ⏮ / ⏭ | Go to the start or end (keys `Home` / `End`) |
+   | ⏮ / ⏭ | Go to the start or end play limit (keys `Home` / `End`) |
    | ◀ | Play backwards |
    | ◀❙ / ❙▶ | Step back or forward one frame (`←`/`→`; hold Shift to jump 1 s) |
    | ▶ | Play / pause (`Space`) |
+   | Lock Play Limits to Current Event | Keep playback inside the selected event's window |
    | Speed | ¼× to 4× |
+
+   **Play limits**: the two blue markers under the progress bar set where
+   playback starts and stops. Drag them to play any stretch you like; the
+   shaded part between them is what plays. **Reset play limits** puts them
+   back to the whole recording. While *Lock Play Limits to Current Event* is
+   ticked and an event is selected, the markers follow that event. Dragging
+   a marker unticks it.
 
    Then choose a classification and **Confirm** or **Reject** the event.
    **Undo** clears your decision.
@@ -116,10 +136,10 @@ clicking **Quit** in the top bar, closes it.
    or × to delete it.
 7. **Export event pack.** One click saves these files to `exports\`
    beside the recording:
-   - the flight-path still
-   - the flight-path clip
-   - the high-sensitivity clip
-   - a blended still and a blended clip, both using the blend type, opacity
+   - the tracking still
+   - the tracking clip
+   - the trails clip (the moving-animal trails on their own)
+   - a detection still and a detection clip, both using the blend type, opacity
      and range set in the app. The still is taken at the event's peak for an
      overlay. For a crossfade it's taken a Max Frame Interval's worth of frames
      (5 by default) after activity is first seen, so the trail has built up.
@@ -129,46 +149,47 @@ clicking **Quit** in the top bar, closes it.
    comments. If there are any comments, it also writes `<name>_comments.csv`
    listing every comment with its time.
 
-The **Viewing Mode** panel has three modes:
-- `1` **Thermal** (default): the plain thermal picture, with no filters.
-- `2` **High Sensitivity Mode**: moving animals show as bright trails.
-- `3` **Flight path**: the whole route is built up in one image.
-- `4` **Blended**: a mix of the thermal and High Sensitivity pictures, in the
-  current palette. Choose how to mix them with **Blend**:
+The **Viewing Mode** bar has three modes (keys `1`–`3`):
+- **Default**: the plain thermal picture, with no filters.
+- **Tracking**: the whole route is built up in one image.
+- **Detection**: the thermal picture with moving animals shown as bright
+  trails, in the current palette. Choose how to mix them with **Blend**:
   - **Overlay**: the trails are laid over the thermal picture, and the rest
     stays thermal. Opacity sets how solid the trails are.
   - **Crossfade**: the two whole pictures are mixed. 0% is thermal only and
-    100% is High Sensitivity only.
+    100% is trails only.
 
   The colour bar adjusts the thermal picture underneath.
 
-**Frame persistence** (the ▾ on the High Sensitivity Mode tab) sets how many frames the Max Frame Interval and Sliding
-Subtraction filters use in High Sensitivity Mode (1–60; the default is
-5 / 5). Longer persistence gives longer, brighter trails. It changes the view
-straight away, and exports use it too. It doesn't change the scan, which
-always uses Window Average + Sliding Subtraction 5. It applies to every
-recording. To keep a change for next time, save it in **Settings**.
+**Trail persistence** (the ▾ on the Detection button) sets how many frames
+the Max Frame Interval and Sliding Subtraction filters use for the trails
+(1–60; the default is 5 / 5). Longer persistence gives longer, brighter
+trails. It changes the view straight away, and exports use it too. It
+doesn't change the scan, which always uses Window Average + Sliding
+Subtraction 5. It applies to every recording. To keep a change for next
+time, save it in **Settings**.
 
-**Palette**: pick White hot, Black hot, Iron, Rainbow, Lava or Arctic
-from the menu beside the Viewing Mode buttons. Exports and the PDF report
-use it too.
+**Palette & image** (the menu at the right of the Viewing Mode bar) holds
+the palette and the image clean-up.
 
-**Image clean-up**: two tick-boxes beside the palette, each with a Low /
-Medium / High strength.
+**Palette**: pick White hot, Black hot, Iron, Rainbow, Lava or Arctic.
+Exports and the PDF report use it too.
+
+**Image clean-up**: two tick-boxes, each with a Low / Medium / High
+strength.
 - **Detail enhancement** boosts local contrast, bringing out roof edges,
   vegetation and animals against smooth sky, even when one hot area takes up
-  most of the colour range. It applies to Thermal, Flight path and Blended.
+  most of the colour range. It applies to all three modes.
   Higher strengths also boost noise.
 - **Noise reduction** averages each pixel over recent frames, but only where
   nothing is moving, so the still background gets cleaner while bats stay
-  sharp. It applies to Thermal and Blended. High removes the most grain but
+  sharp. It applies to Default and Detection. High removes the most grain but
   takes a moment longer to settle after you jump to a new point.
 
-Neither applies to High Sensitivity Mode, so they're greyed out there.
 Exports and the PDF report use them too. **Neither ever changes the scan or
 which events are found.**
 
-Changes made in the Viewing Mode bar last until you close the program. Each
+Changes made in the Viewing Mode bar and its menus last until you close the program. Each
 recording opens with the defaults from **Settings > Viewing**. Click *Use the
 current view settings* there, then **Save settings**, to keep your current
 view as the default.
@@ -179,10 +200,8 @@ shown (anything above is the top colour). Drag the **bottom handle** to set
 the coldest value shown (anything below is the bottom colour). Narrowing
 the range boosts contrast on small temperature differences. You can also
 click a handle and use ↑/↓ (Shift for bigger steps). **Auto** sets the
-range for each frame automatically. Thermal and Flight path each keep their
-own range. High Sensitivity Mode always sets contrast automatically from
-each frame's highest and lowest values, so the colour bar is faded and
-stays still in that mode. Exported clips and stills use the range you set.
+range for each frame automatically. Each mode keeps its own range.
+Exported clips and stills use the range you set.
 
 Switching mode only changes what you see.
 

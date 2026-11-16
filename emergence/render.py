@@ -272,7 +272,7 @@ def safe_name(s: str) -> str:
 
 
 def export_event(src, ev, roi_points, outdir, stem, opts=None, progress=None) -> list[str]:
-    """The event pack: flight-path still and clip, review clip, entry frames."""
+    """The event pack: tracking still and clip, trails clip, detection still and clip, entry frames."""
     opts = opts or {}
     pad = int(opts.get("pad_s", 3) * src.fps)
     ws = max(0, ev["f0"] - pad)
@@ -312,7 +312,7 @@ def export_event(src, ev, roi_points, outdir, stem, opts=None, progress=None) ->
 
     if "path_clip" in want or "path_still" in want:
         pipe = Pipeline(**MODES["path"])
-        vw = VideoWriter(base + "_flightpath.mp4", (src.width, src.height), vfps,
+        vw = VideoWriter(base + "_tracking.mp4", (src.width, src.height), vfps,
                          opts.get("quality", 75)) if "path_clip" in want else None
         last = None
         for i in range(ws, we + 1):
@@ -324,28 +324,28 @@ def export_event(src, ev, roi_points, outdir, stem, opts=None, progress=None) ->
         if vw:
             vw.close(); files.append(vw.path)
         if "path_still" in want and last is not None:
-            p = base + "_flightpath.jpg"
+            p = base + "_tracking.jpg"
             cv2.imwrite(p, decorate(detail_enhance(to_u8(last[0], "raw", rng("path")), enh["dde"]), roi_points, label(last[1]), show_roi, show_time, pal),
                         [cv2.IMWRITE_JPEG_QUALITY, 95])
             files.append(p)
 
     if "review_clip" in want:
-        rngs = {**rngs, "review": None}   # High Sensitivity Mode always uses automatic contrast
+        rngs = {**rngs, "review": None}   # the trails clip always uses automatic contrast
         pipe = Pipeline(**mode_cfg("review", opts.get("filters")))
         for k in range(max(0, ws - pipe.preroll), ws):
             pipe.step(src.frame(k))
-        vw = VideoWriter(base + "_high-sensitivity.mp4", (src.width, src.height), vfps, opts.get("quality", 75))
+        vw = VideoWriter(base + "_trails.mp4", (src.width, src.height), vfps, opts.get("quality", 75))
         for i in range(ws, we + 1):
             vw.write(decorate(to_u8(pipe.step(src.frame(i)), "image", rng("review")), roi_points, label(i), show_roi, show_time, pal))
             tick()
         vw.close(); files.append(vw.path)
 
-    if "blend_clip" in want:   # Blended mode, with the blend type and opacity set in the app
+    if "blend_clip" in want:   # Detection mode, with the blend type and opacity set in the app
         br = Renderer(src)
         br.filters = clean_filters(opts.get("filters"))
         how = "crossfade" if opts.get("blend") == "crossfade" else "overlay"
         op = float(opts.get("opacity", 0.8))
-        vw = VideoWriter(base + f"_blended-{how}.mp4", (src.width, src.height), vfps, opts.get("quality", 75))
+        vw = VideoWriter(base + f"_detection-{how}.mp4", (src.width, src.height), vfps, opts.get("quality", 75))
         for i in range(ws, we + 1):
             vw.write(br.image(i, "blend", roi_points, show_roi=show_roi, show_time=show_time,
                               palette=pal, rng=rng("blend"), opacity=op, blend=how, enh=enh))
@@ -357,7 +357,7 @@ def export_event(src, ev, roi_points, outdir, stem, opts=None, progress=None) ->
         br.filters = clean_filters(opts.get("filters"))
         how = "crossfade" if opts.get("blend") == "crossfade" else "overlay"
         f = blend_still_frame(ev, how, opts.get("filters"), src.n_frames)
-        p = f"{base}_blended-{how}_frame{f}.jpg"
+        p = f"{base}_detection-{how}_frame{f}.jpg"
         cv2.imwrite(p, br.image(f, "blend", roi_points, window_start=ws, show_roi=show_roi, show_time=show_time,
                                 palette=pal, rng=rng("blend"), opacity=float(opts.get("opacity", 0.8)), blend=how, enh=enh),
                     [cv2.IMWRITE_JPEG_QUALITY, 95])

@@ -26,6 +26,24 @@ def _sidecar(path, ext):
     return path + ext
 
 
+def _merge_ranges(rs):
+    """Sorted, non-overlapping [first, last] frame ranges."""
+    out = []
+    for a, b in sorted([int(a), int(b)] for a, b in rs):
+        if out and a <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return out
+
+
+def _range_mask(rs, n):
+    m = np.zeros(n, bool)
+    for a, b in rs:
+        m[a:b + 1] = True
+    return m
+
+
 class Recording:
     """One .ats file with its ROI, activity trace and reviewed events."""
 
@@ -109,29 +127,91 @@ class Recording:
         return self.state.get("roi") or []
 
     def set_roi(self, pts):
-        self.state["roi"] = [[float(x), float(y)] for x, y in pts]
+        new = [[float(x), float(y)] for x, y in pts]
+        if self.state.get("scanned") and new != self.roi:
+            self.state["roi_changed"] = True   # the next part scan starts afresh
+        self.state["roi"] = new
         self.save()
 
     @property
     def filters(self) -> dict:
         return clean_filters(SETTINGS["filters"])
 
-    def run_scan(self, progress=None, should_stop=None):
+    def run_scan(self, progress=None, should_stop=None, ranges=None, fresh=False):
+        """Scan the whole recording, or only the given [first, last] frame
+        ranges (the play limits). A part scan updates those frames of an
+        earlier scan and keeps the rest; frames never scanned hold a flat
+        baseline, so no events are found there. fresh=True drops the earlier
+        scan first (Start over)."""
+        n = self.src.n_frames
         mask = roi_mask(self.roi, (self.src.height, self.src.width))
         if self.state.get("scan_id") != SCAN_ID:
             self.state.pop("level", None)   # an old level doesn't fit the new scan's values
-        act = scan(self.src, mask, progress, should_stop)
-        if len(act) < self.src.n_frames:
-            return False  # cancelled
+            fresh = True
+        if self.state.get("roi_changed"):
+            fresh = True   # the ROI was redrawn: values from the old ROI can't be kept
+        whole = not ranges
+        if whole:
+            ranges = [[0, n - 1]]
+        ranges = _merge_ranges([[max(0, int(a)), min(n - 1, int(b))] for a, b in ranges if int(b) >= int(a)])
+        if not ranges:
+            return False
+        total = sum(b - a + 1 for a, b in ranges)
+        if whole or fresh or self.activity is None or not self.state.get("scanned"):
+            act, done = np.zeros(n, np.float32), []
+        else:
+            act, done = self.activity.copy(), self.scanned_ranges
+        offset = 0
+        for a, b in ranges:
+            seg = scan(self.src, mask, (lambda d, t, o=offset: progress(o + d, total)) if progress else None,
+                       should_stop, start=a, stop=b)
+            if len(seg) < b - a + 1:
+                return False  # cancelled
+            act[a:b + 1] = seg
+            offset += b - a + 1
+        done = _merge_ranges(done + ranges)
+        real = _range_mask(done, n)
+        if not real.all():   # never-scanned frames: a flat line at the quiet baseline of the scanned part
+            act[~real] = float(np.percentile(act[real], 5))
         self.activity = act
         np.save(_sidecar(self.path, ".activity.npy"), act)
-        cut = self.end_cut
-        self.state["suggested_level"] = self._suggest(act[:cut] if cut else act)
+        self.state["scanned_ranges"] = done
+        self.state.pop("roi_changed", None)
+        self.state["suggested_level"] = self._suggest_scanned()
         self.state["units"] = self.src.units
         self.state["scanned"] = True
         self.state["scan_id"] = SCAN_ID
         self.redetect(self.state.get("level") or self.state["suggested_level"])
         return True
+
+    @property
+    def scanned_ranges(self):
+        """Frame ranges that have really been scanned ([[0, n-1]] for a whole scan)."""
+        if not self.state.get("scanned"):
+            return []
+        return self.state.get("scanned_ranges") or [[0, self.src.n_frames - 1]]
+
+    @property
+    def unscanned_ranges(self):
+        if not self.state.get("scanned"):
+            return []
+        out, at = [], 0
+        for a, b in self.scanned_ranges:
+            if a > at:
+                out.append([at, a - 1])
+            at = b + 1
+        if at <= self.src.n_frames - 1:
+            out.append([at, self.src.n_frames - 1])
+        return out
+
+    def _suggest_scanned(self):
+        """Suggested level from the scanned frames only, before the end cut."""
+        act, cut = self.activity, self.end_cut
+        real = _range_mask(self.scanned_ranges, len(act))
+        if cut:
+            real[cut:] = False
+        vals = act[real]
+        return self._suggest(vals if len(vals) else act)
 
     _KEEP = ("status", "cls", "note", "tracks", "suggestion", "notes", "exports")
 
@@ -172,8 +252,7 @@ class Recording:
         if self.activity is None:
             return
         old_sugg, level = self.state.get("suggested_level"), self.state.get("level")
-        cut = self.end_cut
-        self.state["suggested_level"] = self._suggest(self.activity[:cut] if cut else self.activity)
+        self.state["suggested_level"] = self._suggest_scanned()
         if level is None or (old_sugg is not None and abs(level - old_sugg) < 1e-6):
             level = self.state["suggested_level"]
         self.redetect(level)
@@ -310,6 +389,7 @@ class Recording:
                 "filters": self.filters,
                 "scan_outdated": bool(self.state.get("scanned")) and self.state.get("scan_id") != SCAN_ID,
                 "end_spike": self.end_spike_frame,
+                "unscanned": self.unscanned_ranges,
                 "comments": sorted(self.state.get("comments", []), key=lambda c: c["frame"])}
 
 

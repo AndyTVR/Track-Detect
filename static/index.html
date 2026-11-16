@@ -60,32 +60,7 @@
     </section>
 
     <section class="panel">
-      <h2>Region of interest</h2>
-      <p id="roi-status" class="small muted">Open a recording, then draw around the roost features.</p>
-      <div class="row wrap">
-        <button id="btn-roi-draw" class="btn sm" disabled>Draw ROI</button>
-        <button id="btn-roi-clear" class="btn sm" disabled>Clear</button>
-      </div>
-      <div id="roi-tools" class="roi-tools" hidden>
-        <div class="seg" role="group" aria-label="ROI shape">
-          <button class="mode" data-shape="poly" aria-pressed="true">Points</button>
-          <button class="mode" data-shape="rect" aria-pressed="false">Rectangle</button>
-          <button class="mode" data-shape="ellipse" aria-pressed="false">Circle</button>
-        </div>
-        <p id="roi-hint" class="small muted"></p>
-        <div class="row wrap">
-          <button id="btn-roi-undo" class="btn sm" hidden>Undo point</button>
-          <button id="btn-roi-cancel" class="btn sm" hidden>Cancel</button>
-          <button id="btn-roi-done" class="btn sm primary" hidden>Finish</button>
-        </div>
-      </div>
-      <label class="check"><input id="roi-all" type="checkbox"> Use this ROI for every listed file from the same folder</label>
-      <p class="small muted">Tip: keep the sky out, but leave a thin strip above the roofline.</p>
-    </section>
-
-    <section class="panel">
       <h2>Detection</h2>
-      <button id="btn-scan" class="btn sm primary" disabled>Scan recording</button>
       <label class="small" for="level-slider">Detection level <span id="level-unit" class="muted"></span></label>
       <div class="row small muted between"><span>More events</span><span>Fewer events</span></div>
       <input id="level-slider" type="range" min="0" max="1" step="0.01" value="0" disabled aria-label="Detection level">
@@ -110,39 +85,65 @@
       <div class="review-bar">
         <h2 class="h2-plain">Viewing Mode</h2>
         <div class="seg" role="group" aria-label="View">
-          <button class="mode" data-mode="raw" aria-pressed="true">Thermal <kbd>1</kbd></button>
+          <button class="mode" data-mode="raw" aria-pressed="true" title="The original footage, with no filters">Default</button>
+          <button class="mode" data-mode="path" aria-pressed="false" title="The whole route builds up across the event">Tracking</button>
           <span class="hsm-wrap">
-            <button class="mode hsm" data-mode="review" aria-pressed="false">High Sensitivity Mode <kbd>2</kbd></button><button
+            <button class="mode hsm" data-mode="blend" aria-pressed="false" title="The thermal picture with moving animals shown as bright trails">Detection</button><button
               id="btn-persist" class="mode caret" type="button" aria-haspopup="true" aria-expanded="false"
-              aria-controls="persist-menu" title="Frame persistence settings" data-for="review">▾</button>
-            <div id="persist-menu" class="persist-menu" role="dialog" aria-label="Frame persistence" hidden>
-              <span class="small strong">Frame persistence</span>
+              aria-controls="persist-menu" title="Trail persistence settings" data-for="blend">▾</button>
+            <div id="persist-menu" class="persist-menu" role="dialog" aria-label="Trail persistence" hidden>
+              <span class="small strong">Trail persistence</span>
               <label class="small">Max frame interval <span><input id="f-mfi" type="number" min="1" max="60" step="1" value="5" class="num sm"> frames</span></label>
               <label class="small">Sliding subtraction <span><input id="f-ss" type="number" min="1" max="60" step="1" value="5" class="num sm"> frames</span></label>
               <button id="btn-f-reset" class="btn sm" type="button">Reset to 5 / 5</button>
-              <span class="small muted">Used by High Sensitivity Mode and exports. Scanning always uses Window Average + Sliding Subtraction 5.</span>
+              <span class="small muted">Used by Detection mode and exports. Scanning always uses Window Average + Sliding Subtraction 5.</span>
             </div>
           </span>
-          <button class="mode" data-mode="path" aria-pressed="false">Flight path <kbd>3</kbd></button>
-          <button class="mode" data-mode="blend" aria-pressed="false">Blended <kbd>4</kbd></button>
         </div>
-        <label class="small pal">Palette <select id="palette" aria-label="Colour palette"></select></label>
-        <span class="pal enh" id="enh-wrap" title="Image clean-up for viewing and exports. The scan is never affected.">
-          <label class="check small"><input id="dde-on" type="checkbox"> Detail enhancement</label>
-          <select id="dde-level" aria-label="Detail enhancement strength" disabled><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High</option></select>
-          <label class="check small"><input id="tnr-on" type="checkbox"> Noise reduction</label>
-          <select id="tnr-level" aria-label="Noise reduction strength" disabled><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High</option></select>
-        </span>
         <span class="pal" id="opacity-wrap" hidden>
           <label class="small pal" title="Overlay lays the trails over the thermal picture. Crossfade mixes the two whole pictures.">Blend
             <select id="blend" aria-label="Blend type"><option value="overlay" selected>Overlay</option><option value="crossfade">Crossfade</option></select></label>
           <label class="small pal" id="opacity-label">Opacity
-            <select id="opacity" aria-label="High Sensitivity opacity">
+            <select id="opacity" aria-label="Trail opacity">
               <option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option>
               <option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option>
               <option value="0.8" selected>80%</option><option value="0.9">90%</option><option value="1">100%</option>
             </select></label>
         </span>
+        <span class="img-wrap">
+          <button id="btn-image" class="btn sm" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="image-menu">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2a10 10 0 1 0 0 20c1 0 1.7-.8 1.7-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.8-1.7 1.7-1.7H17a5 5 0 0 0 5-5C22 6 17.5 2 12 2z"/></svg>
+            Palette &amp; image <span aria-hidden="true">▾</span></button>
+          <div id="image-menu" class="persist-menu image-menu" role="dialog" aria-label="Palette and image clean-up" hidden>
+            <label class="small">Palette <select id="palette" aria-label="Colour palette"></select></label>
+            <span class="enh" id="enh-wrap" title="Image clean-up for viewing and exports. The scan is never affected.">
+              <span class="enh-row"><label class="check small"><input id="dde-on" type="checkbox"> Detail enhancement</label>
+                <select id="dde-level" aria-label="Detail enhancement strength" disabled><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High</option></select></span>
+              <span class="enh-row"><label class="check small"><input id="tnr-on" type="checkbox"> Noise reduction</label>
+                <select id="tnr-level" aria-label="Noise reduction strength" disabled><option value="1">Low</option><option value="2" selected>Medium</option><option value="3">High</option></select></span>
+            </span>
+            <span class="small muted">Image clean-up applies to viewing and exports. The scan is never affected.</span>
+          </div>
+        </span>
+      </div>
+      <div class="roi-bar" role="toolbar" aria-label="Region of interest">
+        <span class="small strong">Region of interest</span>
+        <div class="shape-pick" role="group" aria-label="Draw an ROI shape">
+          <button class="shape-btn" data-shape="poly" aria-pressed="false" disabled title="Polygon: click round the roost, right-click to finish" aria-label="Draw a polygon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l7-5 9 4-2 11-11 1z"/><circle cx="4" cy="9" r="1.6" fill="currentColor"/><circle cx="11" cy="4" r="1.6" fill="currentColor"/><circle cx="20" cy="8" r="1.6" fill="currentColor"/><circle cx="18" cy="19" r="1.6" fill="currentColor"/><circle cx="7" cy="20" r="1.6" fill="currentColor"/></svg></button>
+          <button class="shape-btn" data-shape="rect" aria-pressed="false" disabled title="Rectangle: drag to draw, drag a handle to resize, right-click to finish" aria-label="Draw a rectangle">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="1"/></svg></button>
+          <button class="shape-btn" data-shape="ellipse" aria-pressed="false" disabled title="Circle or oval: drag to draw, drag a handle to resize, right-click to finish" aria-label="Draw a circle">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="7"/></svg></button>
+        </div>
+        <span id="roi-status" class="small muted">Open a recording, then pick a shape to draw round the roost.</span>
+        <span class="roi-acts">
+          <button id="btn-roi-undo" class="btn sm" hidden>Undo point</button>
+          <button id="btn-roi-cancel" class="btn sm" hidden>Cancel</button>
+          <button id="btn-roi-done" class="btn sm primary" hidden>Finish</button>
+          <button id="btn-roi-clear" class="btn sm" disabled>Clear ROI</button>
+        </span>
+        <label class="check small" title="Tip: keep the sky out, but leave a thin strip above the roofline."><input id="roi-all" type="checkbox"> Use for every file from this folder</label>
       </div>
       <div class="stage" id="stage">
         <img id="view" alt="Current frame">
@@ -150,7 +151,10 @@
         <div class="badges">
           <span id="badge-frame" class="badge mono"></span>
         </div>
-        <div id="empty" class="empty">Add recordings and choose one to start.</div>
+        <div id="empty" class="empty"><p id="empty-msg">No recording loaded.</p>
+          <button id="btn-empty-add" class="btn primary big" type="button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            Add Recording</button></div>
         <div id="cbar" class="cbar" hidden>
           <span id="cb-hi" class="cb-val mono"></span>
           <div id="cb-track" class="cb-track" title="Drag the top handle to set the hottest visible value, the bottom handle for the coldest">
@@ -173,6 +177,7 @@
             <button id="btn-play" class="icon play" aria-label="Play" title="Play / pause (Space)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l11-7z"/></svg></button>
             <button id="btn-step" class="icon" aria-label="Forward one frame" title="Forward one frame (→)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zM10 6l8 6-8 6z"/></svg></button>
             <button id="btn-end" class="icon" aria-label="Go to end" title="Go to end (End)"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 5h2v14h-2zM10 5v14l7-7zM3 5v14l7-7z"/></svg></button>
+            <label class="check small lock" id="loop-wrap" title="Select an event to use this"><input id="in-window" type="checkbox" checked> Lock Play Limits to Current Event</label>
             <label class="small speed">Speed
               <select id="speed"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
             </label>
@@ -180,17 +185,24 @@
           <div class="tgroup" role="group" aria-label="Events">
             <button id="btn-prev" class="btn sm" aria-label="Previous event">‹ Prev event</button>
             <button id="btn-next" class="btn sm" aria-label="Next event">Next event ›</button>
-            <label class="check small" id="loop-wrap"><input id="in-window" type="checkbox" checked> Stay in event window</label>
           </div>
         </div>
-        <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Frame">
+        <div class="scrub-wrap" id="scrub-wrap">
+          <div class="lim-fill" id="lim-fill"></div>
+          <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Frame">
+          <button id="lim-a" class="lim-h start" type="button" aria-label="Play start limit" title="Drag to set where playback starts"></button>
+          <button id="lim-b" class="lim-h end" type="button" aria-label="Play end limit" title="Drag to set where playback stops"></button>
+        </div>
+        <div class="row between small lim-row"><span id="lim-label" class="mono muted"></span><button id="btn-lim-reset" class="btn xs" type="button" hidden>Reset play limits</button></div>
       </div>
     </section>
 
     <section class="panel plot-panel" id="plot-panel">
       <div class="row wrap between">
         <div class="row wrap">
-          <h2 class="h2-plain">Activity in ROI</h2>
+          <h2 class="h2-plain">Event Log</h2>
+          <button id="btn-scan" class="btn sm primary" disabled>Scan recording</button>
+          <button id="btn-scan-lim" class="btn sm" disabled title="Scan only between the play limits set on the progress bar">Scan play limits</button>
           <span id="plot-range" class="mono small muted"></span>
         </div>
         <div class="row wrap">
@@ -283,11 +295,11 @@
     <p id="exp-sub" class="small muted"></p>
     <fieldset class="items">
       <legend class="small muted">Include</legend>
-      <label class="check"><input type="checkbox" name="items" value="path_still" checked> Flight path still <span class="muted small">(JPEG)</span></label>
-      <label class="check"><input type="checkbox" name="items" value="path_clip" checked> Flight path clip <span class="muted small">(MP4)</span></label>
-      <label class="check"><input type="checkbox" name="items" value="review_clip" checked> High sensitivity clip <span class="muted small">(MP4)</span></label>
-      <label class="check"><input type="checkbox" name="items" value="blend_still" checked> Blended still <span class="muted small exp-blend-jpg">(JPEG)</span></label>
-      <label class="check"><input type="checkbox" name="items" value="blend_clip" checked> Blended clip <span id="exp-blend-note" class="muted small">(MP4)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="path_still" checked> Tracking still <span class="muted small">(JPEG)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="path_clip" checked> Tracking clip <span class="muted small">(MP4)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="review_clip" checked> Trails clip, no thermal background <span class="muted small">(MP4)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="blend_still" checked> Detection still <span class="muted small exp-blend-jpg">(JPEG)</span></label>
+      <label class="check"><input type="checkbox" name="items" value="blend_clip" checked> Detection clip <span id="exp-blend-note" class="muted small">(MP4)</span></label>
       <label class="check"><input type="checkbox" name="items" value="entry_frames" checked> Frame where each animal first appears <span class="muted small">(JPEG)</span></label>
     </fieldset>
     <div class="grid2">
@@ -368,10 +380,10 @@
             <label>Playback speed <select id="st-speed"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
             <label>Detail enhancement <select id="st-dde"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3">High</option></select></label>
             <label>Noise reduction <select id="st-tnr"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3">High</option></select></label>
-            <label>Blended: blend type <select id="st-blend"><option value="overlay">Overlay</option><option value="crossfade">Crossfade</option></select></label>
-            <label>Blended: opacity <select id="st-opacity"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1">100%</option></select></label>
-            <label>High Sensitivity: Max frame interval (frames) <input id="st-mfi" type="number" min="1" max="60" step="1"></label>
-            <label>High Sensitivity: Sliding subtraction (frames) <input id="st-ss" type="number" min="1" max="60" step="1"></label>
+            <label>Detection: blend type <select id="st-blend"><option value="overlay">Overlay</option><option value="crossfade">Crossfade</option></select></label>
+            <label>Detection: opacity <select id="st-opacity"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1">100%</option></select></label>
+            <label>Detection trails: Max frame interval (frames) <input id="st-mfi" type="number" min="1" max="60" step="1"></label>
+            <label>Detection trails: Sliding subtraction (frames) <input id="st-ss" type="number" min="1" max="60" step="1"></label>
           </div>
         </section>
 
@@ -393,11 +405,11 @@
           <label>Default export folder
             <span class="row"><input id="st-folder" type="text" placeholder="Blank = an 'exports' folder beside each recording"><button type="button" id="st-folder-pick" class="btn sm">Choose…</button></span></label>
           <fieldset class="st-items"><legend>Ticked by default in the export dialog</legend>
-            <label class="check"><input type="checkbox" name="st-items" value="path_still"> Flight path still</label>
-            <label class="check"><input type="checkbox" name="st-items" value="path_clip"> Flight path clip</label>
-            <label class="check"><input type="checkbox" name="st-items" value="review_clip"> High sensitivity clip</label>
-            <label class="check"><input type="checkbox" name="st-items" value="blend_still"> Blended still</label>
-            <label class="check"><input type="checkbox" name="st-items" value="blend_clip"> Blended clip</label>
+            <label class="check"><input type="checkbox" name="st-items" value="path_still"> Tracking still</label>
+            <label class="check"><input type="checkbox" name="st-items" value="path_clip"> Tracking clip</label>
+            <label class="check"><input type="checkbox" name="st-items" value="review_clip"> Trails clip</label>
+            <label class="check"><input type="checkbox" name="st-items" value="blend_still"> Detection still</label>
+            <label class="check"><input type="checkbox" name="st-items" value="blend_clip"> Detection clip</label>
             <label class="check"><input type="checkbox" name="st-items" value="entry_frames"> Frame where each animal first appears</label>
           </fieldset>
           <div class="grid2">
@@ -450,11 +462,11 @@
           <table class="keys">
             <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
             <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back / forward one frame (hold Shift for 1 s)</td></tr>
-            <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start / end of the event window</td></tr>
+            <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Go to the start / end play limit</td></tr>
             <tr><td><kbd>n</kbd> <kbd>p</kbd></td><td>Next / previous event</td></tr>
-            <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Thermal, High Sensitivity, Flight path, Blended</td></tr>
+            <tr><td><kbd>1</kbd>–<kbd>3</kbd></td><td>Default, Tracking, Detection viewing modes</td></tr>
             <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Add the comment you're typing</td></tr>
-            <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> / <kbd>Esc</kbd></td><td>While drawing an ROI: finish / remove last point / cancel</td></tr>
+            <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> / <kbd>Esc</kbd></td><td>While drawing an ROI: finish / remove last point / cancel (right-click also finishes)</td></tr>
           </table>
         </section>
       </div>

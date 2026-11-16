@@ -318,7 +318,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.09-startover"   # must match static/app.js
+APP_VERSION = "2026.11.16-layout"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -361,13 +361,15 @@ def set_roi():
 def start_scan():
     body = request.json or {}
     targets = [row["path"] for row in list_files()] if body.get("all") else [state["current"]]
+    # "a" and "b": scan only those frames of the current recording (the play limits)
+    part = None if body.get("all") or body.get("a") is None else [[int(body["a"]), int(body["b"])]]
     out = []
     for p in targets:
         r = rec(p)
         if not r.roi:
             continue
-        out.append(jobs.submit(f"Scan {os.path.basename(p)}",
-                               lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop)}))
+        label = f"Scan {os.path.basename(p)}" + (" (play limits)" if part else "")
+        out.append(jobs.submit(label, lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop, ranges=part)}))
     return jsonify(jobs=out)
 
 
@@ -376,11 +378,12 @@ def start_over():
     """Undo all decisions on the current recording, then scan it again."""
     b = request.json or {}
     r = rec()
+    part = r.scanned_ranges if r.unscanned_ranges else None   # a part scan is redone over the same frames
     r.start_over(delete_comments=bool(b.get("delete_comments")), reset_level=bool(b.get("reset_level", True)))
     out = {"recording": r.summary(), "jobs": []}
     if r.roi:
         out["jobs"].append(jobs.submit(f"Scan {os.path.basename(r.path)} again",
-                                       lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop)}))
+                                       lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop, ranges=part, fresh=True)}))
     return jsonify(out)
 
 
@@ -514,7 +517,7 @@ def get_filters():
 @app.post("/api/filters")
 def set_filters():
     """Frame persistence for Max Frame Interval and Sliding Subtraction,
-    used by the High Sensitivity view, exports and the next scan."""
+    used by the Detection view's trails, exports and the next scan."""
     import json
     b = request.json or {}
     SETTINGS["filters"] = clean_filters({**SETTINGS["filters"], **{k: b[k] for k in ("mfi", "ss") if k in b}})

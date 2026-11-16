@@ -93,28 +93,39 @@ def roi_bbox(mask: np.ndarray | None, shape):
 
 
 # ---------------------------------------------------------------- scan
-def scan(src, mask, progress=None, should_stop=None, mode="scan", filters=None) -> np.ndarray:
-    """Max value inside the ROI for every frame, through the Scan filters.
+def scan(src, mask, progress=None, should_stop=None, mode="scan", filters=None,
+         start=0, stop=None) -> np.ndarray:
+    """Max value inside the ROI for every frame from start to stop (inclusive;
+    default the whole recording), through the Scan filters.
 
     This is the Temporal Plot (All ROIs without image, Maximum) from the
-    manual, computed in one pass."""
+    manual, computed in one pass. A part-way start reads a few frames before
+    it first, so the filters are fully formed at the first frame returned."""
     n = src.n_frames
+    stop = n - 1 if stop is None else min(int(stop), n - 1)
+    start = max(0, min(int(start), stop))
     x0, y0, x1, y1 = roi_bbox(mask, (src.height, src.width))
     sub = mask[y0:y1, x0:x1] if mask is not None else None
     pipe = Pipeline(**mode_cfg(mode, filters))
-    out = np.zeros(n, np.float32)
-    for i in range(n):
+    m = stop - start + 1
+    out = np.zeros(m, np.float32)
+    for i in range(max(0, start - pipe.preroll), stop + 1):
+        k = i - start
         if should_stop and should_stop():
-            return out[:i]
+            return out[:max(0, k)]
         try:
             f = src.frame(i, crop=(x0, y0, x1, y1))
         except TypeError:  # sources without crop support
             f = src.frame(i)[y0:y1, x0:x1]
         y = pipe.step(f)
-        out[i] = float(y[sub].max()) if sub is not None else float(y.max())
-        if progress and (i % 200 == 0 or i == n - 1):
-            progress(i + 1, n)
-    out[: pipe.preroll] = np.median(out[pipe.preroll : pipe.preroll + 50]) if n > pipe.preroll + 1 else 0
+        if k < 0:
+            continue   # warming up the filters
+        out[k] = float(y[sub].max()) if sub is not None else float(y.max())
+        if progress and (k % 200 == 0 or i == stop):
+            progress(k + 1, m)
+    if start == 0:
+        p = pipe.preroll
+        out[:p] = np.median(out[p:p + 50]) if m > p + 1 else 0
     return out
 
 

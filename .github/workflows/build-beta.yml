@@ -86,6 +86,8 @@ jobs:
             --copyright="Thermal Vision Ecology" `
             --include-package=emergence `
             --include-package-data=reportlab `
+            --include-package=docx `
+            --include-package-data=docx `
             --include-data-dir=build/static=static `
             --include-data-files=build/beta.json=beta.json `
             --include-data-files=LICENCE-BETA.txt=LICENCE-BETA.txt `

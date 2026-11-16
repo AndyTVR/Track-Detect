@@ -376,3 +376,30 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .cf-warn ul{margin:6px 0 0 18px;padding:0;display:flex;flex-direction:column;gap:3px}
 .cf-warn ul:empty{display:none}
 .small.ok{color:var(--accent)}
+/* Event Log: y-axis height bar beside the plot */
+.plot-row{display:flex;gap:6px;align-items:stretch}
+.plot-row .plot{flex:1;min-width:0}
+.cap-bar{position:relative;flex:none;width:22px;cursor:ns-resize;touch-action:none}
+.cap-rail{position:absolute;left:9px;width:4px;top:34px;bottom:8px;border-radius:2px;background:var(--line-strong)}
+.cap-fill{position:absolute;left:9px;width:4px;top:34px;bottom:8px;border-radius:2px;background:var(--accent);opacity:.75}
+.cap-h{position:absolute;left:1px;top:34px;width:20px;height:12px;margin-top:-6px;padding:0;border-radius:4px;background:var(--accent);border:2px solid var(--accent-ink);cursor:ns-resize}
+.cap-h:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.cap-bar.off{opacity:.35;cursor:default}
+.cap-bar.off .cap-h{cursor:default}
+.dim{opacity:.5}
+/* Settings > Custom filters: advanced */
+.adv-tag{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:var(--warn-bg);color:var(--warn-text);border:1px solid var(--warn);vertical-align:middle}
+.adv-note{border:1px solid var(--warn);background:var(--warn-bg);color:var(--text);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45}
+.rp-format{border:1px solid var(--line);border-radius:10px;padding:8px 12px 10px;display:flex;flex-direction:column;gap:6px;margin:0}
+/* Recordings grouped by camera */
+.files{gap:10px}
+.cam-group{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.cam-head{display:flex;align-items:center;gap:6px;color:var(--soft)}
+.cam-name{flex:1;min-width:0;height:28px;padding:0 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-weight:700;font-size:13px}
+.cam-name:hover,.cam-name:focus{border-color:var(--line);background:var(--panel)}
+.cam-warn{border:1px solid var(--warn);background:var(--warn-bg);color:var(--warn-text);border-radius:8px;padding:6px 8px;line-height:1.35}
+.cam-move{flex:none;width:72px;height:30px;padding:0 4px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--soft);font-size:12px;align-self:center}
+.files{max-height:52vh}
+.cam-sub{display:flex;align-items:center;justify-content:space-between;gap:6px;padding-left:22px}
+.cam-move{width:30px;padding:0;color:transparent;cursor:pointer;background:var(--panel2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7'/%3E%3C/svg%3E") center/16px no-repeat;-webkit-appearance:none;appearance:none}
+.cam-move option{color:var(--text);background:var(--panel)}

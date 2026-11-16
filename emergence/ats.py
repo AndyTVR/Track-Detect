@@ -52,7 +52,8 @@ def _last_sunday(year: int, month: int) -> _dt.date:
 
 
 # Set from the Settings tab: time zone shown ("uk" or "utc"), camera clock
-# correction in seconds, and temperature unit ("C" or "F").
+# correction in seconds, and what pixel values are shown as: "C" or "F"
+# (temperature, when the file has calibration) or "counts" (the raw values).
 TIME = {"zone": "uk", "offset_s": 0.0}
 TEMP = {"unit": "C"}
 
@@ -155,21 +156,29 @@ class ATSFile:
         return None
 
     def _calibration(self):
-        """Return (unit label, function counts->°C or None)."""
+        """Return (unit label, function counts->°C or None). Also sets
+        count_slope (°C per count; None without calibration), so values can
+        be converted between counts and temperature."""
+        self.count_slope = None
         ranges = self.xml.get("ranges", {})
         src = self.xml.get("source_unit", "")
+        to_c = None
         if "Counts" in ranges and "TemperatureC" in ranges:
             (k0, k1), (c0, c1) = ranges["Counts"], ranges["TemperatureC"]
             if k1 != k0:
                 slope = (c1 - c0) / (k1 - k0)
-                return self._temp_unit(lambda a: (a.astype(np.float32) - k0) * slope + c0)
-        if "Temperature" in src:
+                self.count_slope = float(slope)
+                to_c = lambda a: (a.astype(np.float32) - k0) * slope + c0
+        if to_c is None and "Temperature" in src:
             # Radiometric cameras store temperature directly: 0.01 K per count.
             sample = self.raw(min(self.n_frames - 1, 2))[::16, ::16]
             med = float(np.median(sample))
             if 20000 < med < 40000:
-                return self._temp_unit(lambda a: a.astype(np.float32) / 100.0 - 273.15)
-        return "counts", None
+                self.count_slope = 0.01
+                to_c = lambda a: a.astype(np.float32) / 100.0 - 273.15
+        if to_c is None or TEMP["unit"] == "counts":   # Settings > Time & units: show raw counts
+            return "counts", None
+        return self._temp_unit(to_c)
 
     @staticmethod
     def _temp_unit(to_c):

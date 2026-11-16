@@ -46,21 +46,33 @@ clicking **Quit** in the top bar, closes it.
 1. **Add recordings.** Click **Add recordings** in the top bar, or **Add
    Recording** in the middle of the empty picture. Choose individual `.ats`
    files, a whole survey folder, or paste paths, one per line. Remove a file
-   from the list with its **×**. Each file shows its status.
+   from the list with its **×**. Each file shows its times and status.
+
+   **Cameras**: the list groups recordings by camera. Files from the same
+   folder start in the same camera ("Camera 1", "Camera 2" …).
+   - Click a camera's name to rename it, for example "Front elevation".
+   - The **⤢** button beside a file moves it to another camera, or to a new
+     one.
+   - **Scan camera** scans every recording from that camera, each with its
+     own ROIs.
+   - Recordings from one camera on one night shouldn't overlap in time. If
+     two do, the camera shows an amber warning naming them, so you can check
+     each is under the right camera.
 2. **Draw the region of interest (ROI).** The ROI toolbar sits just under
    the Viewing Mode buttons. Click the picture of the shape you want:
    - **Polygon**: click round the roost features. A line follows your cursor
      from the last point, with a dashed line back to the start. Backspace
      removes the last point.
-   - **Rectangle** or **Circle**: a shape appears in the middle of the
-     picture. Drag the middle to move it, drag an edge or corner handle to
-     resize it, or drag on the picture to draw a new one.
+   - **Rectangle** or **Circle**: drag on the picture to draw it, drag the
+     middle to move it, or drag an edge or corner handle to resize it. It's
+     saved as soon as you let go, with no need to finish it. To adjust it
+     later, pick the shape again.
 
-   **Right-click** on the picture to finish (or press Enter, or click
-   **Finish**). An open polygon is joined back to its first point
+   For a polygon, **right-click** on the picture to finish (or press Enter,
+   or click **Finish**). An open polygon is joined back to its first point
    automatically. **Cancel** (Esc) leaves the current ROI as it is. Keep the
    sky out, but leave a thin strip above the roofline. If the camera didn't
-   move, tick *Use for every file from this folder*.
+   move, tick *Use for every file from this camera*.
 
    **Several ROIs**: the button with the coloured dot (for example
    **● ROI 1 ▾**) opens the ROI list.
@@ -74,12 +86,12 @@ clicking **Quit** in the top bar, closes it.
    the picture.
 3. **Scan.** The scan buttons sit beside the **Event Log** heading:
    - The **▾** on the Scan button lists your ROIs. Tick the ones to scan
-     (Scan recording, Scan play limits and Analyse all listed use this). All
-     the ticked ROIs are scanned in one pass, so extra ROIs barely add time.
-   - **Scan recording** scans the whole recording. **Analyse all listed**
-     in the top bar scans every listed file.
-   - **Scan play limits** scans only between the two blue play-limit
-     markers on the progress bar (see step 5). Use it to scan just the
+     (Scan Footage, Scan camera and Analyse all listed use this). All the
+     ticked ROIs are scanned in one pass, so extra ROIs barely add time.
+   - **Scan Footage** scans the whole recording. **Analyse all listed** in
+     the top bar scans every listed file.
+   - Tick **Play limits only** before Scan Footage to scan only between the
+     two blue play-limit markers on the progress bar (see step 5). Use it to scan just the
      emergence period of a long recording. Parts not scanned are hatched
      grey and marked "Not scanned" on the plot, and no events are found
      there. Scanning another stretch later adds to it. If you redraw the
@@ -110,12 +122,12 @@ clicking **Quit** in the top bar, closes it.
      recording, or drag the shaded bar to slide that window along.
    - **Y-axis**: stops one tall spike flattening the others. These options
      only change the view, not which events are found.
-     - **Auto** (default) cuts off spikes more than twice the height of the
-       next one down, marked ▲, so the rest stay clear. It looks at every
-       spike in view, including ones below the line.
+     - **Linear** (default) automatically cuts off spikes more than twice
+       the height of the next one down, marked ▲, so the rest stay clear.
+       To change it, drag the handle on the **bar left of the plot**: down
+       cuts off more, the top shows full height. **Back to automatic**
+       returns to the automatic height.
      - **Log** squeezes tall spikes down so small ones stay visible.
-     - **Full height** shows everything as it is.
-     - The slider sets your own cap.
    - Use **Enlarge** for a bigger plot.
 5. **Review each event.** Click a marker or event card. The app jumps to the
    event and plays within a window 3 s either side. Use the controls under
@@ -148,9 +160,8 @@ clicking **Quit** in the top bar, closes it.
 6. **Add comments.** Each event card lists its comments underneath. In the
    selected event, type in its comment box and click **Add comment** (or
    press Ctrl + Enter). The comment is pinned to the current moment, or to
-   the start of the event if you're outside its window. Comments at other
-   times go in the **Other comments** panel. Click a comment to jump to it,
-   or × to delete it.
+   the start of the event if you're outside its window. Click a comment to
+   jump to it, or × to delete it.
 7. **Export event pack.** One click saves these files to `exports\`
    beside the recording:
    - the tracking still
@@ -165,6 +176,11 @@ clicking **Quit** in the top bar, closes it.
    **Save events CSV** writes a table of events for the report, with their
    comments. If there are any comments, it also writes `<name>_comments.csv`
    listing every comment with its time.
+
+   **Create report** makes the survey report: a summary, the methodology,
+   the activity plot, the ROIs, a table of events, and each event with its
+   decision, classification, comments and stills. Choose **PDF** (ready to
+   send) or **Word document (.docx)** (to edit before sending).
 
 The **Viewing Mode** bar has four modes (keys `1`–`4`):
 - **Default**: the plain thermal picture, with no filters.
@@ -248,13 +264,13 @@ Settings are saved in `settings.json` in the program folder.
 |---|---|
 | Appearance | Colour scheme (Forest, the Thermal Vision Ecology greens, or Ocean, Teal, Heather, Slate) and Dark / Light mode. Changes preview straight away. |
 | Viewing | The palette, detail enhancement, noise reduction, blend type and opacity, playback speed and frame persistence each recording opens with. *Use the current view settings* copies what's on screen now. |
-| Custom filters | Create, name, change and delete the filters for the Custom viewing mode, with warnings when filters conflict. |
+| Custom filters | An advanced option: read the manual first. Create, name, change and delete the filters for the Custom viewing mode, with warnings when filters conflict. |
 | Detection | Suggested-level sensitivity (Low = fewer events, High = more), merge gap, shortest event kept, and the review window either side of an event. Changing these re-finds events straight away. Your decisions and comments are kept. *Reset detection to recommended* undoes them. |
 | Exports | Default export folder, which items are ticked, overlays, timestamp text size, file-name order, video quality and slow-motion export (½ or ¼ speed). |
-| Time & units | °C or °F, UK time or UTC, and a camera clock correction in seconds if a camera's clock was wrong. It applies to everything shown, exported and reported. Switching °C/°F converts scans already done; no rescan needed. |
+| Time & units | Pixel values as temperature or raw counts (the colour bar, plot, level and exports follow it; scanned recordings are converted), °C or °F, UK time or UTC, and a camera clock correction in seconds if a camera's clock was wrong. It applies to everything shown, exported and reported. Switching °C/°F converts scans already done; no rescan needed. |
 | Classifications | Your own list for the Classification menu, for example species groups. |
 | Review | Jump to the next unreviewed event after Confirm / Reject. Start playing when an event is selected. |
-| Report details | Company, contact, analyst and camera for PDF reports. |
+| Report details | Company, contact, analyst and camera for reports. |
 | Shortcuts | A list of keyboard shortcuts. |
 
 At the bottom of the dialog:

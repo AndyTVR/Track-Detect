@@ -14,6 +14,7 @@ error_log.txt
 program_log.txt
 build_log.txt
 beta_state.json
+cameras.json
 window/
 # recordings and their sidecars never belong in the repository
 *.ats

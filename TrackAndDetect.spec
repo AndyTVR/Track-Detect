@@ -12,6 +12,9 @@ datas += d; binaries += b; hiddenimports += h
 # PDF reports: reportlab's fonts and the modules it loads on demand
 datas += collect_data_files("reportlab")
 hiddenimports += collect_submodules("reportlab")
+# Word reports: python-docx and its blank document template
+datas += collect_data_files("docx")
+hiddenimports += collect_submodules("docx")
 
 # the app imports these inside functions
 hiddenimports += ["emergence.report", "emergence.settings", "emergence.render", "emergence.analysis",

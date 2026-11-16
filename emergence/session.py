@@ -93,10 +93,9 @@ class Recording:
         return {}
 
     def _sync_units(self):
-        """If this recording was scanned in °C and the Settings tab now says °F
-        (or the other way round), convert the stored scan, level and peaks
-        instead of asking for a rescan. Scan values are temperature
-        differences, so only the scale changes."""
+        """If this recording was scanned in one unit (°C, °F or raw counts) and
+        the Settings tab now says another, convert the stored scan, level and
+        peaks instead of asking for a rescan."""
         was, now = self.state.get("units"), self.src.units
         if was is None:
             if self.state.get("scanned"):
@@ -104,9 +103,16 @@ class Recording:
                 was = self.state["units"]
             else:
                 return
-        if was == now or {was, now} != {"°C", "°F"}:
+        if was == now:
             return
-        k = 1.8 if now == "°F" else 1 / 1.8
+        # scan values are differences, so only the scale changes: work out
+        # the factor through °C (counts need the file's calibration)
+        slope = getattr(self.src, "count_slope", None)
+        to_c = {"°C": 1.0, "°F": 1 / 1.8, "counts": slope}
+        from_c = {"°C": 1.0, "°F": 1.8, "counts": (1 / slope) if slope else None}
+        if to_c.get(was) is None or from_c.get(now) is None:
+            return
+        k = to_c[was] * from_c[now]
         if self.acts:
             self.acts = {rid: (a * k).astype(np.float32) for rid, a in self.acts.items()}
             self._save_activity()

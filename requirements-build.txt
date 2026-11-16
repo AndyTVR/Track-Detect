@@ -4,6 +4,7 @@ opencv-python-headless>=4.10
 flask>=3.0
 imageio-ffmpeg>=0.5
 reportlab>=4.0
+python-docx>=1.1
 pillow>=10.0
 nuitka>=2.7,<3
 ordered-set

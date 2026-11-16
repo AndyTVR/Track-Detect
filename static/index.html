@@ -137,9 +137,9 @@
         <div class="shape-pick" role="group" aria-label="Draw an ROI shape">
           <button class="shape-btn" data-shape="poly" aria-pressed="false" disabled title="Polygon: click round the roost, right-click to finish" aria-label="Draw a polygon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l7-5 9 4-2 11-11 1z"/><circle cx="4" cy="9" r="1.6" fill="currentColor"/><circle cx="11" cy="4" r="1.6" fill="currentColor"/><circle cx="20" cy="8" r="1.6" fill="currentColor"/><circle cx="18" cy="19" r="1.6" fill="currentColor"/><circle cx="7" cy="20" r="1.6" fill="currentColor"/></svg></button>
-          <button class="shape-btn" data-shape="rect" aria-pressed="false" disabled title="Rectangle: drag to draw, drag a handle to resize, right-click to finish" aria-label="Draw a rectangle">
+          <button class="shape-btn" data-shape="rect" aria-pressed="false" disabled title="Rectangle: drag to draw; saved when you let go" aria-label="Draw a rectangle">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="1"/></svg></button>
-          <button class="shape-btn" data-shape="ellipse" aria-pressed="false" disabled title="Circle or oval: drag to draw, drag a handle to resize, right-click to finish" aria-label="Draw a circle">
+          <button class="shape-btn" data-shape="ellipse" aria-pressed="false" disabled title="Circle or oval: drag to draw; saved when you let go" aria-label="Draw a circle">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="7"/></svg></button>
         </div>
         <span id="roi-status" class="small muted">Open a recording, then pick a shape to draw round the roost.</span>
@@ -149,7 +149,7 @@
           <button id="btn-roi-done" class="btn sm primary" hidden>Finish</button>
           <button id="btn-roi-clear" class="btn sm" disabled>Clear ROI</button>
         </span>
-        <label class="check small" title="Tip: keep the sky out, but leave a thin strip above the roofline."><input id="roi-all" type="checkbox"> Use for every file from this folder</label>
+        <label class="check small" title="Tip: keep the sky out, but leave a thin strip above the roofline."><input id="roi-all" type="checkbox"> Use for every file from this camera</label>
       </div>
       <div class="stage" id="stage">
         <img id="view" alt="Current frame">
@@ -208,16 +208,15 @@
         <div class="row wrap">
           <h2 class="h2-plain">Event Log</h2>
           <span class="split-wrap">
-            <button id="btn-scan" class="btn sm primary split-main" disabled>Scan recording</button><button id="btn-scan-menu"
+            <button id="btn-scan" class="btn sm primary split-main" disabled>Scan Footage</button><button id="btn-scan-menu"
               class="btn sm primary split-caret" type="button" disabled aria-haspopup="true" aria-expanded="false" aria-controls="scan-menu" title="Choose which ROIs to scan">▾</button>
             <div id="scan-menu" class="persist-menu scan-menu" role="dialog" aria-label="ROIs to scan" hidden>
               <span class="small strong">ROIs to scan</span>
               <div id="scan-list" class="scan-list"></div>
-              <span class="small muted">Used by Scan recording, Scan play limits and Analyse all listed.</span>
+              <span class="small muted">Used by Scan Footage, Scan camera and Analyse all listed.</span>
             </div>
           </span>
-          <button id="btn-scan-lim" class="btn sm" disabled title="Scan only between the play limits set on the progress bar">Scan play limits</button>
-          <span id="plot-range" class="mono small muted"></span>
+          <label class="check small" id="scan-lim-wrap" title="Scan only between the play limits set on the progress bar"><input id="scan-lim-only" type="checkbox" disabled> Play limits only</label>
         </div>
         <div class="row wrap">
           <button id="btn-zoom-in" class="icon" aria-label="Zoom in" title="Zoom in">+</button>
@@ -235,11 +234,18 @@
         <div id="roi-legend" class="roi-legend" aria-label="Show or hide ROIs on the plot"></div>
       </div>
       <p id="scan-note" class="small warn" hidden></p>
-      <div class="plot" id="plot">
-        <canvas id="plot-canvas"></canvas>
-        <div id="markers"></div>
-        <div id="cursor" class="cursor"></div>
-        <div id="level-tag" class="level-tag" hidden></div>
+      <div class="plot-row">
+        <div class="cap-bar" id="cap-bar" title="Y-axis height: drag the handle down to cut off tall spikes so smaller ones show, or to the top for full height">
+          <div class="cap-rail"></div>
+          <div class="cap-fill" id="cap-fill"></div>
+          <button id="cap-h" class="cap-h" type="button" role="slider" aria-label="Y-axis height" aria-orientation="vertical" disabled></button>
+        </div>
+        <div class="plot" id="plot">
+          <canvas id="plot-canvas"></canvas>
+          <div id="markers"></div>
+          <div id="cursor" class="cursor"></div>
+          <div id="level-tag" class="level-tag" hidden></div>
+        </div>
       </div>
       <div class="row between mono small muted" id="plot-axis"></div>
       <div class="plot-ctl">
@@ -254,17 +260,15 @@
       <div class="plot-ctl">
         <div class="row wrap">
           <span class="small strong">Y-axis</span>
-          <div class="seg" role="group" aria-label="Y-axis">
-            <button class="mode" data-y="auto" aria-pressed="true">Auto</button>
-            <button class="mode" data-y="full" aria-pressed="false">Full height</button>
+          <div class="seg sm" role="group" aria-label="Y-axis">
+            <button class="mode" data-y="linear" aria-pressed="true">Linear</button>
             <button class="mode" data-y="log" aria-pressed="false">Log</button>
           </div>
           <span id="cap-label" class="small muted"></span>
+          <button id="cap-auto" class="btn xs" type="button" hidden>Back to automatic</button>
         </div>
-        <label class="small" for="plot-cap">Or set your own cap</label>
-        <input id="plot-cap" type="range" min="0" max="1" step="0.01" value="1" disabled aria-label="Plot height cap">
       </div>
-      <p class="small muted plot-help">Drag the <span class="blue">blue line</span> to set the detection level: spikes above it become events, spikes below it (grey) are ignored. Scroll to zoom, drag to pan, click to jump to that moment. Use the time window to pick a stretch of the recording. The y-axis options stop one tall spike flattening the rest: <b>Auto</b> cuts off spikes that dwarf the others (marked ▲), <b>Log</b> squeezes tall spikes down. They only change the view, not which events are found.</p>
+      <p class="small muted plot-help">Drag the <span class="blue">blue line</span> to set the detection level: spikes above it become events, spikes below it (grey) are ignored. Scroll to zoom, drag to pan, click to jump to that moment. Use the time window to pick a stretch of the recording. <b>Linear</b> automatically cuts off spikes that dwarf the others (marked ▲); drag the handle on the bar left of the plot to set the height yourself. <b>Log</b> squeezes tall spikes down. These only change the view, not which events are found.</p>
     </section>
   </main>
 
@@ -282,15 +286,8 @@
     <div class="row wrap">
       <button id="btn-export-confirmed" class="btn sm" disabled>Export all confirmed</button>
       <button id="btn-csv" class="btn sm" disabled>Save events CSV</button>
-      <button id="btn-report" class="btn sm" disabled>Create PDF report</button>
+      <button id="btn-report" class="btn sm" disabled>Create report</button>
     </div>
-      <section class="panel comments" style="margin-top:4px">
-      <div class="row between baseline"><h2>Other comments</h2><span id="c-count" class="small muted"></span></div>
-      <label class="small" for="c-text">Add a comment at <span id="c-at" class="mono"></span></label>
-      <textarea id="c-text" rows="3" placeholder="What you can see at this moment…" disabled></textarea>
-      <div class="row between"><span class="small muted">Ctrl + Enter to add</span><button id="btn-c-add" class="btn sm primary" disabled>Add comment</button></div>
-      <div id="c-list" class="c-list"></div>
-    </section>
   </aside>
 </div>
 
@@ -343,7 +340,7 @@
 
 <dialog id="dlg-report">
   <form method="dialog" class="dlg wide">
-    <h2>Create PDF report</h2>
+    <h2>Create report</h2>
     <p class="small muted">The report has a methodology introduction, the activity plot with your detection level, a table of every event, and for each event its decision, classification, comments and stills.</p>
     <div class="grid2">
       <label class="small">Company name<input id="rp-company" type="text" autocomplete="organization"></label>
@@ -353,6 +350,10 @@
       <label class="small">Analyst name<input id="rp-analyst" type="text" autocomplete="name"></label>
       <label class="small">Save to<input id="rp-folder" type="text"></label>
     </div>
+    <fieldset class="rp-format"><legend class="small">Save as</legend>
+      <label class="check"><input type="radio" name="rp-format" value="pdf" checked> PDF <span class="small muted">· ready to send</span></label>
+      <label class="check"><input type="radio" name="rp-format" value="docx"> Word document (.docx) <span class="small muted">· to edit before sending</span></label>
+    </fieldset>
     <label class="check"><input id="rp-rejected" type="checkbox" checked> Include images for rejected events</label>
     <p id="rp-warn" class="small warn" hidden>Some events haven't been reviewed yet. They'll be listed as "Not reviewed".</p>
     <p class="small muted">Company, contact, camera and analyst are remembered for next time.</p>
@@ -413,7 +414,8 @@
         </section>
 
         <section data-pane="custom" hidden>
-          <h3>Custom filters</h3>
+          <h3>Custom filters <span class="adv-tag">Advanced</span></h3>
+          <div class="adv-note" role="note"><b>This is an advanced option.</b> Please read the Track &amp; Detect manual first: it explains what each filter does and when it helps. The Default, Tracking and Detection modes are the recommended way to review footage.</div>
           <p class="small muted">Build your own filter for the <b>Custom</b> viewing mode: tick any of the filters, set their frames, and choose how the result is shown with the thermal picture. Saved filters appear in the Custom mode's dropdown. They change only what you see, never the scan.</p>
           <div class="cf-layout">
             <div class="cf-side">
@@ -491,10 +493,12 @@
         <section data-pane="time" hidden>
           <h3>Time &amp; units</h3>
           <div class="grid2">
+            <label>Show pixel values as <select id="st-scale"><option value="temperature">Temperature</option><option value="counts">Raw counts</option></select></label>
             <label>Temperature <select id="st-temp"><option value="C">°C</option><option value="F">°F</option></select></label>
             <label>Times shown in <select id="st-zone"><option value="uk">UK time (BST / GMT)</option><option value="utc">UTC</option></select></label>
             <label>Camera clock correction (seconds) <input id="st-offset" type="number" step="1"></label>
           </div>
+          <p class="small muted"><b>Show pixel values as</b> sets the colour bar beside the picture, the activity plot, the detection level and exports. Temperature needs a recording with temperature calibration; others always show raw counts. Recordings you've already scanned are converted, so there's no need to scan again.</p>
           <p class="small muted">If a camera's clock was wrong, enter the correction to add: for example −90 if it was 1½ minutes fast, or 3600 if it was still on GMT during BST. Every time shown, exported and reported uses it. <span id="st-offset-eg"></span></p>
         </section>
 
@@ -531,7 +535,7 @@
             <tr><td><kbd>n</kbd> <kbd>p</kbd></td><td>Next / previous event</td></tr>
             <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Default, Tracking, Detection, Custom viewing modes</td></tr>
             <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Add the comment you're typing</td></tr>
-            <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> / <kbd>Esc</kbd></td><td>While drawing an ROI: finish / remove last point / cancel (right-click also finishes)</td></tr>
+            <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> / <kbd>Esc</kbd></td><td>While drawing an ROI: finish / remove last point / cancel (right-click also finishes a polygon)</td></tr>
           </table>
         </section>
       </div>

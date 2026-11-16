@@ -64,30 +64,71 @@ $("#dlg-folder").addEventListener("close", async () => {
   if (!paths.length) return;
   try {
     const r = await api("/api/add", { paths, replace: $("#add-replace").checked });
-    S.files = r.files; renderFiles();
+    setFiles(r);
     if (r.problems && r.problems.length) toast(r.problems.join("; "), 7000);
     if (!S.rec && S.files.length === 1) openRec(S.files[0].path);
   } catch (e) { err(e); }
 });
+function setFiles(r) { S.files = r.files || []; S.cameras = r.cameras || []; renderFiles(); }
+function hhmm(iso) { return iso ? ukTime(Date.parse(iso)).d.toISOString().substr(11, 5) : ""; }
+// Recordings, grouped by camera. Files from one camera on one night
+// shouldn't overlap in time, so an overlap is flagged on the camera.
 function renderFiles() {
   const box = $("#files"); box.innerHTML = "";
-  if (!S.files.length) { box.innerHTML = '<p class="muted small">Add .ats files, or a whole folder of them.</p>'; }
-  for (const f of S.files) {
-    const w = document.createElement("div"); w.className = "file-wrap";
-    const b = document.createElement("button");
-    b.className = "file" + (S.rec && S.rec.path === f.path ? " cur" : "");
-    b.title = f.path;
-    const k = f.status === "Reviewed" ? "ok" : f.status === "In review" ? "todo" : "";
-    b.innerHTML = `<span class="file-name">${esc(f.name)}<br><span class="small muted">${esc(parentName(f.path))} · ${f.size_gb} GB</span></span><span class="chip ${k}">${esc(f.status)}</span>`;
-    b.onclick = () => openRec(f.path);
-    const x = document.createElement("button"); x.className = "rm"; x.textContent = "×";
-    x.setAttribute("aria-label", `Remove ${f.name} from the list`);
-    x.onclick = async () => { try { const r = await api("/api/remove", { path: f.path }); S.files = r.files; if (S.rec && S.rec.path === f.path) location.reload(); renderFiles(); } catch (e) { err(e); } };
-    w.append(b, x); box.appendChild(w);
-  }
   $("#btn-scan-all").disabled = !S.files.length;
+  if (!S.files.length) { box.innerHTML = '<p class="muted small">Add .ats files, or a whole folder of them.</p>'; return; }
+  const byPath = Object.fromEntries(S.files.map((f) => [f.path, f]));
+  const names = (S.cameras || []).map((c) => c.name);
+  for (const cam of S.cameras || []) {
+    const g = document.createElement("div"); g.className = "cam-group";
+    const n = cam.paths.length;
+    g.innerHTML = `<div class="cam-head"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        <input class="cam-name" type="text" maxlength="40" value="${esc(cam.name)}" aria-label="Camera name" title="Click to rename this camera"></div>
+        <div class="cam-sub"><span class="small muted">${n} recording${n === 1 ? "" : "s"}</span>
+        <button class="btn xs cam-scan" type="button" title="Scan every recording from ${esc(cam.name)}">Scan camera</button></div>`;
+    const nm = g.querySelector(".cam-name");
+    nm.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); nm.blur(); } if (e.key === "Escape") { nm.value = cam.name; nm.blur(); } };
+    nm.onchange = async () => {
+      const v = nm.value.trim(); if (!v || v === cam.name) { nm.value = cam.name; return; }
+      try { setFiles(await api("/api/cameras", { action: "rename", old: cam.name, new: v })); } catch (e) { nm.value = cam.name; err(e); }
+    };
+    g.querySelector(".cam-scan").onclick = () => scanCamera(cam.name);
+    for (const o of cam.overlaps || []) {
+      const w = document.createElement("div"); w.className = "cam-warn small"; w.setAttribute("role", "alert");
+      w.innerHTML = `<b>⚠ Times overlap:</b> ${esc(o.a)} and ${esc(o.b)} both cover ${hhmm(o.from)}–${hhmm(o.to)}. Recordings from one camera on one night shouldn't overlap, so check each is under the right camera.`;
+      g.appendChild(w);
+    }
+    for (const path of cam.paths) {
+      const f = byPath[path]; if (!f) continue;
+      const w = document.createElement("div"); w.className = "file-wrap";
+      const b = document.createElement("button");
+      b.className = "file" + (S.rec && S.rec.path === f.path ? " cur" : "");
+      b.title = f.path;
+      const k = f.status === "Reviewed" ? "ok" : f.status === "In review" ? "todo" : "";
+      const times = f.start ? `${hhmm(f.start)}–${hhmm(f.end)} · ` : "";
+      b.innerHTML = `<span class="file-name">${esc(f.name)}<br><span class="small muted">${times}${esc(parentName(f.path))} · ${f.size_gb} GB</span></span><span class="chip ${k}">${esc(f.status)}</span>`;
+      b.onclick = () => openRec(f.path);
+      const mv = document.createElement("select"); mv.className = "cam-move"; mv.setAttribute("aria-label", `Move ${f.name} to another camera`); mv.title = "Move to another camera";
+      mv.innerHTML = `<option value="" selected disabled>Move to camera…</option>${names.filter((x) => x !== cam.name).map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("")}<option value="__new">New camera</option>`;
+      mv.onchange = async () => {
+        try { setFiles(await api("/api/cameras", { action: "move", path: f.path, camera: mv.value === "__new" ? "" : mv.value })); } catch (e) { err(e); }
+      };
+      const x = document.createElement("button"); x.className = "rm"; x.textContent = "×";
+      x.setAttribute("aria-label", `Remove ${f.name} from the list`);
+      x.onclick = async () => { try { const r = await api("/api/remove", { path: f.path }); if (S.rec && S.rec.path === f.path) location.reload(); setFiles(r); } catch (e) { err(e); } };
+      w.append(b, mv, x); g.appendChild(w);
+    }
+    box.appendChild(g);
+  }
 }
-async function refreshFiles() { try { const r = await api("/api/files"); S.files = r.files; renderFiles(); } catch (e) {} }
+async function scanCamera(name) {
+  try {
+    const r = await api("/api/scan", { camera: name });
+    if (!r.jobs.length) return toast(`No recording from ${name} has an ROI drawn yet. Draw one, and tick "Use for every file from this camera" to share it.`, 7000);
+    toast(`Scanning ${r.jobs.length} recording${r.jobs.length === 1 ? "" : "s"} from ${name}…` + (r.skipped ? ` ${r.skipped} skipped: no ROI drawn.` : ""), 6000); pollJobs();
+  } catch (e) { err(e); }
+}
+async function refreshFiles() { try { setFiles(await api("/api/files")); } catch (e) {} }
 
 async function openRec(path) {
   stopPlay();
@@ -206,7 +247,7 @@ function limPos(f) { const n = Math.max(1, S.rec.frames - 1); return `calc(8px +
 function drawLimits() {
   const has = !!S.rec;
   for (const id of ["#lim-a", "#lim-b", "#lim-fill"]) $(id).hidden = !has;
-  if (!has) { $("#lim-label").textContent = ""; $("#btn-lim-reset").hidden = true; $("#btn-scan-lim").disabled = true; return; }
+  if (!has) { $("#lim-label").textContent = ""; $("#btn-lim-reset").hidden = true; $("#scan-lim-only").disabled = true; return; }
   const [a, b] = playBounds(), n = Math.max(1, S.rec.frames - 1);
   $("#lim-a").style.left = limPos(a); $("#lim-b").style.left = limPos(b);
   $("#lim-fill").style.left = limPos(a); $("#lim-fill").style.width = `calc((100% - 16px) * ${(b - a) / n})`;
@@ -214,8 +255,9 @@ function drawLimits() {
   $("#lim-label").textContent = whole ? "Play limits: whole recording. Drag the blue markers to set your own."
     : `Play limits: ${fmtTime(a)} → ${fmtTime(b)} (${fmtDur((b - a + 1) / S.rec.fps)})${locked() ? " · locked to event " + S.sel : ""}`;
   $("#btn-lim-reset").hidden = whole || locked();
-  $("#btn-scan-lim").disabled = whole;
-  $("#btn-scan-lim").title = whole ? "Drag the blue markers on the progress bar to set play limits first" : `Scan only ${fmtTime(a)} → ${fmtTime(b)}`;
+  $("#scan-lim-only").disabled = whole; if (whole) $("#scan-lim-only").checked = false;
+  $("#scan-lim-wrap").classList.toggle("dim", whole);
+  $("#scan-lim-wrap").title = whole ? "Drag the blue markers on the progress bar to set play limits first" : `Scan only ${fmtTime(a)} → ${fmtTime(b)}`;
 }
 function limDrag(which, e) {
   if (!S.rec) return;
@@ -416,7 +458,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.16-rois";
+const APP_VERSION = "2026.11.16-cameras";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -508,6 +550,7 @@ svg.addEventListener("pointerup", () => {
   S.box = { x0: Math.min(b.x0, b.x1), y0: Math.min(b.y0, b.y1), x1: Math.max(b.x0, b.x1), y1: Math.max(b.y0, b.y1) };
   if (S.box.x1 - S.box.x0 < 8 || S.box.y1 - S.box.y0 < 8) S.box = S.drag.b0.x1 - S.drag.b0.x0 >= 8 ? S.drag.b0 : defaultBox();
   S.drag = null; drawRoi();
+  if (S.drawing && S.shape !== "poly") finishRoi();   // rectangles and circles save as soon as you let go
 });
 svg.addEventListener("pointerleave", () => { if (S.shape === "poly") { S.hover = null; drawRoi(); } });
 svg.addEventListener("click", (e) => {
@@ -527,6 +570,11 @@ function startRoi(sh) {
   if (!S.drawing) {
     S.drawing = true; S.pts = []; S.box = null; S.hover = null;
     $("#stage").classList.add("drawing"); setMode("raw");
+    const p = activeRoi().points || [];   // a rectangle or circle starts on the ROI's current outline
+    if (sh !== "poly" && p.length >= 3) {
+      const xs = p.map((q) => q[0]), ys = p.map((q) => q[1]);
+      S.box = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    }
   }
   setShape(sh);
 }
@@ -561,7 +609,7 @@ function updateRoiStatus() {
   if (S.drawing) {
     el.textContent = S.shape === "poly"
       ? "Click round the roost to add points. Right-click (or Enter) to finish: the last point joins back to the first. Backspace removes a point."
-      : "Drag on the picture to draw, drag the middle to move, drag a handle to resize. Right-click (or Enter) to finish.";
+      : "Drag on the picture to draw it, drag the middle to move it, or drag a handle to resize. It's saved as soon as you let go.";
     return;
   }
   if (!S.rec) { el.textContent = "Open a recording, then pick a shape to draw round the roost."; return; }
@@ -621,7 +669,7 @@ function renderRois() {
     sl.appendChild(l);
   }
   const nScan = rois().filter((r) => r.scan && (r.points || []).length >= 3).length;
-  $("#btn-scan").textContent = rois().length > 1 ? `Scan recording (${nScan} ROI${nScan === 1 ? "" : "s"})` : "Scan recording";
+  $("#btn-scan").textContent = rois().length > 1 ? `Scan Footage (${nScan} ROI${nScan === 1 ? "" : "s"})` : "Scan Footage";
   renderLegend(); updateRoiStatus();
 }
 // a delete button asks for a second click instead of a pop-up
@@ -661,14 +709,13 @@ $("#roi-menu").addEventListener("click", (e) => e.stopPropagation());
 $("#scan-menu").addEventListener("click", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------ scan, jobs
-$("#btn-scan").onclick = () => startScan(false);
+$("#btn-scan").onclick = () => startScan(false, $("#scan-lim-only").checked ? playBounds() : null);
 $("#btn-scan-all").onclick = () => startScan(true);
-$("#btn-scan-lim").onclick = () => startScan(false, playBounds());
 async function startScan(all, lim) {
   if (!S.rec && !all) return;
   try {
     const r = await api("/api/scan", lim ? { all: false, a: lim[0], b: lim[1] } : { all });
-    if (!r.jobs.length) return toast("Draw an ROI first. Tick 'Use for every file from this folder' to share it.");
+    if (!r.jobs.length) return toast("Draw an ROI first. Tick 'Use for every file from this camera' to share it.");
     toast(lim ? `Scanning ${fmtTime(lim[0])} → ${fmtTime(lim[1])}…` : `Scanning ${r.jobs.length} recording${r.jobs.length > 1 ? "s" : ""}…`); pollJobs();
   } catch (e) { err(e); }
 }
@@ -844,7 +891,7 @@ function drawPlot() {
   const tag = $("#level-tag");
   if (!S.rec || !P.data.length) {
     ctx.fillStyle = cssv("--muted"); ctx.font = "12px sans-serif"; ctx.fillText(S.rec ? "Not scanned yet: press Scan recording, or Scan play limits for part of it" : "", 12, 24);
-    $("#plot-axis").innerHTML = ""; $("#plot-range").textContent = ""; tag.hidden = true; return;
+    $("#plot-axis").innerHTML = ""; tag.hidden = true; syncCapBar(); return;
   }
   // grey hatching: stretches not scanned (a play-limits scan), and an ignored spike at the end
   const hatch = (f0, f1, note) => {
@@ -942,7 +989,6 @@ function drawPlot() {
   const ticks = 5;
   $("#plot-axis").innerHTML = Array.from({ length: ticks }, (_, k) => `<span>${fmtTime(Math.round(P.a + k / (ticks - 1) * (P.b - P.a)))}</span>`).join("");
   const whole = P.a === 0 && P.b === S.rec.frames - 1;
-  $("#plot-range").textContent = whole ? "whole recording" : `${fmtTime(P.a)}–${fmtTime(P.b)} · frames ${P.a.toLocaleString()}–${P.b.toLocaleString()}`;
   syncPlotSliders(g, clipped.length);
   positionCursor();
 }
@@ -978,7 +1024,51 @@ $("#btn-zoom-in").onclick = () => zoom(1 / 1.6, S.frame >= P.a && S.frame <= P.b
 $("#btn-zoom-out").onclick = () => zoom(1.6);
 $("#btn-zoom-fit").onclick = () => { if (!S.rec) return; P.a = 0; P.b = S.rec.frames - 1; fetchSoon(); };
 function setYMode(m) { P.yMode = m; if (m !== "manual") P.cap = null; drawPlot(); }
-document.querySelectorAll("[data-y]").forEach((b) => (b.onclick = () => setYMode(b.dataset.y)));
+document.querySelectorAll("[data-y]").forEach((b) => (b.onclick = () => setYMode(b.dataset.y === "log" ? "log" : "auto")));
+// The bar left of the plot sets the y-axis height in Linear mode: it starts
+// where the automatic cut-off puts it; drag down to cut off more, up to the
+// top for full height.
+function capSpan() {
+  if (!P.stats) return null;
+  const vmax = P.stats.max, vmin = Math.min(vmax, Math.max(P.stats.lo, P.level ?? P.stats.lo));   // never below the detection line
+  return vmax > vmin ? [vmin, vmax] : null;
+}
+function capGeom() { const b = $("#cap-bar").getBoundingClientRect(); return { top: b.top + 34, h: Math.max(1, b.height - 34 - 8) }; }
+function syncCapBar() {
+  const h = $("#cap-h"), sp = capSpan(), log = P.yMode === "log";
+  const on = !!(S.rec && P.data.length && sp && !log);
+  h.disabled = !on; $("#cap-bar").classList.toggle("off", !on);
+  if (!on) { h.style.top = "34px"; $("#cap-fill").style.top = "34px"; return; }
+  const cur = P.capped ? P.capTop : sp[1], f = Math.max(0, Math.min(1, (cur - sp[0]) / (sp[1] - sp[0])));
+  const y = 34 + (1 - f) * ($("#cap-bar").clientHeight - 42);
+  h.style.top = y + "px"; $("#cap-fill").style.top = y + "px";
+  h.setAttribute("aria-valuetext", P.capped ? `Cut off at ${fmtVal(cur)}` : "Full height");
+}
+function capSet(f) {
+  const sp = capSpan(); if (!sp) return;
+  P.cap = sp[0] + Math.max(0, Math.min(1, f)) * (sp[1] - sp[0]);
+  if (f >= 0.995) P.cap = sp[1] * 1.0001;   // the top = full height
+  P.yMode = "manual"; drawPlot();
+}
+$("#cap-h").addEventListener("pointerdown", (e) => {
+  if ($("#cap-h").disabled) return;
+  e.preventDefault();
+  const move = (ev) => { const g = capGeom(); capSet(1 - (ev.clientY - g.top) / g.h); };
+  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+});
+$("#cap-bar").addEventListener("pointerdown", (e) => {   // click on the bar to jump the handle there
+  if (e.target.id === "cap-h" || $("#cap-h").disabled) return;
+  const g = capGeom(); capSet(1 - (e.clientY - g.top) / g.h);
+});
+$("#cap-h").addEventListener("keydown", (e) => {
+  if (!["ArrowUp", "ArrowDown"].includes(e.key) || $("#cap-h").disabled) return;
+  e.preventDefault(); e.stopPropagation();
+  const sp = capSpan(); if (!sp) return;
+  const cur = P.capped ? P.capTop : sp[1], f = (cur - sp[0]) / (sp[1] - sp[0]);
+  capSet(f + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 0.1 : 0.02));
+});
+$("#cap-auto").onclick = () => setYMode("auto");
 $("#btn-enlarge").onclick = () => {
   const big = $("#plot-panel").classList.toggle("big");
   $("#btn-enlarge").setAttribute("aria-pressed", String(big)); $("#btn-enlarge").textContent = big ? "Smaller" : "Enlarge";
@@ -993,21 +1083,14 @@ function syncPlotSliders(g, nClipped) {
   const fill = $("#t-fill"), fa = P.a / Math.max(1, n - 1), fb = P.b / Math.max(1, n - 1);  // thumbs are 16px wide
   fill.style.left = `calc(8px + (100% - 16px) * ${fa})`; fill.style.width = `calc((100% - 16px) * ${fb - fa})`;
   $("#t-label").textContent = `${fmtTime(P.a)} → ${fmtTime(P.b)} (${fmtDur((P.b - P.a) / S.rec.fps)})`;
-  const c = $("#plot-cap");
-  if (P.range) {
-    const [lo, hi] = P.range;
-    const cmin = Math.min(hi, Math.max(lo, P.level ?? lo));   // never cap below the detection line
-    if (P.yMode === "manual" && P.cap < cmin) P.cap = cmin;
-    c.min = cmin; c.max = hi; c.step = Math.max((hi - lo) / 500, 0.001); c.disabled = false;
-    c.value = P.capped ? P.capTop : hi;  // far right = full height
-  }
   const nTall = P.capped && P.stats ? P.stats.peaks.filter((p) => p > P.capTop).length : 0;
   $("#cap-label").textContent =
-    P.yMode === "auto" ? (P.capped ? `${nTall} very tall spike${nTall === 1 ? "" : "s"} cut off (▲) so the rest are clear` : "No spike dwarfs the others here, so nothing is cut off. Try Log.")
-    : P.yMode === "full" ? "Everything shown at full height."
+    P.yMode === "auto" ? (P.capped ? `Automatic: ${nTall} very tall spike${nTall === 1 ? "" : "s"} cut off (▲) so the rest are clear. Drag the bar's handle to change it.` : "Automatic: no spike dwarfs the others here, so nothing is cut off. Drag the bar's handle to cut off tall spikes.")
     : P.yMode === "log" ? "Log scale: tall spikes are squeezed down so small ones stay visible."
-    : `Capped at ${fmtVal(P.cap)}${nClipped ? " · taller spikes cut off (▲)" : ""}`;
-  document.querySelectorAll("[data-y]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.y === P.yMode)));
+    : P.capped ? `Cut off at ${fmtVal(P.capTop)}${nClipped ? " · taller spikes marked ▲" : ""}` : "Full height: nothing cut off.";
+  $("#cap-auto").hidden = P.yMode !== "manual";
+  document.querySelectorAll("[data-y]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.y === "log") === (P.yMode === "log"))));
+  syncCapBar();
 }
 function timeSlider(which) {
   const n = S.rec.frames, minSpan = Math.min(48, n - 1);
@@ -1025,11 +1108,6 @@ $("#t-fill").addEventListener("pointerdown", (e) => {   // drag the shaded middl
   const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
 });
-$("#plot-cap").oninput = () => {
-  if (!P.range) return;
-  const v = +$("#plot-cap").value;
-  if (v >= P.range[1] - 1e-9) setYMode("full"); else { P.cap = v; setYMode("manual"); }
-};
 
 // pointer: drag the line, drag to pan, click to jump
 plotBox.addEventListener("pointermove", (e) => {
@@ -1210,10 +1288,10 @@ $("#btn-report").onclick = async () => {
 };
 $("#dlg-report").addEventListener("close", async () => {
   if ($("#dlg-report").returnValue !== "ok") return;
-  const body = { rejected_images: $("#rp-rejected").checked, blend: $("#blend").value, opacity: +$("#opacity").value,
+  const body = { format: (document.querySelector("[name=rp-format]:checked") || {}).value || "pdf", rejected_images: $("#rp-rejected").checked, blend: $("#blend").value, opacity: +$("#opacity").value,
                  palette: S.pal, blend_range: S.rng.blend, enh: enhVals() };
   RP.forEach((k) => (body[k] = $("#rp-" + k).value));
-  try { await api("/api/report", body); toast("Creating the PDF report…"); pollJobs(); } catch (e) { err(e); }
+  try { await api("/api/report", body); toast(`Creating the ${body.format === "docx" ? "Word" : "PDF"} report…`); pollJobs(); } catch (e) { err(e); }
 });
 
 // ------------------------------------------------------------ comments
@@ -1227,9 +1305,6 @@ function eventAt(frame) {
   return e ? e.n : null;
 }
 function updateCommentBox() {
-  const on = !!S.rec;
-  $("#c-text").disabled = !on; $("#btn-c-add").disabled = !on;
-  $("#c-at").textContent = on ? `${fmtStamp(S.frame)} · frame ${S.frame.toLocaleString()}` : "";
   document.querySelectorAll(".c-item").forEach((el) => el.classList.toggle("here", +el.dataset.frame === S.frame));
   const ta = document.querySelector(".ev-c-add textarea");
   if (ta && S.sel) { const e = evById(S.sel), at = S.frame >= S.ws && S.frame <= S.we ? S.frame : e.f0; ta.placeholder = `Add a comment at ${fmtTime(at)} (frame ${at.toLocaleString()})…`; }
@@ -1243,23 +1318,8 @@ function commentItem(c, showEvent) {
   d.querySelector(".rm").onclick = async () => { try { S.rec = await api("/api/comment/delete", { id: c.id }); renderComments(); renderEvents(); } catch (e) { err(e); } };
   return d;
 }
-// The side panel holds comments that fall outside every event; event comments sit under their event.
-function renderComments() {
-  const box = $("#c-list"); box.innerHTML = "";
-  const cs = ((S.rec && S.rec.comments) || []).filter((c) => eventAt(c.frame) == null);
-  $("#c-count").textContent = cs.length ? `${cs.length}` : "";
-  if (!S.rec) return;
-  if (!cs.length) { box.innerHTML = '<p class="small muted">Comments made inside an event appear under that event. Comments at other times appear here.</p>'; updateCommentBox(); return; }
-  for (const c of cs) box.appendChild(commentItem(c, false));
-  updateCommentBox();
-}
-async function addComment() {
-  const t = $("#c-text").value.trim(); if (!t || !S.rec) return;
-  stopPlay();
-  try { S.rec = await api("/api/comment", { text: t, frame: S.frame }); $("#c-text").value = ""; renderComments(); renderEvents(); } catch (e) { err(e); }
-}
-$("#btn-c-add").onclick = addComment;
-$("#c-text").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addComment(); } });
+// Comments are added and listed under each event.
+function renderComments() { updateCommentBox(); }
 
 // ------------------------------------------------------------ keyboard
 document.addEventListener("keydown", (e) => {
@@ -1502,6 +1562,7 @@ function stFill(c) {
   document.querySelectorAll("[name=st-items]").forEach((i) => (i.checked = c.export.items.includes(i.value)));
   $("#st-overlays").value = c.export.overlays; $("#st-textsize").value = c.export.text_size;
   $("#st-naming").value = c.export.naming; $("#st-quality").value = c.export.quality; $("#st-slowmo").value = String(c.export.slowmo);
+  $("#st-scale").value = c.units.scale || "temperature"; $("#st-temp").disabled = $("#st-scale").value === "counts";
   $("#st-temp").value = c.units.temp; $("#st-zone").value = c.units.zone; $("#st-offset").value = c.units.clock_offset_s;
   $("#st-classes").value = c.classes.join("\n");
   $("#st-autoadv").checked = c.review.auto_advance; $("#st-autoplay").checked = c.review.auto_play;
@@ -1519,7 +1580,7 @@ function stRead() {
     detect: { sensitivity: v("#st-sens"), merge_s: +v("#st-merge"), min_frames: +v("#st-minf"), window_s: +v("#st-window") },
     export: { folder: v("#st-folder").trim(), items: [...document.querySelectorAll("[name=st-items]:checked")].map((i) => i.value),
               overlays: v("#st-overlays"), text_size: v("#st-textsize"), naming: v("#st-naming"), quality: +v("#st-quality"), slowmo: +v("#st-slowmo") },
-    units: { temp: v("#st-temp"), zone: v("#st-zone"), clock_offset_s: +v("#st-offset") || 0 },
+    units: { scale: v("#st-scale"), temp: v("#st-temp"), zone: v("#st-zone"), clock_offset_s: +v("#st-offset") || 0 },
     classes: v("#st-classes").split("\n").map((x) => x.trim()).filter(Boolean),
     review: { auto_advance: $("#st-autoadv").checked, auto_play: $("#st-autoplay").checked },
     report: Object.fromEntries(["company", "contact", "analyst", "camera"].map((k) => [k, v("#st-" + k).trim()])),
@@ -1539,7 +1600,7 @@ function stDirty() {   // compare what's on screen with what's saved, section by
   $("#st-dirty").hidden = same;
 }
 $("#st-form").addEventListener("input", () => { stExamples(); stDirty(); });
-$("#st-form").addEventListener("change", () => { stExamples(); stDirty(); });
+$("#st-form").addEventListener("change", () => { stExamples(); stDirty(); $("#st-temp").disabled = $("#st-scale").value === "counts"; });
 // appearance previews straight away; Cancel puts it back
 $("#st-scheme").addEventListener("change", () => applyLook($("#st-scheme").value, null));
 document.querySelectorAll("[name=st-theme]").forEach((r) => r.addEventListener("change", () => applyLook(null, r.value)));

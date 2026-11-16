@@ -114,8 +114,114 @@ def _file_row(p):
                     st = "In review" if any(e["status"] == "todo" for e in d.get("events", [])) else "Reviewed"
             except (OSError, ValueError):
                 pass
+    t0, t1 = _file_times(p)
     return {"path": p, "name": os.path.basename(p), "status": st,
-            "size_gb": round(os.path.getsize(p) / 1e9, 2)}
+            "size_gb": round(os.path.getsize(p) / 1e9, 2), "camera": _camera_of(p), "start": t0, "end": t1}
+
+
+# ------------------------------------------------------------------ camera groups
+# Recordings are grouped by camera ("Camera 1", "Camera 2", ...). A new file
+# joins the camera of other files from its folder, or starts a new one. The
+# groups are remembered in cameras.json in the settings folder.
+_CAMS = {"of": {}, "loaded": False}
+_TIMES = {}
+
+
+def _cams_path():
+    return os.path.join(DATA, "cameras.json")
+
+
+def _cams():
+    if not _CAMS["loaded"]:
+        import json
+        try:
+            with open(_cams_path(), encoding="utf-8") as fh:
+                _CAMS["of"] = {k: str(v) for k, v in (json.load(fh).get("of") or {}).items()}
+        except (OSError, ValueError, AttributeError):
+            _CAMS["of"] = {}
+        _CAMS["loaded"] = True
+    return _CAMS["of"]
+
+
+def _save_cams():
+    import json
+    try:
+        os.makedirs(DATA, exist_ok=True)
+        tmp = _cams_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"of": _cams()}, fh, indent=1)
+        os.replace(tmp, _cams_path())
+    except OSError:
+        pass
+
+
+def _camera_names():
+    names = []
+    for f in state["files"]:
+        n = _cams().get(f)
+        if n and n not in names:
+            names.append(n)
+    return names
+
+
+def _new_camera_name():
+    used = {n.lower() for n in _camera_names()}
+    k = 1
+    while f"camera {k}" in used:
+        k += 1
+    return f"Camera {k}"
+
+
+def _camera_of(p):
+    cams = _cams()
+    if p not in cams:
+        here = os.path.dirname(p)
+        mate = next((f for f in state["files"] if f != p and f in cams and os.path.dirname(f) == here), None)
+        cams[p] = cams[mate] if mate else _new_camera_name()
+        _save_cams()
+    return cams[p]
+
+
+def _file_times(p):
+    """A recording's start and end (UTC ISO times), cached; None if not stored."""
+    try:
+        key = (p, os.path.getmtime(p))
+    except OSError:
+        return None, None
+    if key not in _TIMES:
+        src, close = (recs[p].src, False) if p in recs else (None, True)
+        try:
+            if src is None:
+                from emergence.ats import ATSFile
+                src = ATSFile(p)
+            t0 = src.time_utc(0) if src.start_time else None
+            t1 = src.time_utc(src.n_frames - 1) if src.start_time else None
+            _TIMES[key] = (t0.isoformat() if t0 else None, t1.isoformat() if t1 else None)
+        except Exception:
+            _TIMES[key] = (None, None)
+        finally:
+            if close and src is not None:
+                try:
+                    src.close()
+                except Exception:
+                    pass
+    return _TIMES[key]
+
+
+def camera_groups(rows):
+    """Each camera's files in time order, with any that overlap in time (files
+    from one camera on one night shouldn't)."""
+    out = []
+    for name in dict.fromkeys(r["camera"] for r in rows):
+        files = sorted([r for r in rows if r["camera"] == name], key=lambda r: (r["start"] or "", r["name"]))
+        overlaps = []
+        for i, a in enumerate(files):
+            for b in files[i + 1:]:
+                if a["start"] and a["end"] and b["start"] and b["end"] and b["start"] < a["end"] and a["start"] < b["end"]:
+                    overlaps.append({"a": a["name"], "b": b["name"], "from": max(a["start"], b["start"]),
+                                     "to": min(a["end"], b["end"])})
+        out.append({"name": name, "paths": [r["path"] for r in files], "overlaps": overlaps})
+    return out
 
 
 # ------------------------------------------------------------------ pages
@@ -251,7 +357,7 @@ def add():
                 state["files"].append(f)
     if not state["files"] and problems:
         return jsonify(error="; ".join(problems)), 404
-    return jsonify(files=list_files(), problems=problems)
+    return jsonify(_files_payload(problems=problems))
 
 
 @app.post("/api/remove")
@@ -260,16 +366,47 @@ def remove():
     state["files"] = [f for f in state["files"] if f != p]
     if state["current"] == p:
         state["current"] = None
-    return jsonify(files=list_files())
+    return jsonify(_files_payload())
 
 
 def list_files():
     return [_file_row(p) for p in state["files"] if os.path.exists(p)]
 
 
+def _files_payload(**extra):
+    rows = list_files()
+    return {"files": rows, "cameras": camera_groups(rows), "current": state["current"], **extra}
+
+
 @app.get("/api/files")
 def files():
-    return jsonify(files=list_files(), current=state["current"])
+    return jsonify(_files_payload())
+
+
+@app.post("/api/cameras")
+def cameras():
+    """Rename a camera, or move a recording to another (or a new) camera.
+    body: {action: rename, old, new} | {action: move, path, camera} (camera "" = new)"""
+    b = request.json or {}
+    cams = _cams()
+    if b.get("action") == "rename":
+        old, new = b.get("old", ""), (b.get("new") or "").strip()[:40]
+        if not new:
+            raise UserError("Give the camera a name")
+        if new.lower() != old.lower() and new.lower() in {n.lower() for n in _camera_names()}:
+            raise UserError(f"There's already a camera called {new}")
+        for k, v in list(cams.items()):
+            if v == old:
+                cams[k] = new
+    elif b.get("action") == "move":
+        p = b.get("path")
+        if p not in state["files"]:
+            raise UserError("That recording isn't in the list")
+        cams[p] = (b.get("camera") or "").strip()[:40] or _new_camera_name()
+    else:
+        raise UserError("Unknown camera action")
+    _save_cams()
+    return jsonify(_files_payload())
 
 
 @app.post("/api/open")
@@ -326,7 +463,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.16-rois"   # must match static/app.js
+APP_VERSION = "2026.11.16-cameras"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -353,11 +490,11 @@ def set_palette():
 
 # ------------------------------------------------------------------ ROI & analysis
 def _share_rois(r):
-    """Same camera position = same folder: give the other listed recordings
-    from that folder these ROIs."""
-    here = os.path.dirname(r.path)
+    """Same camera = same view: give the other listed recordings from this
+    recording's camera these ROIs."""
+    cam = _camera_of(r.path)
     for row in list_files():
-        if row["path"] != r.path and os.path.dirname(row["path"]) == here:
+        if row["path"] != r.path and row["camera"] == cam:
             rec(row["path"]).copy_rois_from(r)
 
 
@@ -398,9 +535,12 @@ def edit_rois():
 @app.post("/api/scan")
 def start_scan():
     body = request.json or {}
-    targets = [row["path"] for row in list_files()] if body.get("all") else [state["current"]]
+    if body.get("camera"):   # every recording from one camera
+        targets = [row["path"] for row in list_files() if row["camera"] == body["camera"]]
+    else:
+        targets = [row["path"] for row in list_files()] if body.get("all") else [state["current"]]
     # "a" and "b": scan only those frames of the current recording (the play limits)
-    part = None if body.get("all") or body.get("a") is None else [[int(body["a"]), int(body["b"])]]
+    part = None if body.get("all") or body.get("camera") or body.get("a") is None else [[int(body["a"]), int(body["b"])]]
     out = []
     for p in targets:
         r = rec(p)
@@ -411,7 +551,7 @@ def start_scan():
         if len(r.rois) > 1:
             label += f", {len(ids)} ROI{'s' if len(ids) != 1 else ''}"
         out.append(jobs.submit(label, lambda prog, stop, r=r, ids=ids: {"ok": r.run_scan(prog, stop, ranges=part, roi_ids=ids)}))
-    return jsonify(jobs=out)
+    return jsonify(jobs=out, skipped=len(targets) - len(out))
 
 
 @app.post("/api/start-over")
@@ -456,8 +596,9 @@ def _apply_settings(old=None):
     render.VIEW["palette"] = c["view"]["palette"]
     render.LABEL["scale"] = cfg.TEXT_SCALE[c["export"]["text_size"]]
     ats.TIME["zone"], ats.TIME["offset_s"] = c["units"]["zone"], c["units"]["clock_offset_s"]
-    unit_changed = ats.TEMP["unit"] != c["units"]["temp"]
-    ats.TEMP["unit"] = c["units"]["temp"]
+    unit = "counts" if c["units"]["scale"] == "counts" else c["units"]["temp"]
+    unit_changed = ats.TEMP["unit"] != unit
+    ats.TEMP["unit"] = unit
     if unit_changed:
         with _lock:
             recs.clear()   # reopen recordings so their values convert to the new unit
@@ -549,8 +690,9 @@ def make_report():
               or os.path.join(os.path.dirname(r.path), "exports"))
     os.makedirs(folder, exist_ok=True)
     stem = os.path.splitext(os.path.basename(r.path))[0]
-    out = os.path.join(folder, safe_name(f"{opts['location'] or 'survey'}_{stem}_report") + ".pdf")
-    j = jobs.submit(f"PDF report: {os.path.basename(r.path)}",
+    fmt = "docx" if b.get("format") == "docx" else "pdf"
+    out = os.path.join(folder, safe_name(f"{opts['location'] or 'survey'}_{stem}_report") + "." + fmt)
+    j = jobs.submit(f"{'Word' if fmt == 'docx' else 'PDF'} report: {os.path.basename(r.path)}",
                     lambda prog, stop: {"files": [build_report(r, out, opts, prog)], "report": out})
     return jsonify(job=j)
 

@@ -2,7 +2,7 @@
 const $ = (s) => document.querySelector(s);
 const S = { files: [], rec: null, mode: "raw", frame: 0, sel: null, ws: 0, we: 0,
             drawing: false, pts: [], playing: false, act: [], polling: null, lastJobs: "" };
-const MODES_ORDER = ["raw", "path", "blend"];   // Default, Tracking, Detection (keys 1–3)
+const MODES_ORDER = ["raw", "path", "blend", "custom"];   // Default, Tracking, Detection, Custom (keys 1–4)
 let CLASSES = ["Emergence", "Re-entry", "Flight through / commuting", "Passes behind structure",
                "Foraging", "Bird", "Insect / noise", "Other"];   // replaced by Settings > Classifications
 
@@ -94,15 +94,16 @@ async function openRec(path) {
   setEmpty("Opening…", false);
   try {
     S.rec = await api("/api/open", { path });
-    S.rng = { raw: null, review: null, path: null, blend: null }; S.track = {}; S.info = null;   // each recording starts on Auto
+    S.rng = { raw: null, review: null, path: null, blend: null, custom: null }; S.track = {}; S.info = null;   // each recording starts on Auto
     S.frame = 0; S.sel = null; S.ws = 0; S.we = S.rec.frames - 1; S.pts = S.rec.roi || []; S.lim = null;
     $("#scrub").max = S.rec.frames - 1;
     $("#crumb-folder").textContent = parentName(S.rec.path);
     $("#crumb-file").textContent = "› " + S.rec.name;
     setCrumbMeta();
     $("#fps-wrap").hidden = false; $("#fps").value = S.rec.fps;
-    ["#btn-roi-clear", "#btn-scan"].forEach((s) => ($(s).disabled = false));
+    ["#btn-roi-clear", "#btn-scan", "#btn-scan-menu", "#btn-roi-pick"].forEach((s) => ($(s).disabled = false));
     document.querySelectorAll(".shape-btn").forEach((b) => (b.disabled = false));
+    S.roiHidden = new Set(); S.roiActive = (S.rec.rois[0] || {}).id; renderRois();
     $("#empty").hidden = true;
     renderFiles(); updateRoiStatus(); await loadActivity(); renderEvents(); renderComments(); renderFilters(); showFrame();
   } catch (e) { setEmpty("Could not open this file.", true); err(e); }
@@ -113,11 +114,13 @@ $("#fps").onchange = async () => { try { S.rec = await api("/api/fps", { fps: +$
 const img = $("#view");
 let pending = false, queued = false;
 // visible range per viewing mode: null = automatic, otherwise [lo, hi]
-S.rng = { raw: null, review: null, path: null, blend: null }; S.track = {}; S.pal = "white"; S.palettes = []; S.evDraft = {};
+S.rng = { raw: null, review: null, path: null, blend: null, custom: null }; S.track = {}; S.pal = "white"; S.palettes = []; S.evDraft = {};
 function frameUrl(i) {
   const r = S.mode === "review" ? null : S.rng[S.mode], q = r ? `&lo=${r[0]}&hi=${r[1]}` : "";
-  const op = (S.mode === "blend" ? `&op=${$("#opacity").value}&bm=${$("#blend").value}` : "") + enhQuery();
-  return `/api/frame?i=${i}&mode=${S.mode}&ws=${S.ws}&roi=${S.drawing ? 0 : 1}&pal=${S.pal}${q}${op}&t=${Date.now()}`;
+  let op = (S.mode === "blend" ? `&op=${$("#opacity").value}&bm=${$("#blend").value}` : "") + enhQuery();
+  if (S.mode === "custom") op += `&cf=${encodeURIComponent(JSON.stringify(customSpec()))}`;
+  const hide = S.roiHidden && S.roiHidden.size ? `&hide=${[...S.roiHidden].join(",")}` : "";
+  return `/api/frame?i=${i}&mode=${S.mode}&ws=${S.ws}&roi=${S.drawing ? 0 : 1}${hide}&pal=${S.pal}${q}${op}&t=${Date.now()}`;
 }
 let frameObjUrl = null;
 async function loadFrame(url) {
@@ -150,6 +153,8 @@ function setMode(m) {
   document.querySelectorAll(".mode[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
   $("#btn-persist").classList.toggle("on", m === "blend");
   $("#opacity-wrap").hidden = m !== "blend";
+  $("#custom-wrap").hidden = m !== "custom";
+  if (m === "custom") renderCustomPick();
   syncEnh();
   showFrame();
 }
@@ -162,16 +167,18 @@ function toggleMenu(menu, btn, open, focus) {
 }
 const togglePersist = (open) => toggleMenu("#persist-menu", "#btn-persist", open, "#f-mfi");
 const toggleImage = (open) => toggleMenu("#image-menu", "#btn-image", open, "#palette");
-$("#btn-persist").onclick = (e) => { e.stopPropagation(); toggleImage(false); togglePersist(); };
-$("#btn-image").onclick = (e) => { e.stopPropagation(); togglePersist(false); toggleImage(); };
+// only one dropdown open at a time
+function closeMenus(except) {
+  for (const [k, m, b] of [["persist", "#persist-menu", "#btn-persist"], ["image", "#image-menu", "#btn-image"],
+                           ["roi", "#roi-menu", "#btn-roi-pick"], ["scan", "#scan-menu", "#btn-scan-menu"]])
+    if (k !== except && !$(m).hidden) toggleMenu(m, b, false);
+}
+$("#btn-persist").onclick = (e) => { e.stopPropagation(); closeMenus("persist"); togglePersist(); };
+$("#btn-image").onclick = (e) => { e.stopPropagation(); closeMenus("image"); toggleImage(); };
 $("#persist-menu").addEventListener("click", (e) => e.stopPropagation());
 $("#image-menu").addEventListener("click", (e) => e.stopPropagation());
-document.addEventListener("click", () => { togglePersist(false); toggleImage(false); });
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (!$("#persist-menu").hidden) { togglePersist(false); $("#btn-persist").focus(); }
-  if (!$("#image-menu").hidden) { toggleImage(false); $("#btn-image").focus(); }
-});
+document.addEventListener("click", () => closeMenus());
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 $("#scrub").oninput = () => { stopPlay(); S.frame = +$("#scrub").value; showFrame(); };
 $("#btn-step").onclick = () => S.rec && goFrame(S.frame + 1);
 $("#btn-step-back").onclick = () => S.rec && goFrame(S.frame - 1);
@@ -409,7 +416,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.16-layout";
+const APP_VERSION = "2026.11.16-rois";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -531,7 +538,7 @@ async function finishRoi() {
   const pts = shapePoints();
   if (pts.length < 3) return toast("Add at least 3 points first, then right-click to finish.");
   S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); setShape(S.shape);
-  try { S.rec = await api("/api/roi", { points: pts, all_files: $("#roi-all").checked }); updateRoiStatus(); refreshFiles(); showFrame(); toast("ROI saved. Press Scan recording."); }
+  try { S.rec = await api("/api/roi", { id: S.roiActive, points: pts, all_files: $("#roi-all").checked }); renderRois(); refreshFiles(); showFrame(); toast(`${activeRoi().name} saved. Press Scan recording.`); }
   catch (e) { err(e); }
 }
 $("#btn-roi-done").onclick = finishRoi;
@@ -542,12 +549,12 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Backspace" && S.shape === "poly") { e.preventDefault(); S.pts.pop(); drawRoi(); }
   else if (e.key === "Escape") $("#btn-roi-cancel").click();
 }, true);
-$("#btn-roi-clear").onclick = async () => { try { S.pts = []; S.rec = await api("/api/roi", { points: [] }); updateRoiStatus(); showFrame(); } catch (e) { err(e); } };
+$("#btn-roi-clear").onclick = async () => { try { S.pts = []; S.rec = await api("/api/roi", { id: S.roiActive, points: [], all_files: $("#roi-all").checked }); renderRois(); showFrame(); } catch (e) { err(e); } };
 function toggleRoiButtons() {
   $("#btn-roi-done").hidden = $("#btn-roi-cancel").hidden = !S.drawing;
   $("#btn-roi-undo").hidden = !S.drawing || S.shape !== "poly";
   $("#btn-roi-clear").hidden = S.drawing;
-  $("#btn-roi-clear").disabled = !(S.rec && (S.rec.roi || []).length);
+  $("#btn-roi-clear").disabled = !(S.rec && (activeRoi().points || []).length);
 }
 function updateRoiStatus() {
   const el = $("#roi-status");
@@ -558,10 +565,100 @@ function updateRoiStatus() {
     return;
   }
   if (!S.rec) { el.textContent = "Open a recording, then pick a shape to draw round the roost."; return; }
-  const n = (S.rec.roi || []).length;
-  el.textContent = n ? "ROI set. Pick a shape to draw a new one." : "No ROI yet: pick a shape, then draw round the roost.";
+  const r = activeRoi(), n = (r.points || []).length;
+  el.textContent = n ? `${r.name} is drawn. Pick a shape to redraw it, or + Add ROI from the ▾ menu for another.` : `${r.name}: pick a shape, then draw round the roost.`;
   toggleRoiButtons();
 }
+
+// ------------------------------------------------------------ several ROIs
+// Each ROI has a name and a colour. The selected one is what the shape
+// buttons draw. Hidden ROIs are left off the picture and the Event Log.
+const EYE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-7 0-11-7-11-7a19 19 0 0 1 5-5.9M9.9 4.2A9.6 9.6 0 0 1 12 4c7 0 11 7 11 7a19 19 0 0 1-2.2 3.2M1 1l22 22"/></svg>';
+function rois() { return (S.rec && S.rec.rois) || []; }
+function activeRoi() { return rois().find((r) => r.id === S.roiActive) || rois()[0] || { id: "r1", name: "ROI 1", points: [], colour: "#E5484D" }; }
+function roiById(id) { return rois().find((r) => r.id === id); }
+function roiVisible(id) { return !(S.roiHidden && S.roiHidden.has(id)); }
+function roiShare() { return $("#roi-all").checked; }
+async function roiAction(body) {
+  try { const r = await api("/api/rois", { ...body, all_files: roiShare() }); S.rec = r; return r; } catch (e) { err(e); return null; }
+}
+function renderRois() {
+  if (!S.rec) return;
+  if (!roiById(S.roiActive)) S.roiActive = (rois()[0] || {}).id;
+  const a = activeRoi();
+  $("#roi-cur-name").textContent = a.name; $("#roi-cur-dot").style.background = a.colour;
+  // the ROI manager
+  const list = $("#roi-list"); list.innerHTML = "";
+  for (const r of rois()) {
+    const row = document.createElement("div"); row.className = "roi-row" + (r.id === S.roiActive ? " active" : "");
+    const vis = roiVisible(r.id), n = (r.points || []).length;
+    row.innerHTML = `<input type="radio" name="roi-active" aria-label="Draw ${esc(r.name)}" ${r.id === S.roiActive ? "checked" : ""}>
+      <i class="roi-dot" style="background:${r.colour}"></i>
+      <input type="text" value="${esc(r.name)}" maxlength="40" aria-label="Name of ${esc(r.name)}">
+      <span class="roi-pts">${n ? "drawn" : "not drawn"}</span>
+      <button type="button" class="ib eye${vis ? "" : " off"}" aria-pressed="${vis}" title="${vis ? "Hide" : "Show"} ${esc(r.name)}">${vis ? EYE : EYE_OFF}</button>
+      <button type="button" class="ib del" title="Delete ${esc(r.name)}" ${rois().length < 2 ? "disabled" : ""}>×</button>`;
+    row.querySelector("[type=radio]").onchange = () => { S.roiActive = r.id; renderRois(); };
+    const nm = row.querySelector("[type=text]");
+    nm.onfocus = () => { if (S.roiActive !== r.id) { S.roiActive = r.id; row.classList.add("active"); $("#roi-cur-name").textContent = r.name; $("#roi-cur-dot").style.background = r.colour; } };
+    nm.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); nm.blur(); } };
+    nm.onchange = async () => { const v = nm.value.trim(); if (!v) { nm.value = r.name; return; } if (await roiAction({ action: "rename", id: r.id, name: v })) { renderRois(); renderEvents(); drawPlot(); showFrame(); } };
+    row.querySelector(".eye").onclick = () => toggleRoiVisible(r.id);
+    row.querySelector(".del").onclick = async () => {
+      if (!confirmTwice(row.querySelector(".del"), `Click again to delete ${r.name} and its events`)) return;
+      if (await roiAction({ action: "delete", id: r.id })) { S.roiHidden.delete(r.id); afterRoiChange(); toast(`${r.name} deleted.`); }
+    };
+    list.appendChild(row);
+  }
+  // the Scan menu: which ROIs to scan
+  const sl = $("#scan-list"); sl.innerHTML = "";
+  for (const r of rois()) {
+    const drawn = (r.points || []).length >= 3;
+    const l = document.createElement("label"); l.className = "check small";
+    l.innerHTML = `<input type="checkbox" ${r.scan && drawn ? "checked" : ""} ${drawn ? "" : "disabled"}> <i class="roi-dot" style="background:${r.colour}"></i> ${esc(r.name)}${drawn ? "" : ' <span class="muted">(not drawn)</span>'}`;
+    l.querySelector("input").onchange = async (e) => { if (await roiAction({ action: "scan", id: r.id, scan: e.target.checked })) renderRois(); };
+    sl.appendChild(l);
+  }
+  const nScan = rois().filter((r) => r.scan && (r.points || []).length >= 3).length;
+  $("#btn-scan").textContent = rois().length > 1 ? `Scan recording (${nScan} ROI${nScan === 1 ? "" : "s"})` : "Scan recording";
+  renderLegend(); updateRoiStatus();
+}
+// a delete button asks for a second click instead of a pop-up
+function confirmTwice(btn, msg) {
+  if (btn.dataset.armed && Date.now() - +btn.dataset.armed < 4000) { delete btn.dataset.armed; return true; }
+  btn.dataset.armed = Date.now(); btn.title = msg; toast(msg, 4000); return false;
+}
+function renderLegend() {
+  const box = $("#roi-legend"); box.innerHTML = "";
+  const scanned = rois().filter((r) => r.scanned);
+  if (scanned.length < 2) return;   // one ROI: nothing to tell apart
+  for (const r of scanned) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "roi-chip";
+    b.setAttribute("aria-pressed", String(roiVisible(r.id))); b.title = `${roiVisible(r.id) ? "Hide" : "Show"} ${r.name} on the plot and picture`;
+    b.innerHTML = `<i class="roi-dot" style="background:${r.colour}"></i><span class="roi-name">${esc(r.name)}</span>`;
+    b.onclick = () => toggleRoiVisible(r.id);
+    box.appendChild(b);
+  }
+}
+function toggleRoiVisible(id) {
+  if (S.roiHidden.has(id)) S.roiHidden.delete(id); else S.roiHidden.add(id);
+  renderRois(); drawPlot(); showFrame();
+}
+function afterRoiChange() { renderRois(); renderEvents(); renderComments(); loadActivity(true); refreshFiles(); showFrame(); }
+$("#btn-roi-add").onclick = async (e) => {
+  e.stopPropagation();
+  const r = await roiAction({ action: "add" });
+  if (!r) return;
+  S.roiActive = r.added; renderRois(); toggleRoiMenu(false);
+  toast(`${activeRoi().name} added. Pick a shape to draw it.`, 5000);
+};
+const toggleRoiMenu = (open) => toggleMenu("#roi-menu", "#btn-roi-pick", open);
+const toggleScanMenu = (open) => toggleMenu("#scan-menu", "#btn-scan-menu", open);
+$("#btn-roi-pick").onclick = (e) => { e.stopPropagation(); closeMenus("roi"); toggleRoiMenu(); };
+$("#btn-scan-menu").onclick = (e) => { e.stopPropagation(); closeMenus("scan"); toggleScanMenu(); };
+$("#roi-menu").addEventListener("click", (e) => e.stopPropagation());
+$("#scan-menu").addEventListener("click", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------ scan, jobs
 $("#btn-scan").onclick = () => startScan(false);
@@ -583,19 +680,20 @@ $("#btn-start-over").onclick = () => {
   $("#so-name").textContent = S.rec.name;
   $("#so-count").textContent = `${done} of ${evs.length} event${evs.length === 1 ? "" : "s"} decided`;
   $("#so-ncom").textContent = `${nc} comment${nc === 1 ? "" : "s"}`;
-  $("#so-comments").checked = false; $("#so-level").checked = true;
+  $("#so-comments").checked = false; $("#so-level").checked = false; $("#so-rescan").checked = false;
   $("#dlg-start-over").showModal();
 };
 $("#so-go").onclick = async () => {
   $("#so-go").disabled = true;
   try {
     stopPlay();
-    const r = await api("/api/start-over", { delete_comments: $("#so-comments").checked, reset_level: $("#so-level").checked });
+    const rescan = $("#so-rescan").checked;
+    const r = await api("/api/start-over", { delete_comments: $("#so-comments").checked, reset_level: $("#so-level").checked, rescan });
     S.rec = r.recording; S.sel = null;
     $("#dlg-start-over").close();
-    renderEvents(); renderComments(); refreshFiles(); showFrame();
-    if (r.jobs.length) { toast("Decisions cleared. Scanning again…"); pollJobs(); }
-    else toast("Decisions cleared. Draw an ROI to scan again.");
+    renderEvents(); renderComments(); refreshFiles(); await loadActivity(true); showFrame();
+    if (r.jobs.length) { toast("Decisions reset. Scanning again…"); pollJobs(); }
+    else toast(rescan ? "Decisions reset. Draw an ROI to scan again." : "All decisions reset.");
   } catch (e) { err(e); } finally { $("#so-go").disabled = false; }
 };
 function pollJobs() {
@@ -622,7 +720,7 @@ function pollJobs() {
         else if (j.result.files) toast(`Saved ${j.result.files.length} files to the exports folder.`);
       }
       if (S.rec) { try { const rec = await api("/api/recording"); const sigOf = (x) => JSON.stringify([x.scanned, x.level, x.suggested_level, (x.events || []).map((e) => [e.f0, e.f1, e.status])]);
-            const changed = sigOf(rec) !== sigOf(S.rec); S.rec = rec; renderFilters(); if (changed) { await loadActivity(true); renderEvents(); } } catch (e) {} }
+            const changed = sigOf(rec) !== sigOf(S.rec) || JSON.stringify(rec.rois) !== JSON.stringify(S.rec.rois); S.rec = rec; renderFilters(); if (changed) { renderRois(); await loadActivity(true); renderEvents(); } } catch (e) {} }
     }
     if (!active.length) { clearInterval(S.polling); S.polling = null; }
   }, 700);
@@ -639,7 +737,7 @@ async function loadActivity(keepView) {
   if (!keepView) { P.a = 0; P.b = S.rec.frames - 1; P.cap = null; }
   await fetchView();
   const has = P.data.length > 0;
-  $("#level").disabled = !has; $("#btn-level-reset").disabled = !has; $("#level-slider").disabled = !has;
+  $("#level").disabled = !has; $("#btn-level-reset").disabled = !has;
   $("#btn-start-over").disabled = !has;
 }
 async function fetchView() {
@@ -649,7 +747,7 @@ async function fetchView() {
   try {
     const r = await api(`/api/activity?a=${P.a}&b=${P.b}&points=${pts}`);
     if (id !== P.fetchId) return;
-    P.data = r.values; P.units = r.units; P.range = r.range;
+    P.data = r.values; P.series = r.series || {}; P.units = r.units; P.range = r.range;
     if (P.drag?.kind !== "level") { P.level = r.level; P.suggested = r.suggested_level; }
   } catch (e) { P.data = []; }
   updateLevelInputs(); drawPlot();
@@ -723,6 +821,21 @@ function niceTicks(lo, hi, n) {
   return out;
 }
 // colours for the canvas plot come from the stylesheet, so they follow the scheme and mode
+function multiRoi() { return rois().filter((r) => r.scanned).length > 1; }
+function roiName(id) { return (roiById(id) || {}).name || "ROI"; }
+function roiColour(id) { return (roiById(id) || {}).colour || "#E5484D"; }
+// frames that no visible, scanned ROI has scanned (hatched "Not scanned")
+function unscannedVisible() {
+  const vis = rois().filter((r) => r.scanned && roiVisible(r.id));
+  if (!vis.length) return S.rec.unscanned || [];
+  let acc = vis[0].unscanned || [];
+  for (const r of vis.slice(1)) {
+    const out = [];
+    for (const [a, b] of acc) for (const [c, d] of r.unscanned || []) { const lo = Math.max(a, c), hi = Math.min(b, d); if (lo <= hi) out.push([lo, hi]); }
+    acc = out;
+  }
+  return acc;
+}
 function cssv(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function drawPlot() {
   const g = geom(), c = plotCanvas, ctx = c.getContext("2d");
@@ -744,11 +857,12 @@ function drawPlot() {
     ctx.restore();
     if (x1 - x0 > 110) { ctx.fillStyle = cssv("--plot-note"); ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.fillText(note, (x0 + x1) / 2, 52); ctx.textAlign = "start"; }
   };
-  for (const [a, b] of S.rec.unscanned || []) hatch(a, b, "Not scanned");
+  for (const [a, b] of unscannedVisible()) hatch(a, b, "Not scanned");
   const cut = endCut();
   if (cut != null && g.x(cut) < g.W) hatch(cut, P.b, "Ignored: end of recording");
   // event windows shaded
   for (const e of S.rec.events) {
+    if (!roiVisible(e.roi)) continue;
     const x0 = g.x(e.f0), x1 = Math.max(g.x(e.f1), x0 + 2);
     if (x1 < 0 || x0 > g.W) continue;
     ctx.fillStyle = S.sel === e.n ? cssv("--plot-sel") : cssv("--plot-ev");
@@ -774,18 +888,25 @@ function drawPlot() {
       ctx.fillStyle = cssv("--plot-label"); ctx.fillText(fmtVal(v), 6, y - 3);
     }
   }
-  // trace: brand green above the line, grey below
-  const path = new Path2D();
+  // trace: one ROI = brand green above the line, grey below; several ROIs =
+  // each in its own colour, faded below the line
   const clipped = [];
-  P.data.forEach(([f, v], k) => {
-    const x = g.x(f), y = g.y(Math.min(v, g.hi));
-    if (v > g.hi && P.capped) clipped.push(x);
-    k ? path.lineTo(x, y) : path.moveTo(x, y);
-  });
   const ly = P.level != null ? g.y(P.level) : -1;
+  const traces = multiRoi()
+    ? rois().filter((r) => r.scanned && roiVisible(r.id) && P.series[r.id]).map((r) => [P.series[r.id], r.colour, r.colour])
+    : [[P.data, cssv("--accent"), cssv("--plot-lo")]];
   ctx.lineWidth = 1.3;
-  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, Math.max(0, ly)); ctx.clip(); ctx.strokeStyle = cssv("--accent"); ctx.stroke(path); ctx.restore();
-  ctx.save(); ctx.beginPath(); ctx.rect(0, Math.max(0, ly), g.W, g.H); ctx.clip(); ctx.strokeStyle = cssv("--plot-lo"); ctx.stroke(path); ctx.restore();
+  for (const [data, hiCol, loCol] of traces) {
+    const path = new Path2D();
+    data.forEach(([f, v], k) => {
+      const x = g.x(f), y = g.y(Math.min(v, g.hi));
+      if (v > g.hi && P.capped) clipped.push(x);
+      k ? path.lineTo(x, y) : path.moveTo(x, y);
+    });
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, Math.max(0, ly)); ctx.clip(); ctx.strokeStyle = hiCol; ctx.stroke(path); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(0, Math.max(0, ly), g.W, g.H); ctx.clip(); ctx.strokeStyle = loCol;
+    if (multiRoi()) ctx.globalAlpha = 0.45; ctx.stroke(path); ctx.restore();
+  }
   // spikes cut off by the cap: small arrows at the top
   if (clipped.length) {
     ctx.fillStyle = cssv("--accent"); let last = -99;
@@ -799,19 +920,21 @@ function drawPlot() {
     ctx.strokeStyle = cssv("--blue"); ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
     ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(g.W, ly); ctx.stroke(); ctx.setLineDash([]);
     tag.hidden = false; tag.style.top = ly + "px";
-    const n = S.rec.events.length;
-    tag.textContent = `Detection level ${fmtVal(P.level)} · ${n} event${n === 1 ? "" : "s"}`;
+    const n = S.rec.events.filter((e) => roiVisible(e.roi)).length;
+    tag.textContent = `Detection level ${fmtVal(P.level)} · ${n} event${n === 1 ? "" : "s"}${S.roiHidden && S.roiHidden.size ? " shown" : ""}`;
   }
   // y labels
   ctx.fillStyle = cssv("--muted"); ctx.font = "11px " + getComputedStyle(document.body).getPropertyValue("--mono");
   ctx.fillText(fmtVal(g.hi) + (P.capped ? "  (capped)" : ""), 6, 50); ctx.fillText(fmtVal(g.lo), 6, g.H - 12);
   // markers
   for (const e of S.rec.events) {
+    if (!roiVisible(e.roi)) continue;
     const x = g.x((e.f0 + e.f1) / 2); if (x < -10 || x > g.W + 10) continue;
     const m = document.createElement("button");
     m.className = "marker" + (S.sel === e.n ? " sel" : "") + (e.status === "confirmed" ? " ok" : e.status === "rejected" ? " no" : "");
     m.style.left = x + "px"; m.textContent = e.n;
-    m.setAttribute("aria-label", `Event ${e.n} at ${fmtTime(e.f0)}`);
+    m.setAttribute("aria-label", `Event ${e.n} at ${fmtTime(e.f0)}, ${roiName(e.roi)}`);
+    if (multiRoi()) { m.style.borderColor = roiColour(e.roi); m.style.borderWidth = "2px"; }
     m.onpointerdown = (ev) => ev.stopPropagation();
     m.onclick = (ev) => { ev.stopPropagation(); selectEvent(e.n); };
     $("#markers").appendChild(m);
@@ -832,14 +955,8 @@ function positionCursor() {
 }
 function updateLevelInputs() {
   $("#level-unit").textContent = P.units ? `(${P.units})` : "";
-  const sl = $("#level-slider");
-  if (P.range) {
-    const [lo, hi] = P.range, top = Math.max(hi, P.level ?? hi);
-    sl.min = lo; sl.max = top; sl.step = Math.max((top - lo) / 500, 0.001);
-    if (P.level != null && document.activeElement !== sl) sl.value = P.level;
-  }
   if (P.level != null && document.activeElement !== $("#level")) $("#level").value = (+P.level).toFixed(2);
-  $("#level-info").textContent = P.suggested != null ? `Suggested for this recording: ${fmtVal(P.suggested)}. Or drag the blue line on the plot.` : "Or drag the blue line on the plot.";
+  $("#level-info").textContent = P.suggested != null ? `Suggested: ${fmtVal(P.suggested)}. Or drag the blue line on the plot.` : "Or drag the blue line on the plot.";
 }
 
 // zoom & pan
@@ -919,7 +1036,7 @@ plotBox.addEventListener("pointermove", (e) => {
   if (!S.rec || !P.data.length) return;
   const b = plotBox.getBoundingClientRect(), g = geom(), y = e.clientY - b.top, x = e.clientX - b.left;
   if (!P.drag) { plotBox.classList.toggle("on-line", P.level != null && Math.abs(y - g.y(P.level)) < 8); return; }
-  if (P.drag.kind === "level") { P.level = Math.max(g.lo, g.v(y)); $("#level").value = P.level.toFixed(2); $("#level-slider").value = P.level; drawPlot(); }
+  if (P.drag.kind === "level") { P.level = Math.max(g.lo, g.v(y)); $("#level").value = P.level.toFixed(2); drawPlot(); }
   else {
     const dx = x - P.drag.x;
     if (Math.abs(dx) > 4) P.drag.moved = true;
@@ -950,8 +1067,6 @@ async function setLevel(level, suggested) {
   } catch (e) { err(e); }
 }
 $("#level").onchange = () => setLevel($("#level").value);
-$("#level-slider").oninput = () => { P.level = +$("#level-slider").value; $("#level").value = P.level.toFixed(2); drawPlot(); };
-$("#level-slider").onchange = () => setLevel($("#level-slider").value);
 $("#btn-level-reset").onclick = () => setLevel(null, true);
 
 // ------------------------------------------------------------ events
@@ -991,8 +1106,11 @@ function renderEvents() {
     const chipT = e.status === "confirmed" ? (e.cls || "Confirmed") : e.status === "rejected" ? "Rejected" : "Not reviewed";
     const nC = commentsFor(e).length;
     const playingThis = S.playing && S.dir > 0 && S.sel === e.n;
-    d.innerHTML = `<div class="ev-row"><button class="ev-play${playingThis ? " on" : ""}" data-evplay="${e.n}" aria-label="${playingThis ? "Pause" : "Play"} event ${e.n}" title="${playingThis ? "Pause" : "Play this event"}">${playingThis ? PAUSE_ICON : PLAY_ICON}</button><button class="ev-head"><span class="ev-top"><b>Event ${e.n}</b><span class="mono small">${fmtTime(e.f0)}–${fmtTime(e.f1)}</span></span>
-      <span class="mono small muted">${fmtDate(e.f0) ? `${fmtDate(e.f0)} ${fmtZone(e.f0)} · ` : ""}frames ${e.f0.toLocaleString()}–${e.f1.toLocaleString()} · ${fmtDur((e.f1 - e.f0 + 1) / S.rec.fps)} · peak ${e.peak.toFixed(1)}${isTemp(S.rec.units) ? " " + S.rec.units : ""}</span>
+    const when = [fmtDate(e.f0), `${fmtTime(e.f0)}–${fmtTime(e.f1)}`, fmtZone(e.f0)].filter(Boolean).join(" ");
+    const roiTag = rois().length > 1 ? `<span class="roi-tag"><i class="roi-dot" style="background:${roiColour(e.roi)}"></i>${esc(roiName(e.roi))}</span>` : "";
+    d.innerHTML = `<div class="ev-row"><button class="ev-play${playingThis ? " on" : ""}" data-evplay="${e.n}" aria-label="${playingThis ? "Pause" : "Play"} event ${e.n}" title="${playingThis ? "Pause" : "Play this event"}">${playingThis ? PAUSE_ICON : PLAY_ICON}</button><button class="ev-head"><span class="ev-top"><b>Event ${e.n}</b>${roiTag}</span>
+      <span class="mono ev-when">${when}</span>
+      <span class="mono small muted">frames ${e.f0.toLocaleString()}–${e.f1.toLocaleString()} · ${fmtDur((e.f1 - e.f0 + 1) / S.rec.fps)}</span>
       <span class="row wrap"><span class="chip ${chipK}">${esc(chipT)}</span></span></button></div>`;
     d.querySelector(".ev-head").onclick = () => selectEvent(e.n);
     d.querySelector(".ev-play").onclick = () => playEvent(e.n);
@@ -1147,7 +1265,7 @@ $("#c-text").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ct
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("input, select, textarea, dialog")) return;
   const k = e.key;
-  if (k >= "1" && k <= "3") setMode(MODES_ORDER[+k - 1]);
+  if (k >= "1" && k <= "4") setMode(MODES_ORDER[+k - 1]);
   else if (k === "ArrowRight") { stopPlay(); S.frame += e.shiftKey ? Math.round(S.rec ? S.rec.fps : 16) : 1; showFrame(); }
   else if (k === "ArrowLeft") { stopPlay(); S.frame -= e.shiftKey ? Math.round(S.rec ? S.rec.fps : 16) : 1; showFrame(); }
   else if (k === " ") { e.preventDefault(); startPlay(1); }
@@ -1241,6 +1359,96 @@ $("#btn-quit").onclick = async () => {
   setTimeout(() => { try { window.close(); } catch (e) {} }, 1200);   // closes the app window where Windows allows it
 };
 
+// ------------------------------------------------------------ Custom viewing mode
+// The Custom mode shows one of the saved custom filters (Settings > Custom
+// filters). "Edit filters…" is a shortcut to that part of Settings.
+S.customIdx = 0;
+function customList() { return (S.cfg && S.cfg.custom_filters) || []; }
+function customSpec() { return customList()[S.customIdx] || { name: "Custom", wa: false, mfi: 0, ss: 0, mc: false, blend: "none", opacity: 0.8 }; }
+function renderCustomPick() {
+  const l = customList(), sel = $("#custom-pick");
+  if (S.customIdx >= l.length) S.customIdx = 0;
+  sel.innerHTML = l.length ? l.map((c, k) => `<option value="${k}" ${k === S.customIdx ? "selected" : ""}>${esc(c.name)}</option>`).join("")
+    : '<option value="">No saved filters yet</option>';
+  sel.disabled = !l.length;
+}
+$("#custom-pick").onchange = () => { S.customIdx = +$("#custom-pick").value || 0; S.rng.custom = null; showFrame(); };
+$("#btn-custom-edit").onclick = () => openSettings("custom", S.customIdx);
+
+// Settings > Custom filters: the editor
+const CF = { list: [], idx: 0 };
+const CF_BLANK = { name: "New filter", wa: false, mfi: 0, ss: 5, mc: false, blend: "overlay", opacity: 0.8 };
+$("#cf-opacity").innerHTML = Array.from({ length: 11 }, (_, k) => `<option value="${k / 10}">${k * 10}%</option>`).join("");
+function cfWarnings(c) {
+  const w = [], any = c.wa || c.mfi || c.ss || c.mc;
+  if (!any) w.push(c.blend === "none" ? "No filters are ticked, so this looks the same as Default." : "No filters are ticked: blending the thermal picture with itself changes nothing.");
+  if (c.mc && c.ss) w.push("Max Continuous with Sliding Subtraction: the subtraction removes most of the built-up route, so the picture may be almost blank.");
+  if (c.mc && c.mfi) w.push("Max Continuous already keeps the brightest value of every frame, so Max Frame Interval adds nothing.");
+  if (c.blend === "overlay" && any && !c.ss) w.push("Overlay without Sliding Subtraction lays the whole bright scene over the thermal picture, not just moving animals, so it can look washed out.");
+  if (c.ss && c.ss >= 30) w.push("A long Sliding Subtraction delay can leave ghost copies of animals where they were earlier.");
+  if (c.mfi && c.mfi >= 30) w.push("A long Max Frame Interval smears trails into wide bands and hides detail.");
+  if (c.blend === "crossfade" && c.opacity >= 0.95) w.push("Crossfade at 100% shows only the filter, as if it weren't blended.");
+  return w;
+}
+function cfRead() {
+  return { name: $("#cf-name").value.trim() || "Custom", wa: $("#cf-wa").checked,
+           mfi: $("#cf-mfi-on").checked ? Math.max(2, Math.min(60, +$("#cf-mfi").value || 5)) : 0,
+           ss: $("#cf-ss-on").checked ? Math.max(1, Math.min(60, +$("#cf-ss").value || 5)) : 0,
+           mc: $("#cf-mc").checked, blend: $("#cf-blend").value, opacity: +$("#cf-opacity").value };
+}
+function cfShowWarnings() {
+  const c = cfRead();
+  $("#cf-warn-list").innerHTML = cfWarnings(c).map((t) => `<li>${esc(t)}</li>`).join("");
+  $("#cf-opacity").disabled = c.blend === "none";
+  $("#cf-mfi").disabled = !$("#cf-mfi-on").checked; $("#cf-ss").disabled = !$("#cf-ss-on").checked;
+}
+function cfRender(idx) {
+  CF.idx = Math.max(0, idx);
+  const l = $("#cf-list");
+  l.innerHTML = CF.list.map((c, k) => `<option value="${k}">${esc(c.name)}</option>`).join("");
+  const has = CF.list.length > 0;
+  $("#cf-edit").hidden = !has; $("#cf-dup").disabled = $("#cf-del").disabled = !has;
+  if (!has) { $("#cf-msg").hidden = false; $("#cf-msg").textContent = "No custom filters yet. Click New to make one."; return; }
+  l.value = String(CF.idx);
+  const c = CF.list[CF.idx];
+  $("#cf-name").value = c.name; $("#cf-wa").checked = c.wa;
+  $("#cf-mfi-on").checked = c.mfi > 0; $("#cf-mfi").value = c.mfi || 5;
+  $("#cf-ss-on").checked = c.ss > 0; $("#cf-ss").value = c.ss || 5;
+  $("#cf-mc").checked = c.mc; $("#cf-blend").value = c.blend; $("#cf-opacity").value = String(c.opacity);
+  $("#cf-msg").hidden = true; cfShowWarnings();
+}
+// edits update the filter being edited straight away (saved with Save filter or Save settings)
+for (const id of ["#cf-name", "#cf-wa", "#cf-mfi-on", "#cf-mfi", "#cf-ss-on", "#cf-ss", "#cf-mc", "#cf-blend", "#cf-opacity"]) {
+  $(id).addEventListener("input", () => { if (!CF.list.length) return; CF.list[CF.idx] = cfRead(); cfShowWarnings();
+    if (id === "#cf-name") $("#cf-list").options[CF.idx].textContent = CF.list[CF.idx].name; });
+  $(id).addEventListener("change", () => { if (!CF.list.length) return; CF.list[CF.idx] = cfRead(); cfShowWarnings(); });
+}
+$("#cf-list").onchange = () => cfRender(+$("#cf-list").value);
+function cfUniqueName(base) { let n = base, k = 2; while (CF.list.some((c) => c.name.toLowerCase() === n.toLowerCase())) n = `${base} ${k++}`; return n; }
+$("#cf-new").onclick = () => { CF.list.push({ ...CF_BLANK, name: cfUniqueName("New filter") }); cfRender(CF.list.length - 1); stDirty(); $("#cf-name").select(); };
+$("#cf-dup").onclick = () => { const c = CF.list[CF.idx]; CF.list.push({ ...c, name: cfUniqueName(c.name + " copy") }); cfRender(CF.list.length - 1); stDirty(); };
+$("#cf-del").onclick = () => { if (!confirmTwice($("#cf-del"), `Click Delete again to remove ${CF.list[CF.idx].name}`)) return; CF.list.splice(CF.idx, 1); cfRender(Math.min(CF.idx, CF.list.length - 1)); cfSave(false); };
+async function cfSave(close) {
+  const names = CF.list.map((c) => c.name.toLowerCase());
+  const dup = names.find((n, k) => names.indexOf(n) !== k);
+  const msg = $("#cf-msg");
+  if (dup) { msg.hidden = false; msg.className = "small err"; msg.textContent = `Two filters are called "${dup}". Give each one a different name.`; return false; }
+  try {
+    const r = await api("/api/settings", { settings: { ...ST.saved, custom_filters: CF.list } });
+    ST.saved = r.settings; applySettings(r.settings, false);
+    CF.list = JSON.parse(JSON.stringify(r.settings.custom_filters));
+    if (!close) { cfRender(Math.min(CF.idx, CF.list.length - 1)); msg.hidden = false; msg.className = "small ok"; msg.textContent = "Saved. It's in the Custom mode's Filter list."; stDirty(); }
+    renderCustomPick(); if (S.mode === "custom") showFrame();
+    return true;
+  } catch (e) { err(e); return false; }
+}
+$("#cf-save").onclick = () => cfSave(false);
+$("#cf-view").onclick = async () => {
+  const idx = CF.idx;
+  if (!(await cfSave(true))) return;
+  $("#dlg-settings").close(); S.customIdx = idx; S.rng.custom = null; setMode("custom");
+};
+
 // ------------------------------------------------------------ settings
 function setCrumbMeta() {
   $("#crumb-meta").textContent = `· ${S.rec.camera} · ${S.rec.start ? "starts " + fmtStamp(0) + " · " : ""}${fmtDur(S.rec.duration_s)} · ${S.rec.frames.toLocaleString()} frames · ${S.rec.units}`;
@@ -1269,10 +1477,11 @@ function applySettings(c, first) {
   CLASSES = c.classes;
   applyLook(c.appearance.scheme, c.appearance.theme);
   if (first || JSON.stringify(old.view) !== JSON.stringify(c.view)) applyViewDefaults(c.view);
+  renderCustomPick();
 }
 
 const ST = { saved: null, draft: null };   // saved settings, and the copy being edited
-const SECTIONS = ["appearance", "viewing", "detection", "exports", "time", "classes", "review", "report", "shortcuts"];
+const SECTIONS = ["appearance", "viewing", "custom", "detection", "exports", "time", "classes", "review", "report", "shortcuts"];
 function stShow(sec) {
   document.querySelectorAll(".st-nav [data-sec]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.sec === sec)));
   document.querySelectorAll(".st-panes [data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== sec));
@@ -1297,6 +1506,7 @@ function stFill(c) {
   $("#st-classes").value = c.classes.join("\n");
   $("#st-autoadv").checked = c.review.auto_advance; $("#st-autoplay").checked = c.review.auto_play;
   for (const k of ["company", "contact", "analyst", "camera"]) $("#st-" + k).value = c.report[k] || "";
+  CF.list = JSON.parse(JSON.stringify(c.custom_filters || [])); cfRender(Math.min(CF.idx, CF.list.length - 1));
   stExamples();
 }
 function stRead() {
@@ -1313,6 +1523,7 @@ function stRead() {
     classes: v("#st-classes").split("\n").map((x) => x.trim()).filter(Boolean),
     review: { auto_advance: $("#st-autoadv").checked, auto_play: $("#st-autoplay").checked },
     report: Object.fromEntries(["company", "contact", "analyst", "camera"].map((k) => [k, v("#st-" + k).trim()])),
+    custom_filters: CF.list,
   };
 }
 function stExamples() {
@@ -1344,15 +1555,16 @@ $("#st-detect-reset").onclick = () => { $("#st-sens").value = "normal"; $("#st-m
 $("#st-folder-pick").onclick = async () => {
   try { const r = await api("/api/pick", { kind: "folder" }); if (r.paths.length) { $("#st-folder").value = r.paths[0]; stDirty(); } } catch (e) { err(e); }
 };
-async function openSettings() {
+async function openSettings(sec, cfIdx) {
   try { const r = await api("/api/settings"); ST.saved = r.settings; ST.defaults = r.defaults; } catch (e) { return err(e); }
-  stFill(ST.saved); stShow("appearance"); $("#st-dirty").hidden = true; $("#dlg-settings").showModal();
+  if (cfIdx != null) CF.idx = cfIdx;
+  stFill(ST.saved); stShow(typeof sec === "string" ? sec : "appearance"); $("#st-dirty").hidden = true; $("#dlg-settings").showModal();
 }
 function closeSettings() {   // undo any appearance preview that wasn't saved
   applyLook(S.cfg.appearance.scheme, S.cfg.appearance.theme);
   $("#dlg-settings").close();
 }
-$("#btn-settings").onclick = openSettings;
+$("#btn-settings").onclick = () => openSettings();
 $("#st-cancel").onclick = closeSettings;
 $("#dlg-settings").addEventListener("cancel", (e) => { e.preventDefault(); closeSettings(); });
 async function saveSettings(body, msg) {
@@ -1363,7 +1575,7 @@ async function saveSettings(body, msg) {
     if (r.recording) {
       const unitsChanged = !S.rec || r.recording.units !== S.rec.units;
       S.rec = r.recording;
-      if (unitsChanged) { S.rng = { raw: null, review: null, path: null, blend: null }; S.track = {}; }
+      if (unitsChanged) { S.rng = { raw: null, review: null, path: null, blend: null, custom: null }; S.track = {}; }
       if (S.sel && !S.rec.events.some((e) => e.n === S.sel)) S.sel = null;
       if (S.sel) { const e = evById(S.sel), pad = winPad(); S.ws = Math.max(0, e.f0 - pad); S.we = Math.min(S.rec.frames - 1, e.f1 + pad); }
       if (S.rec.scanned) await loadActivity(true);
@@ -1406,3 +1618,12 @@ $("#st-import-file").onchange = async () => {
 })();
 syncLock(); drawLimits();
 pollJobs();
+
+// Heartbeat: tells the program this window is still open, so it never shuts
+// itself down while you're working. If the program has stopped, say so
+// instead of leaving buttons that do nothing.
+let missedPings = 0;
+setInterval(async () => {
+  try { const r = await fetch("/api/ping", { cache: "no-store" }); if (!r.ok) throw new Error(); missedPings = 0; $("#stopped-banner").hidden = true; }
+  catch (e) { if (++missedPings >= 2) $("#stopped-banner").hidden = false; }
+}, 20000);

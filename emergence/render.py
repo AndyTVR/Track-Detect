@@ -77,6 +77,28 @@ TNR_WEIGHT = {1: 0.5, 2: 0.3, 3: 0.15}       # noise reduction: weight given to 
 TNR_PREROLL = {1: 4, 2: 8, 3: 14}            # frames needed to settle after a jump
 
 
+CUSTOM_DEFAULT = {"name": "Custom", "wa": False, "mfi": 0, "ss": 5, "mc": False, "blend": "overlay", "opacity": 0.8}
+
+
+def clean_custom(c=None) -> dict:
+    """A custom filter: which filters, their persistence (0 = off), and how
+    it's shown with the thermal picture (none, overlay or crossfade)."""
+    c = c if isinstance(c, dict) else {}
+    num = lambda v, d: int(min(60, max(0, round(float(v))))) if _isnum(v) else d
+    return {"name": (str(c.get("name") or "Custom").strip()[:40] or "Custom"),
+            "wa": bool(c.get("wa")), "mfi": num(c.get("mfi"), 0), "ss": num(c.get("ss"), 0), "mc": bool(c.get("mc")),
+            "blend": c.get("blend") if c.get("blend") in ("none", "overlay", "crossfade") else "none",
+            "opacity": round(float(min(1, max(0, float(c.get("opacity", 0.8)) if _isnum(c.get("opacity", 0.8)) else 0.8))), 2)}
+
+
+def _isnum(v):
+    try:
+        float(v)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def clean_enh(e=None) -> dict:
     e = e or {}
     return {k: int(min(3, max(0, int(e.get(k, 0) or 0)))) for k in ("dde", "tnr")}
@@ -102,11 +124,36 @@ def to_u8(img: np.ndarray, scale: str, rng=None) -> np.ndarray:
 LABEL = {"scale": 1.0}   # timestamp text size (Settings tab)
 
 
+def _hex_bgr(h: str):
+    h = (h or "#E5484D").lstrip("#")
+    return tuple(int(h[k:k + 2], 16) for k in (4, 2, 0))
+
+
 def decorate(gray: np.ndarray, roi_points=None, label: str | None = None,
              show_roi=True, show_time=True, palette=None) -> np.ndarray:
+    """Colour the picture, then draw the ROI and the timestamp. roi_points is
+    one outline, or a list of {points, colour, name} shapes (several ROIs,
+    each drawn in its colour with its name)."""
     img = colorize(gray, palette) if gray.ndim == 2 else gray
-    if show_roi and roi_points and len(roi_points) >= 3:
-        cv2.polylines(img, [np.asarray(roi_points, np.int32)], True, ROI_BGR, 1, cv2.LINE_AA)
+    shapes = []
+    if show_roi and roi_points:
+        if isinstance(roi_points[0], dict):
+            shapes = [s for s in roi_points if len(s.get("points") or []) >= 3]
+        elif len(roi_points) >= 3:
+            shapes = [{"points": roi_points}]
+    if shapes:
+        img = np.ascontiguousarray(img)
+        fs = max(0.38, img.shape[1] / 1900)
+        for sh in shapes:
+            pts = np.asarray(sh["points"], np.int32)
+            col = _hex_bgr(sh["colour"]) if sh.get("colour") else ROI_BGR
+            cv2.polylines(img, [pts], True, col, 1 if len(shapes) == 1 and not sh.get("name") else 2, cv2.LINE_AA)
+            if sh.get("name") and len(shapes) > 1:   # name each ROI when there's more than one
+                x, y = int(pts[:, 0].min()), int(pts[:, 1].min())
+                (tw, th), _ = cv2.getTextSize(sh["name"], cv2.FONT_HERSHEY_SIMPLEX, fs, 1)
+                y = max(th + 6, y - 4)
+                cv2.rectangle(img, (x, y - th - 5), (x + tw + 8, y + 3), col, -1)
+                cv2.putText(img, sh["name"], (x + 4, y - 1), cv2.FONT_HERSHEY_SIMPLEX, fs, (255, 255, 255), 1, cv2.LINE_AA)
     if show_time and label:
         h, w = img.shape[:2]
         fs = max(0.35, w / 1400 * LABEL["scale"])
@@ -132,11 +179,11 @@ class Renderer:
         self._out = None
         self.filters = clean_filters()
 
-    def filtered(self, i: int, mode: str, window_start: int = 0) -> np.ndarray:
-        cfg = mode_cfg(mode, self.filters() if callable(self.filters) else self.filters)
+    def filtered(self, i: int, mode: str, window_start: int = 0, cfg: dict | None = None) -> np.ndarray:
+        cfg = cfg or mode_cfg(mode, self.filters() if callable(self.filters) else self.filters)
         i = int(np.clip(i, 0, self.src.n_frames - 1))
         with self._lock:
-            key = (mode, int(window_start) if cfg["mc"] else None, cfg["mfi"], cfg["ss"])
+            key = (mode, int(window_start) if cfg["mc"] else None, cfg["mfi"], cfg["ss"], cfg["wa"], cfg["mc"])
             if key == self._key and self._last is not None and self._last == i:
                 return self._out
             if key == self._key and self._last is not None and self._last < i <= self._last + 3:
@@ -189,7 +236,7 @@ class Renderer:
             self._tn = {"level": tnr, "last": i, "avg": avg, "out": out}
             return out
 
-    def blended(self, i, window_start=0, palette=None, rng=None, opacity=0.5, how="overlay", enh=None):
+    def blended(self, i, window_start=0, palette=None, rng=None, opacity=0.5, how="overlay", enh=None, cfg=None):
         """Blended mode, a mix of the thermal and High Sensitivity pictures.
         overlay:   the trails are laid over the thermal picture. Where they are
                    bright they replace it, by up to `opacity`; elsewhere the
@@ -200,13 +247,13 @@ class Renderer:
         i = int(np.clip(i, 0, self.src.n_frames - 1))
         enh = clean_enh(enh)
         t = self.thermal(i, enh["tnr"])
-        h = self.filtered(i, "review", window_start)
+        h = self.filtered(i, "custom" if cfg else "review", window_start, cfg)
         auto = auto_range(t, "raw")
         sub = t[::4, ::4]
         self.last_info = {"lo": (rng or auto)[0], "hi": (rng or auto)[1], "auto_lo": auto[0], "auto_hi": auto[1],
                           "min": float(sub.min()), "max": float(sub.max())}
         th = colorize(detail_enhance(to_u8(t, "raw", rng), enh["dde"]), palette).astype(np.float32)
-        hu = to_u8(h, "image")
+        hu = to_u8(h, "image" if not cfg or cfg.get("ss") else "raw")
         hs = colorize(hu, palette).astype(np.float32)
         a = float(np.clip(opacity, 0, 1))
         if how == "crossfade":
@@ -215,10 +262,31 @@ class Renderer:
         m = np.clip((hu.astype(np.float32) - 110.0) / 100.0, 0, 1)[..., None] * float(np.clip(opacity, 0, 1))
         return (th * (1 - m) + hs * m).clip(0, 255).astype(np.uint8)
 
+    def custom(self, i, spec, window_start=0, palette=None, rng=None, enh=None):
+        """The Custom viewing mode: the user's own mix of filters, shown on its
+        own or blended with the thermal picture."""
+        c = clean_custom(spec)
+        cfg = {"wa": c["wa"], "mfi": c["mfi"], "ss": c["ss"], "mc": c["mc"], "scale": "image" if c["ss"] else "raw"}
+        if c["blend"] != "none":
+            return self.blended(i, window_start, palette, rng, c["opacity"], c["blend"], enh, cfg)
+        enh = clean_enh(enh)
+        plain = not (c["wa"] or c["mfi"] or c["ss"] or c["mc"])
+        y = self.thermal(i, enh["tnr"]) if plain else self.filtered(i, "custom", window_start, cfg)
+        auto = auto_range(y, cfg["scale"])
+        sub = y[::4, ::4]
+        self.last_info = {"lo": (rng or auto)[0], "hi": (rng or auto)[1], "auto_lo": auto[0], "auto_hi": auto[1],
+                          "min": float(sub.min()), "max": float(sub.max())}
+        g = to_u8(y, cfg["scale"], rng)
+        if not c["ss"]:
+            g = detail_enhance(g, enh["dde"])
+        return colorize(g, palette)
+
     def image(self, i, mode, roi_points=None, window_start=0, show_roi=True, show_time=True,
-              palette=None, rng=None, opacity=0.5, blend="overlay", enh=None):
+              palette=None, rng=None, opacity=0.5, blend="overlay", enh=None, custom=None):
         label = (self.src.date_label(i) + " " + self.src.time_label(i) + " " + self.src.zone_of(i)).strip()
         enh = clean_enh(enh)
+        if mode == "custom":
+            return decorate(self.custom(i, custom or {}, window_start, palette, rng, enh), roi_points, label, show_roi, show_time)
         if mode == "blend":
             return decorate(self.blended(i, window_start, palette, rng, opacity, blend, enh), roi_points, label, show_roi, show_time)
         y = self.thermal(i, enh["tnr"]) if mode == "raw" and enh["tnr"] else self.filtered(i, mode, window_start)

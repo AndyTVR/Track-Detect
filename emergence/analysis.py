@@ -95,24 +95,42 @@ def roi_bbox(mask: np.ndarray | None, shape):
 # ---------------------------------------------------------------- scan
 def scan(src, mask, progress=None, should_stop=None, mode="scan", filters=None,
          start=0, stop=None) -> np.ndarray:
-    """Max value inside the ROI for every frame from start to stop (inclusive;
-    default the whole recording), through the Scan filters.
+    """Max value inside one ROI for every frame from start to stop (inclusive;
+    default the whole recording), through the Scan filters. See scan_multi."""
+    out = scan_multi(src, [mask], progress, should_stop, mode, filters, start, stop)
+    return out[0]
+
+
+def scan_multi(src, masks, progress=None, should_stop=None, mode="scan", filters=None,
+               start=0, stop=None) -> np.ndarray:
+    """Max value inside each ROI mask, for every frame from start to stop
+    (inclusive), through the Scan filters, in a single pass over the
+    recording. Returns an array of shape (number of ROIs, frames); fewer
+    frames if cancelled.
 
     This is the Temporal Plot (All ROIs without image, Maximum) from the
-    manual, computed in one pass. A part-way start reads a few frames before
-    it first, so the filters are fully formed at the first frame returned."""
+    manual. A part-way start reads a few frames before it first, so the
+    filters are fully formed at the first frame returned."""
     n = src.n_frames
     stop = n - 1 if stop is None else min(int(stop), n - 1)
     start = max(0, min(int(start), stop))
-    x0, y0, x1, y1 = roi_bbox(mask, (src.height, src.width))
-    sub = mask[y0:y1, x0:x1] if mask is not None else None
+    shape = (src.height, src.width)
+    if any(m is None for m in masks):
+        x0, y0, x1, y1 = 0, 0, shape[1], shape[0]
+    else:   # one crop that covers every ROI
+        boxes = [roi_bbox(m, shape) for m in masks]
+        x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+        x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+        # a 1-pixel margin, so the 3x3 Window Average has full neighbourhoods at the ROI edge
+        x0, y0, x1, y1 = max(0, x0 - 1), max(0, y0 - 1), min(shape[1], x1 + 1), min(shape[0], y1 + 1)
+    subs = [m[y0:y1, x0:x1] if m is not None else None for m in masks]
     pipe = Pipeline(**mode_cfg(mode, filters))
-    m = stop - start + 1
-    out = np.zeros(m, np.float32)
+    m_len = stop - start + 1
+    out = np.zeros((len(masks), m_len), np.float32)
     for i in range(max(0, start - pipe.preroll), stop + 1):
         k = i - start
         if should_stop and should_stop():
-            return out[:max(0, k)]
+            return out[:, :max(0, k)]
         try:
             f = src.frame(i, crop=(x0, y0, x1, y1))
         except TypeError:  # sources without crop support
@@ -120,12 +138,14 @@ def scan(src, mask, progress=None, should_stop=None, mode="scan", filters=None,
         y = pipe.step(f)
         if k < 0:
             continue   # warming up the filters
-        out[k] = float(y[sub].max()) if sub is not None else float(y.max())
+        for j, sub in enumerate(subs):
+            out[j, k] = float(y[sub].max()) if sub is not None else float(y.max())
         if progress and (k % 200 == 0 or i == stop):
-            progress(k + 1, m)
+            progress(k + 1, m_len)
     if start == 0:
         p = pipe.preroll
-        out[:p] = np.median(out[p:p + 50]) if m > p + 1 else 0
+        for j in range(len(masks)):
+            out[j, :p] = np.median(out[j, p:p + 50]) if m_len > p + 1 else 0
     return out
 
 

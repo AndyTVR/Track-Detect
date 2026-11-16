@@ -308,8 +308,16 @@ def frame():
     op = min(1.0, max(0.0, float(request.args.get("op", 0.5))))
     how = "crossfade" if request.args.get("bm") == "crossfade" else "overlay"
     enh = {"dde": request.args.get("dde", 0), "tnr": request.args.get("tnr", 0)}
-    img = r.renderer.image(i, mode, r.roi if roi else None, window_start=ws, palette=pal, rng=rng, opacity=op,
-                           blend=how, enh=enh)
+    hidden = set(filter(None, request.args.get("hide", "").split(",")))   # ROIs hidden in the app
+    custom = None
+    if mode == "custom":
+        import json
+        try:
+            custom = json.loads(request.args.get("cf") or "{}")
+        except ValueError:
+            custom = {}
+    img = r.renderer.image(i, mode, r.roi_shapes(hidden) if roi else None, window_start=ws, palette=pal, rng=rng,
+                           opacity=op, blend=how, enh=enh, custom=custom)
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
     from io import BytesIO
     resp = send_file(BytesIO(buf.tobytes()), mimetype="image/jpeg", max_age=0)
@@ -318,7 +326,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.16-layout"   # must match static/app.js
+APP_VERSION = "2026.11.16-rois"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -344,17 +352,47 @@ def set_palette():
 
 
 # ------------------------------------------------------------------ ROI & analysis
+def _share_rois(r):
+    """Same camera position = same folder: give the other listed recordings
+    from that folder these ROIs."""
+    here = os.path.dirname(r.path)
+    for row in list_files():
+        if row["path"] != r.path and os.path.dirname(row["path"]) == here:
+            rec(row["path"]).copy_rois_from(r)
+
+
 @app.post("/api/roi")
 def set_roi():
+    """Set an ROI's outline (body: id, points)."""
     body = request.json or {}
     r = rec()
-    r.set_roi(body.get("points", []))
-    if body.get("all_files"):  # same camera position = same folder
-        here = os.path.dirname(r.path)
-        for row in list_files():
-            if row["path"] != r.path and os.path.dirname(row["path"]) == here:
-                rec(row["path"]).set_roi(r.roi)
+    r.set_roi(body.get("points", []), body.get("id"))
+    if body.get("all_files"):
+        _share_rois(r)
     return jsonify(r.summary())
+
+
+@app.post("/api/rois")
+def edit_rois():
+    """Add, rename, delete an ROI, or tick it for scanning.
+    body: {action: add|rename|delete|scan, id, name, scan, all_files}"""
+    body = request.json or {}
+    r = rec()
+    act = body.get("action")
+    out = {}
+    if act == "add":
+        out["added"] = r.add_roi(body.get("name"))["id"]
+    elif act == "rename":
+        r.update_roi(body["id"], name=body.get("name"))
+    elif act == "scan":
+        r.update_roi(body["id"], scan=bool(body.get("scan")))
+    elif act == "delete":
+        r.delete_roi(body["id"])
+    else:
+        raise UserError("Unknown ROI action")
+    if body.get("all_files"):
+        _share_rois(r)
+    return jsonify({**r.summary(), **out})
 
 
 @app.post("/api/scan")
@@ -366,24 +404,32 @@ def start_scan():
     out = []
     for p in targets:
         r = rec(p)
-        if not r.roi:
+        ids = [x["id"] for x in r.rois if len(x.get("points") or []) >= 3 and x.get("scan", True)]
+        if not ids:
             continue
         label = f"Scan {os.path.basename(p)}" + (" (play limits)" if part else "")
-        out.append(jobs.submit(label, lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop, ranges=part)}))
+        if len(r.rois) > 1:
+            label += f", {len(ids)} ROI{'s' if len(ids) != 1 else ''}"
+        out.append(jobs.submit(label, lambda prog, stop, r=r, ids=ids: {"ok": r.run_scan(prog, stop, ranges=part, roi_ids=ids)}))
     return jsonify(jobs=out)
 
 
 @app.post("/api/start-over")
 def start_over():
-    """Undo all decisions on the current recording, then scan it again."""
+    """Reset every decision on the current recording; optionally delete the
+    comments, go back to the suggested level, and scan it again."""
     b = request.json or {}
     r = rec()
     part = r.scanned_ranges if r.unscanned_ranges else None   # a part scan is redone over the same frames
-    r.start_over(delete_comments=bool(b.get("delete_comments")), reset_level=bool(b.get("reset_level", True)))
+    reset_level = bool(b.get("reset_level"))
+    r.start_over(delete_comments=bool(b.get("delete_comments")), reset_level=reset_level)
     out = {"recording": r.summary(), "jobs": []}
-    if r.roi:
+    if b.get("rescan") and r.roi:
         out["jobs"].append(jobs.submit(f"Scan {os.path.basename(r.path)} again",
                                        lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop, ranges=part, fresh=True)}))
+    elif reset_level and r.acts:
+        r.redetect(r.state.get("suggested_level") or 0)
+        out["recording"] = r.summary()
     return jsonify(out)
 
 
@@ -534,7 +580,7 @@ def activity():
     pts = max(50, min(4000, int(request.args.get("points", 1200))))
     act = r.activity
     rng = [float(np.percentile(act, 1)), float(act.max())] if act is not None and len(act) else None
-    return jsonify(values=r.activity_range(a, b, pts), frames=n, units=r.src.units, range=rng,
+    return jsonify(values=r.activity_range(a, b, pts), series=r.activity_series(a, b, pts), frames=n, units=r.src.units, range=rng,
                    level=r.state.get("level"), suggested_level=r.state.get("suggested_level"))
 
 
@@ -599,11 +645,11 @@ def events_csv():
     with open(p, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         zone = r.src.zone_of(0) or "elapsed"
-        w.writerow(["event", "date", f"start_time ({zone})", f"end_time ({zone})", "first_frame", "last_frame", "peak", "units",
+        w.writerow(["event", "roi", "date", f"start_time ({zone})", f"end_time ({zone})", "first_frame", "last_frame", "peak", "units",
                     "status", "classification", "comments"])
         for e in evs:
             mine = [c["text"] for c in comments if event_of(c["frame"]) == e["n"]]
-            w.writerow([e["n"], r.src.date_label(e["f0"]), r.src.time_label(e["f0"]), r.src.time_label(e["f1"]), e["f0"], e["f1"],
+            w.writerow([e["n"], r.roi_name(e.get("roi")), r.src.date_label(e["f0"]), r.src.time_label(e["f0"]), r.src.time_label(e["f1"]), e["f0"], e["f1"],
                         round(e["peak"], 2), r.src.units, e["status"], e.get("cls", ""), " | ".join(mine)])
     files = [p]
     if comments:
@@ -646,7 +692,7 @@ def _seen():
 
 
 # ---------------------------------------------------------------- customer beta
-_BETA_OPEN = ("/api/beta", "/api/feedback", "/api/about", "/api/version", "/api/quit", "/api/settings",
+_BETA_OPEN = ("/api/ping", "/api/beta", "/api/feedback", "/api/about", "/api/version", "/api/quit", "/api/settings",
               "/api/palettes", "/api/filters")
 
 
@@ -770,10 +816,18 @@ def about():
     return jsonify(version=APP_VERSION, frozen=FROZEN, data=DATA, product_version=beta.INFO.get("version", "dev"))
 
 
-def _watchdog(idle_s=180):
+@app.get("/api/ping")
+def ping():
+    """The page's heartbeat: keeps the program running while its window is open."""
+    return jsonify(ok=True)
+
+
+def _watchdog(idle_s=900):
     """Without a console window there's nothing to close, so the program stops
-    itself once no Track & Detect page has been open for a few minutes and
-    nothing is being scanned or exported."""
+    itself once no Track & Detect page has been open for 15 minutes and nothing
+    is being scanned or exported. An open page checks in every 20 seconds
+    (/api/ping), even while it's sitting idle, so this never stops a program
+    that's still on screen."""
     while True:
         time.sleep(15)
         busy = jobs.current is not None or not jobs.q.empty()

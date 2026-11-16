@@ -26,6 +26,11 @@ DEFAULTS = {
     "classes": DEFAULT_CLASSES,
     "review": {"auto_advance": True, "auto_play": False},
     "report": {"company": "", "contact": "", "analyst": "", "camera": ""},
+    # the Custom viewing mode's saved filters (Settings > Custom filters)
+    "custom_filters": [
+        {"name": "Smoothed trails", "wa": True, "mfi": 5, "ss": 5, "mc": False, "blend": "overlay", "opacity": 0.8},
+        {"name": "Trails only", "wa": False, "mfi": 5, "ss": 5, "mc": False, "blend": "none", "opacity": 0.8},
+    ],
 }
 
 # how far above the background noise the suggested detection level sits (x noise)
@@ -59,7 +64,7 @@ def clean(d: dict | None) -> dict:
     g = lambda sec: d.get(sec) if isinstance(d.get(sec), dict) else {}
     a, v, f, de, ex, u, rv, rp = (g(k) for k in ("appearance", "view", "filters", "detect", "export", "units",
                                                  "review", "report"))
-    from .render import PALETTES   # late import: render imports settings
+    from .render import PALETTES, clean_custom   # late import: render imports settings
     classes = [str(c).strip()[:60] for c in (d.get("classes") or []) if str(c).strip()]
     items = [i for i in (ex.get("items") if isinstance(ex.get("items"), list) else D["export"]["items"])
              if i in EXPORT_ITEMS]
@@ -89,7 +94,22 @@ def clean(d: dict | None) -> dict:
         "classes": classes or list(DEFAULT_CLASSES),
         "review": {"auto_advance": bool(rv.get("auto_advance", True)), "auto_play": bool(rv.get("auto_play", False))},
         "report": {k: str(rp.get(k) or "").strip()[:200] for k in D["report"]},
+        "custom_filters": _custom_list(d.get("custom_filters"), clean_custom),
     }
+
+
+def _custom_list(v, clean_custom):
+    """Saved custom filters: each one cleaned, names kept unique, at most 30."""
+    if not isinstance(v, list):
+        return copy.deepcopy(DEFAULTS["custom_filters"])
+    out, seen = [], set()
+    for c in v[:30]:
+        c = clean_custom(c)
+        if c["name"].lower() in seen:
+            continue
+        seen.add(c["name"].lower())
+        out.append(c)
+    return out
 
 
 def load(path: str) -> dict:

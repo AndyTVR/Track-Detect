@@ -11,7 +11,7 @@ from dataclasses import asdict
 
 import numpy as np
 
-from .analysis import SCAN_ID, clean_filters, end_spike, detect_events, roi_mask, scan, suggest, suggested_level, track_window, Event
+from .analysis import SCAN_ID, clean_filters, end_spike, detect_events, roi_mask, scan, scan_multi, suggest, suggested_level, track_window, Event
 from .ats import ATSFile
 from .render import Renderer, export_event
 from . import settings as cfg
@@ -44,8 +44,12 @@ def _range_mask(rs, n):
     return m
 
 
+ROI_COLOURS = ["#E5484D", "#3E9BFF", "#F5A524", "#A26CF5", "#2EC4B6", "#FF7AB6", "#9BE15D", "#FF8A3D"]
+
+
 class Recording:
-    """One .ats file with its ROI, activity trace and reviewed events."""
+    """One .ats file with its ROIs, an activity trace for each ROI, and the
+    reviewed events (each found in one ROI)."""
 
     def __init__(self, path: str, fps: float | None = None):
         self.path = path
@@ -53,9 +57,40 @@ class Recording:
         self.src = ATSFile(path, fps=fps or self.state.get("fps"))
         self.renderer = Renderer(self.src)
         self.renderer.filters = lambda: self.filters
-        self.activity = self._load_activity()
+        self.acts = self._load_activity()       # ROI id -> activity trace
         self._notes_to_comments()
         self._sync_units()
+
+    # ---------------------------------------------------------- activity traces
+    @property
+    def activity(self):
+        """The combined trace (the highest of the ROIs at each frame), or None
+        before any scan."""
+        arrs = [a for rid, a in self.acts.items() if self.roi_by_id(rid)]
+        if not arrs:
+            return None
+        return np.max(np.vstack(arrs), axis=0) if len(arrs) > 1 else arrs[0]
+
+    def _save_activity(self):
+        p = _sidecar(self.path, ".activity.npz")
+        tmp = p + ".tmp.npz"
+        np.savez(tmp, **{rid: a for rid, a in self.acts.items()})
+        os.replace(tmp, p)
+
+    def _load_activity(self) -> dict:
+        n = self.src.n_frames
+        try:
+            with np.load(_sidecar(self.path, ".activity.npz")) as z:
+                return {k: z[k] for k in z.files if len(z[k]) == n}
+        except (OSError, ValueError):
+            pass
+        try:   # a scan from before ROIs had names: it belongs to the first ROI
+            a = np.load(_sidecar(self.path, ".activity.npy"))
+            if len(a) == n and self.state.get("scanned") and self.rois:
+                return {self.rois[0]["id"]: a}
+        except (OSError, ValueError):
+            pass
+        return {}
 
     def _sync_units(self):
         """If this recording was scanned in °C and the Settings tab now says °F
@@ -72,9 +107,9 @@ class Recording:
         if was == now or {was, now} != {"°C", "°F"}:
             return
         k = 1.8 if now == "°F" else 1 / 1.8
-        if self.activity is not None:
-            self.activity = (self.activity * k).astype(np.float32)
-            np.save(_sidecar(self.path, ".activity.npy"), self.activity)
+        if self.acts:
+            self.acts = {rid: (a * k).astype(np.float32) for rid, a in self.acts.items()}
+            self._save_activity()
         for key in ("level", "suggested_level"):
             if self.state.get(key) is not None:
                 self.state[key] = round(float(self.state[key]) * k, 4)
@@ -103,80 +138,170 @@ class Recording:
     def _load_state(self) -> dict:
         try:
             with open(_sidecar(self.path, ".analysis.json")) as f:
-                return json.load(f)
+                st = json.load(f)
         except (OSError, ValueError):
-            return {"roi": [], "events": [], "scanned": False}
+            st = {"events": [], "scanned": False}
+        if not isinstance(st.get("rois"), list):   # files from before multiple ROIs
+            pts = st.pop("roi", None) or []
+            st["rois"] = [{"id": "r1", "name": "ROI 1", "points": pts, "scan": True}]
+            if st.get("scanned"):
+                st["roi_scans"] = {"r1": st.pop("scanned_ranges", None) or None}
+                if st.pop("roi_changed", False):
+                    st["rois"][0]["changed"] = True
+                for e in st.get("events", []):
+                    e.setdefault("roi", "r1")
+                st["archive"] = {(k if ":" in k else f"r1:{k}"): v for k, v in st.get("archive", {}).items()}
+        st.setdefault("roi_scans", {})
+        return st
 
     def save(self):
         self.state["fps"] = self.src.fps
+        self.state["roi"] = self.roi        # kept for older versions of the program
         tmp = _sidecar(self.path, ".analysis.json.tmp")
         with open(tmp, "w") as f:
             json.dump(self.state, f, indent=1)
         os.replace(tmp, _sidecar(self.path, ".analysis.json"))
 
-    def _load_activity(self):
-        try:
-            a = np.load(_sidecar(self.path, ".activity.npy"))
-            return a if len(a) == self.src.n_frames else None
-        except (OSError, ValueError):
-            return None
+    # ---------------------------------------------------------- ROIs
+    @property
+    def rois(self) -> list:
+        return self.state.setdefault("rois", [])
 
-    # ---------------------------------------------------------- analysis
+    def roi_by_id(self, rid):
+        return next((r for r in self.rois if r["id"] == rid), None)
+
+    def roi_name(self, rid) -> str:
+        r = self.roi_by_id(rid)
+        return r["name"] if r else "ROI"
+
+    def roi_colour(self, rid) -> str:
+        ids = [r["id"] for r in self.rois]
+        return ROI_COLOURS[(ids.index(rid) if rid in ids else 0) % len(ROI_COLOURS)]
+
     @property
     def roi(self):
-        return self.state.get("roi") or []
+        """The first drawn ROI's outline (older single-ROI callers)."""
+        return next((r["points"] for r in self.rois if len(r.get("points") or []) >= 3), [])
 
-    def set_roi(self, pts):
-        new = [[float(x), float(y)] for x, y in pts]
-        if self.state.get("scanned") and new != self.roi:
-            self.state["roi_changed"] = True   # the next part scan starts afresh
-        self.state["roi"] = new
+    def roi_shapes(self, hidden=(), only=None):
+        """Drawn ROIs for the picture overlay: outline, colour and name."""
+        return [{"points": r["points"], "colour": self.roi_colour(r["id"]), "name": r["name"]}
+                for r in self.rois if len(r.get("points") or []) >= 3 and r["id"] not in hidden
+                and (only is None or r["id"] == only)]
+
+    def add_roi(self, name=None) -> dict:
+        nums = [int(r["id"][1:]) for r in self.rois if r["id"][1:].isdigit()]
+        k = max(nums, default=0) + 1
+        r = {"id": f"r{k}", "name": (name or f"ROI {k}").strip()[:40] or f"ROI {k}", "points": [], "scan": True}
+        self.rois.append(r)
+        self.save()
+        return r
+
+    def update_roi(self, rid, name=None, points=None, scan=None):
+        r = self.roi_by_id(rid)
+        if r is None:
+            raise KeyError(rid)
+        if name is not None and str(name).strip():
+            r["name"] = str(name).strip()[:40]
+        if scan is not None:
+            r["scan"] = bool(scan)
+        if points is not None:
+            new = [[float(x), float(y)] for x, y in points]
+            if rid in self.acts and new != r.get("points"):
+                r["changed"] = True   # the next part scan of this ROI starts afresh
+            r["points"] = new
+        self.save()
+        return r
+
+    def delete_roi(self, rid):
+        """Remove an ROI with its trace and its events (decisions on them are
+        kept in the archive in case it's drawn again)."""
+        if len(self.rois) <= 1:
+            return self.update_roi(rid, points=[])
+        self.state["rois"] = [r for r in self.rois if r["id"] != rid]
+        self.acts.pop(rid, None)
+        self.state.get("roi_scans", {}).pop(rid, None)
+        if self.acts:
+            self._save_activity()
+            self.redetect(self.state.get("level") or self.state.get("suggested_level") or 0)
+        else:
+            self.state["events"], self.state["scanned"] = [], False
+            self.save()
+
+    def set_roi(self, pts, rid=None):
+        rid = rid or self.rois[0]["id"]
+        self.update_roi(rid, points=pts)
+
+    def copy_rois_from(self, other: "Recording"):
+        """Use another recording's ROIs (same names, outlines and scan ticks)."""
+        old = {r["id"]: r for r in self.rois}
+        out = []
+        for r in other.rois:
+            mine = old.get(r["id"])
+            changed = bool(mine and r["id"] in self.acts and mine.get("points") != r.get("points"))
+            out.append({"id": r["id"], "name": r["name"], "points": [list(p) for p in r.get("points") or []],
+                        "scan": r.get("scan", True), **({"changed": True} if changed or (mine or {}).get("changed") else {})})
+        for rid in list(self.acts):
+            if rid not in {r["id"] for r in out}:
+                self.acts.pop(rid)
+                self.state.get("roi_scans", {}).pop(rid, None)
+        self.state["rois"] = out
         self.save()
 
     @property
     def filters(self) -> dict:
         return clean_filters(SETTINGS["filters"])
 
-    def run_scan(self, progress=None, should_stop=None, ranges=None, fresh=False):
+    # ---------------------------------------------------------- scanning
+    def run_scan(self, progress=None, should_stop=None, ranges=None, fresh=False, roi_ids=None):
         """Scan the whole recording, or only the given [first, last] frame
-        ranges (the play limits). A part scan updates those frames of an
-        earlier scan and keeps the rest; frames never scanned hold a flat
-        baseline, so no events are found there. fresh=True drops the earlier
-        scan first (Start over)."""
+        ranges (the play limits), for the chosen ROIs (default: every drawn
+        ROI ticked for scanning), in one pass. A part scan updates those
+        frames of an ROI's earlier scan and keeps the rest; frames never
+        scanned hold a flat baseline, so no events are found there.
+        fresh=True drops the earlier scans first (Start over)."""
         n = self.src.n_frames
-        mask = roi_mask(self.roi, (self.src.height, self.src.width))
+        ids = [r["id"] for r in self.rois if len(r.get("points") or []) >= 3
+               and (r["id"] in roi_ids if roi_ids is not None else r.get("scan", True))]
+        if not ids:
+            return False
         if self.state.get("scan_id") != SCAN_ID:
             self.state.pop("level", None)   # an old level doesn't fit the new scan's values
+            self.acts, self.state["roi_scans"] = {}, {}
             fresh = True
-        if self.state.get("roi_changed"):
-            fresh = True   # the ROI was redrawn: values from the old ROI can't be kept
         whole = not ranges
         if whole:
             ranges = [[0, n - 1]]
         ranges = _merge_ranges([[max(0, int(a)), min(n - 1, int(b))] for a, b in ranges if int(b) >= int(a)])
         if not ranges:
             return False
+        shape = (self.src.height, self.src.width)
+        masks = [roi_mask(self.roi_by_id(rid)["points"], shape) for rid in ids]
         total = sum(b - a + 1 for a, b in ranges)
-        if whole or fresh or self.activity is None or not self.state.get("scanned"):
-            act, done = np.zeros(n, np.float32), []
-        else:
-            act, done = self.activity.copy(), self.scanned_ranges
-        offset = 0
+        segs, offset = [], 0
         for a, b in ranges:
-            seg = scan(self.src, mask, (lambda d, t, o=offset: progress(o + d, total)) if progress else None,
-                       should_stop, start=a, stop=b)
-            if len(seg) < b - a + 1:
+            seg = scan_multi(self.src, masks, (lambda d, t, o=offset: progress(o + d, total)) if progress else None,
+                             should_stop, start=a, stop=b)
+            if seg.shape[1] < b - a + 1:
                 return False  # cancelled
-            act[a:b + 1] = seg
+            segs.append((a, b, seg))
             offset += b - a + 1
-        done = _merge_ranges(done + ranges)
-        real = _range_mask(done, n)
-        if not real.all():   # never-scanned frames: a flat line at the quiet baseline of the scanned part
-            act[~real] = float(np.percentile(act[real], 5))
-        self.activity = act
-        np.save(_sidecar(self.path, ".activity.npy"), act)
-        self.state["scanned_ranges"] = done
-        self.state.pop("roi_changed", None)
+        scans = self.state.setdefault("roi_scans", {})
+        for j, rid in enumerate(ids):
+            r = self.roi_by_id(rid)
+            restart = whole or fresh or r.get("changed") or rid not in self.acts
+            act = np.zeros(n, np.float32) if restart else self.acts[rid].copy()
+            done = [] if restart else self.scanned_ranges_of(rid)
+            for a, b, seg in segs:
+                act[a:b + 1] = seg[j]
+            done = _merge_ranges(done + ranges)
+            real = _range_mask(done, n)
+            if not real.all():   # never-scanned frames: a flat line at the quiet baseline of the scanned part
+                act[~real] = float(np.percentile(act[real], 5))
+            self.acts[rid] = act
+            scans[rid] = done
+            r.pop("changed", None)
+        self._save_activity()
         self.state["suggested_level"] = self._suggest_scanned()
         self.state["units"] = self.src.units
         self.state["scanned"] = True
@@ -184,19 +309,15 @@ class Recording:
         self.redetect(self.state.get("level") or self.state["suggested_level"])
         return True
 
-    @property
-    def scanned_ranges(self):
-        """Frame ranges that have really been scanned ([[0, n-1]] for a whole scan)."""
-        if not self.state.get("scanned"):
+    def scanned_ranges_of(self, rid):
+        """Frame ranges really scanned for one ROI ([[0, n-1]] for a whole scan)."""
+        if rid not in self.acts:
             return []
-        return self.state.get("scanned_ranges") or [[0, self.src.n_frames - 1]]
+        return self.state.get("roi_scans", {}).get(rid) or [[0, self.src.n_frames - 1]]
 
-    @property
-    def unscanned_ranges(self):
-        if not self.state.get("scanned"):
-            return []
+    def _unscanned(self, done):
         out, at = [], 0
-        for a, b in self.scanned_ranges:
+        for a, b in done:
             if a > at:
                 out.append([at, a - 1])
             at = b + 1
@@ -204,37 +325,63 @@ class Recording:
             out.append([at, self.src.n_frames - 1])
         return out
 
+    @property
+    def scanned_ranges(self):
+        """Frames scanned for at least one ROI."""
+        return _merge_ranges([rg for rid in self.acts for rg in self.scanned_ranges_of(rid)])
+
+    @property
+    def unscanned_ranges(self):
+        if not self.acts:
+            return []
+        return self._unscanned(self.scanned_ranges)
+
+    def _cut(self, act):
+        """Where analysis of a trace stops: a very large spike at the end is
+        left out, and the final frame is never used."""
+        s = end_spike(act, self.src.fps, self.src.units)
+        return s if s is not None else max(1, len(act) - 1)
+
     def _suggest_scanned(self):
-        """Suggested level from the scanned frames only, before the end cut."""
-        act, cut = self.activity, self.end_cut
-        real = _range_mask(self.scanned_ranges, len(act))
-        if cut:
-            real[cut:] = False
-        vals = act[real]
-        return self._suggest(vals if len(vals) else act)
+        """Suggested level from every ROI's scanned frames, before its end cut."""
+        vals = []
+        for rid, act in self.acts.items():
+            real = _range_mask(self.scanned_ranges_of(rid), len(act))
+            real[self._cut(act):] = False
+            vals.append(act[real])
+        allv = np.concatenate(vals) if vals else np.zeros(0, np.float32)
+        return self._suggest(allv if len(allv) else (self.activity if self.activity is not None else allv))
 
     _KEEP = ("status", "cls", "note", "tracks", "suggestion", "notes", "exports")
 
     def redetect(self, level: float):
-        """Events = every rise above the detection level. Work already done on
-        an event (decision, note, tracks) is archived, so it comes back if the
-        same event reappears after the line is moved."""
+        """Events = every rise above the detection level, in each ROI. Work
+        already done on an event (decision, tracks) is archived, so it comes
+        back if the same event reappears after the line is moved."""
         arch = self.state.setdefault("archive", {})
         for e in self.state.get("events", []):
             if e.get("status") != "todo" or e.get("note") or e.get("tracks"):
-                arch[f"{e['f0']}-{e['f1']}"] = {k: e[k] for k in self._KEEP if k in e}
-        cut = self.end_cut
-        act = self.activity[:cut] if cut else self.activity
-        evs = [asdict(e) for e in detect_events(act, self.src.fps, level=level, units=self.src.units,
-                                                merge_s=cfg.get("detect", "merge_s"),
-                                                min_frames=cfg.get("detect", "min_frames"))]
-        for e in evs:
-            prev = arch.get(f"{e['f0']}-{e['f1']}")
+                arch[f"{e.get('roi', 'r1')}:{e['f0']}-{e['f1']}"] = {k: e[k] for k in self._KEEP if k in e}
+        evs = []
+        for r in self.rois:
+            act = self.acts.get(r["id"])
+            if act is None:
+                continue
+            for ev in detect_events(act[:self._cut(act)], self.src.fps, level=level, units=self.src.units,
+                                    merge_s=cfg.get("detect", "merge_s"), min_frames=cfg.get("detect", "min_frames")):
+                e = asdict(ev)
+                e["roi"] = r["id"]
+                evs.append(e)
+        evs.sort(key=lambda e: (e["f0"], e["roi"]))
+        for k, e in enumerate(evs, 1):
+            e["n"] = k
+            prev = arch.get(f"{e['roi']}:{e['f0']}-{e['f1']}")
             if prev is None:  # same spike, slightly different edges at a new level
                 for key, val in arch.items():
-                    a, b = map(int, key.split("-"))
-                    if a <= e["peak_frame"] <= b:
-                        prev = {k: v for k, v in val.items() if k in ("status", "cls", "note")}
+                    rid, rng = key.split(":", 1) if ":" in key else ("r1", key)
+                    a, b = map(int, rng.split("-"))
+                    if rid == e["roi"] and a <= e["peak_frame"] <= b:
+                        prev = {k2: v for k2, v in val.items() if k2 in ("status", "cls", "note")}
                         break
             if prev:
                 e.update(prev)
@@ -249,7 +396,7 @@ class Recording:
         tab: recompute the suggested level and the events. A level the user set
         themselves is kept; one that was just the old suggestion follows the
         new suggestion."""
-        if self.activity is None:
+        if not self.acts:
             return
         old_sugg, level = self.state.get("suggested_level"), self.state.get("level")
         self.state["suggested_level"] = self._suggest_scanned()
@@ -259,27 +406,19 @@ class Recording:
 
     @property
     def end_spike_frame(self):
-        """Start of a very large spike at the end of the recording, if any."""
-        if self.activity is None:
+        """Start of a very large spike at the end of the combined trace, if any."""
+        act = self.activity
+        if act is None:
             return None
-        return end_spike(self.activity, self.src.fps, self.src.units)
+        return end_spike(act, self.src.fps, self.src.units)
 
     @property
     def end_cut(self):
-        """Where analysis stops. A very large spike at the end is always left
-        out, and the final frame is never used (it's often a glitch as the
-        recording stops)."""
-        if self.activity is None:
-            return None
-        s = self.end_spike_frame
-        return s if s is not None else max(1, len(self.activity) - 1)
-
-    def activity_range(self, a: int, b: int, points: int):
-        """Max-pooled activity between frames a and b, for the zoomable plot."""
         act = self.activity
-        if act is None:
-            return []
-        a, b = max(0, int(a)), min(len(act) - 1, int(b))
+        return None if act is None else self._cut(act)
+
+    @staticmethod
+    def _pool(act, a, b, points):
         seg = act[a : b + 1]
         if len(seg) <= points:
             return [[a + k, round(float(v), 3)] for k, v in enumerate(seg)]
@@ -291,11 +430,29 @@ class Recording:
             out.append([int(a + s + j), round(float(seg[s + j]), 3)])
         return out
 
+    def activity_range(self, a: int, b: int, points: int):
+        """Max-pooled combined activity between frames a and b, for the zoomable plot."""
+        act = self.activity
+        if act is None:
+            return []
+        a, b = max(0, int(a)), min(len(act) - 1, int(b))
+        return self._pool(act, a, b, points)
+
+    def activity_series(self, a: int, b: int, points: int) -> dict:
+        """The same, for each scanned ROI."""
+        n = self.src.n_frames
+        a, b = max(0, int(a)), min(n - 1, int(b))
+        return {r["id"]: self._pool(self.acts[r["id"]], a, b, points) for r in self.rois if r["id"] in self.acts}
+
+    def event_roi_points(self, ev):
+        r = self.roi_by_id(ev.get("roi"))
+        return (r or {}).get("points") or self.roi
+
     def track_event(self, n: int):
         ev = self.event(n)
         pad = self.window
         tr = track_window(self.src, max(0, ev["f0"] - pad),
-                          min(self.src.n_frames - 1, ev["f1"] + pad), self.roi, filters=self.filters)
+                          min(self.src.n_frames - 1, ev["f1"] + pad), self.event_roi_points(ev), filters=self.filters)
         head, notes = suggest(tr, self.src.fps)
         ev["tracks"], ev["suggestion"], ev["notes"] = tr, head, notes
         self.save()
@@ -375,7 +532,7 @@ class Recording:
         site = os.path.basename(os.path.dirname(self.path))
         opts = {"naming": cfg.get("export", "naming"), "slowmo": cfg.get("export", "slowmo"),
                 **opts, "filters": self.filters, "site": site, "recording": stem}
-        files = export_event(self.src, ev, self.roi if opts.get("overlays", "roi+time") == "roi+time" else None,
+        files = export_event(self.src, ev, self.event_roi_points(ev) if opts.get("overlays", "roi+time") == "roi+time" else None,
                              folder, f"{site}_{stem}", opts, progress)
         ev.setdefault("exports", [])
         ev["exports"] = sorted(set(ev["exports"]) | set(files))
@@ -383,7 +540,11 @@ class Recording:
         return files
 
     def summary(self) -> dict:
-        return {**self.src.info(), "status": self.status(), "roi": self.roi,
+        rois = [{"id": r["id"], "name": r["name"], "points": r.get("points") or [], "scan": r.get("scan", True),
+                 "colour": self.roi_colour(r["id"]), "scanned": r["id"] in self.acts,
+                 "unscanned": self._unscanned(self.scanned_ranges_of(r["id"])) if r["id"] in self.acts else []}
+                for r in self.rois]
+        return {**self.src.info(), "status": self.status(), "roi": self.roi, "rois": rois,
                 "events": self.state.get("events", []), "scanned": bool(self.state.get("scanned")),
                 "level": self.state.get("level"), "suggested_level": self.state.get("suggested_level"),
                 "filters": self.filters,

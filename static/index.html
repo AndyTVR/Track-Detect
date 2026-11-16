@@ -52,25 +52,14 @@
   <b>Track &amp; Detect has been updated, but the old version is still running.</b>
   Close the black window, start it again with <b>Run Track and Detect.bat</b>, then press Ctrl + F5.
 </div>
+<div id="stopped-banner" class="update-banner" role="alert" hidden>
+  <b>Track &amp; Detect has stopped responding.</b> Close this window and open Track &amp; Detect again. Your decisions and comments are saved as you go.
+</div>
 <div class="layout">
   <aside class="col-left">
     <section class="panel">
       <h2>Recordings</h2>
       <div id="files" class="files"><p class="muted small">Add .ats files, or a whole folder of them.</p></div>
-    </section>
-
-    <section class="panel">
-      <h2>Detection</h2>
-      <label class="small" for="level-slider">Detection level <span id="level-unit" class="muted"></span></label>
-      <div class="row small muted between"><span>More events</span><span>Fewer events</span></div>
-      <input id="level-slider" type="range" min="0" max="1" step="0.01" value="0" disabled aria-label="Detection level">
-      <div class="row">
-        <input id="level" type="number" step="0.1" class="num" disabled>
-        <button id="btn-level-reset" class="btn sm" disabled>Suggested</button>
-      </div>
-      <p id="level-info" class="small muted">Or drag the blue line on the activity plot.</p>
-      <p id="scan-note" class="small warn" hidden></p>
-      <button id="btn-start-over" class="btn sm" disabled title="Undo every decision on this recording and scan it again">Start over…</button>
     </section>
 
     <section class="panel" id="jobs-panel" hidden>
@@ -99,7 +88,14 @@
               <span class="small muted">Used by Detection mode and exports. Scanning always uses Window Average + Sliding Subtraction 5.</span>
             </div>
           </span>
+          <button class="mode" data-mode="custom" aria-pressed="false" title="Your own mix of filters (Settings > Custom filters)">Custom</button>
         </div>
+        <span class="pal" id="custom-wrap" hidden>
+          <label class="small pal">Filter <select id="custom-pick" aria-label="Custom filter"></select></label>
+          <button id="btn-custom-edit" class="btn sm" type="button" title="Create, change or delete custom filters">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            Edit filters…</button>
+        </span>
         <span class="pal" id="opacity-wrap" hidden>
           <label class="small pal" title="Overlay lays the trails over the thermal picture. Crossfade mixes the two whole pictures.">Blend
             <select id="blend" aria-label="Blend type"><option value="overlay" selected>Overlay</option><option value="crossfade">Crossfade</option></select></label>
@@ -128,6 +124,16 @@
       </div>
       <div class="roi-bar" role="toolbar" aria-label="Region of interest">
         <span class="small strong">Region of interest</span>
+        <span class="roi-pick-wrap">
+          <button id="btn-roi-pick" class="btn sm roi-pick" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="roi-menu" disabled title="Choose, add, rename or hide ROIs">
+            <i class="roi-dot" id="roi-cur-dot"></i><span id="roi-cur-name">ROI 1</span><span aria-hidden="true">▾</span></button>
+          <div id="roi-menu" class="persist-menu roi-menu" role="dialog" aria-label="ROIs" hidden>
+            <span class="small strong">ROIs</span>
+            <div id="roi-list" class="roi-list"></div>
+            <button id="btn-roi-add" class="btn sm" type="button">+ Add ROI</button>
+            <span class="small muted">The selected ROI is the one the shape buttons draw. Click a name to rename it. The eye shows or hides an ROI on the picture and the Event Log.</span>
+          </div>
+        </span>
         <div class="shape-pick" role="group" aria-label="Draw an ROI shape">
           <button class="shape-btn" data-shape="poly" aria-pressed="false" disabled title="Polygon: click round the roost, right-click to finish" aria-label="Draw a polygon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l7-5 9 4-2 11-11 1z"/><circle cx="4" cy="9" r="1.6" fill="currentColor"/><circle cx="11" cy="4" r="1.6" fill="currentColor"/><circle cx="20" cy="8" r="1.6" fill="currentColor"/><circle cx="18" cy="19" r="1.6" fill="currentColor"/><circle cx="7" cy="20" r="1.6" fill="currentColor"/></svg></button>
@@ -201,7 +207,15 @@
       <div class="row wrap between">
         <div class="row wrap">
           <h2 class="h2-plain">Event Log</h2>
-          <button id="btn-scan" class="btn sm primary" disabled>Scan recording</button>
+          <span class="split-wrap">
+            <button id="btn-scan" class="btn sm primary split-main" disabled>Scan recording</button><button id="btn-scan-menu"
+              class="btn sm primary split-caret" type="button" disabled aria-haspopup="true" aria-expanded="false" aria-controls="scan-menu" title="Choose which ROIs to scan">▾</button>
+            <div id="scan-menu" class="persist-menu scan-menu" role="dialog" aria-label="ROIs to scan" hidden>
+              <span class="small strong">ROIs to scan</span>
+              <div id="scan-list" class="scan-list"></div>
+              <span class="small muted">Used by Scan recording, Scan play limits and Analyse all listed.</span>
+            </div>
+          </span>
           <button id="btn-scan-lim" class="btn sm" disabled title="Scan only between the play limits set on the progress bar">Scan play limits</button>
           <span id="plot-range" class="mono small muted"></span>
         </div>
@@ -212,6 +226,15 @@
           <button id="btn-enlarge" class="btn sm" aria-pressed="false">Enlarge</button>
         </div>
       </div>
+      <div class="row wrap level-row">
+        <label class="small strong" for="level">Detection level</label>
+        <input id="level" type="number" step="0.1" class="num sm" disabled>
+        <span id="level-unit" class="small muted"></span>
+        <button id="btn-level-reset" class="btn sm" disabled>Suggested</button>
+        <span id="level-info" class="small muted">Or drag the blue line on the plot.</span>
+        <div id="roi-legend" class="roi-legend" aria-label="Show or hide ROIs on the plot"></div>
+      </div>
+      <p id="scan-note" class="small warn" hidden></p>
       <div class="plot" id="plot">
         <canvas id="plot-canvas"></canvas>
         <div id="markers"></div>
@@ -248,7 +271,8 @@
   <aside class="col-right">
     <div class="row between baseline">
       <h2 class="h2-plain">Events</h2>
-      <span id="reviewed" class="small muted"></span>
+      <span class="row"><span id="reviewed" class="small muted"></span>
+        <button id="btn-start-over" class="btn xs" disabled title="Undo every Confirm, Reject and classification on this recording">Reset decisions…</button></span>
     </div>
     <div id="events" class="events"><p class="muted small">Scan a recording to find events.</p></div>
     <button id="btn-export" class="btn primary big" disabled>
@@ -347,6 +371,7 @@
       <nav class="st-nav" aria-label="Settings sections">
         <button type="button" data-sec="appearance" aria-current="true">Appearance</button>
         <button type="button" data-sec="viewing">Viewing</button>
+        <button type="button" data-sec="custom">Custom filters</button>
         <button type="button" data-sec="detection">Detection</button>
         <button type="button" data-sec="exports">Exports</button>
         <button type="button" data-sec="time">Time &amp; units</button>
@@ -384,6 +409,46 @@
             <label>Detection: opacity <select id="st-opacity"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1">100%</option></select></label>
             <label>Detection trails: Max frame interval (frames) <input id="st-mfi" type="number" min="1" max="60" step="1"></label>
             <label>Detection trails: Sliding subtraction (frames) <input id="st-ss" type="number" min="1" max="60" step="1"></label>
+          </div>
+        </section>
+
+        <section data-pane="custom" hidden>
+          <h3>Custom filters</h3>
+          <p class="small muted">Build your own filter for the <b>Custom</b> viewing mode: tick any of the filters, set their frames, and choose how the result is shown with the thermal picture. Saved filters appear in the Custom mode's dropdown. They change only what you see, never the scan.</p>
+          <div class="cf-layout">
+            <div class="cf-side">
+              <select id="cf-list" size="9" aria-label="Saved custom filters"></select>
+              <div class="row wrap">
+                <button type="button" id="cf-new" class="btn sm">New</button>
+                <button type="button" id="cf-dup" class="btn sm">Duplicate</button>
+                <button type="button" id="cf-del" class="btn sm">Delete</button>
+              </div>
+            </div>
+            <div class="cf-edit" id="cf-edit">
+              <label>Name <input id="cf-name" type="text" maxlength="40"></label>
+              <fieldset class="cf-filters"><legend>Filters, applied in this order</legend>
+                <label class="check"><input id="cf-wa" type="checkbox"> Window Average 3×3 <span class="small muted">· smooths pixel noise</span></label>
+                <span class="cf-n"><label class="check"><input id="cf-mfi-on" type="checkbox"> Max Frame Interval</label>
+                  <input id="cf-mfi" type="number" min="2" max="60" step="1" class="num sm" aria-label="Max Frame Interval frames"> <span class="small muted">frames · keeps the brightest value of recent frames, leaving trails</span></span>
+                <span class="cf-n"><label class="check"><input id="cf-ss-on" type="checkbox"> Sliding Subtraction</label>
+                  <input id="cf-ss" type="number" min="1" max="60" step="1" class="num sm" aria-label="Sliding Subtraction frames"> <span class="small muted">frames · shows only what changed, so moving animals stand out</span></span>
+                <label class="check"><input id="cf-mc" type="checkbox"> Max Continuous <span class="small muted">· builds up everything since the event window started</span></label>
+              </fieldset>
+              <div class="grid2">
+                <label>Show with the thermal picture
+                  <select id="cf-blend"><option value="none">No: the filter on its own</option><option value="overlay">Overlay on the thermal picture</option><option value="crossfade">Crossfade with the thermal picture</option></select></label>
+                <label>Opacity <select id="cf-opacity"></select></label>
+              </div>
+              <div class="cf-warn" role="note">
+                <p class="small"><b>Some filters can conflict</b> and give unexpected results, such as a blank or washed-out picture. Check how a new filter looks before relying on it.</p>
+                <ul id="cf-warn-list" class="small"></ul>
+              </div>
+              <p id="cf-msg" class="small" hidden></p>
+              <div class="row wrap">
+                <button type="button" id="cf-save" class="btn sm primary">Save filter</button>
+                <button type="button" id="cf-view" class="btn sm">Save and view it</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -464,7 +529,7 @@
             <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back / forward one frame (hold Shift for 1 s)</td></tr>
             <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Go to the start / end play limit</td></tr>
             <tr><td><kbd>n</kbd> <kbd>p</kbd></td><td>Next / previous event</td></tr>
-            <tr><td><kbd>1</kbd>–<kbd>3</kbd></td><td>Default, Tracking, Detection viewing modes</td></tr>
+            <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Default, Tracking, Detection, Custom viewing modes</td></tr>
             <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Add the comment you're typing</td></tr>
             <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> / <kbd>Esc</kbd></td><td>While drawing an ROI: finish / remove last point / cancel (right-click also finishes)</td></tr>
           </table>
@@ -487,14 +552,15 @@
 </dialog>
 <dialog id="dlg-start-over" aria-labelledby="so-title">
   <form method="dialog" class="dlg">
-    <h2 id="so-title">Start over on this recording?</h2>
-    <p class="small">This undoes every Confirm, Reject and classification on <b id="so-name"></b> (<span id="so-count"></span>), then scans it again with your current settings. It can't be undone.</p>
-    <label class="check small"><input id="so-level" type="checkbox" checked> Reset the detection level to the new suggested level</label>
+    <h2 id="so-title">Reset all decisions?</h2>
+    <p class="small">This undoes every Confirm, Reject and classification on <b id="so-name"></b> (<span id="so-count"></span>). Every event goes back to "Not reviewed". It can't be undone.</p>
     <label class="check small"><input id="so-comments" type="checkbox"> Also delete all comments (<span id="so-ncom"></span>)</label>
+    <label class="check small"><input id="so-level" type="checkbox"> Also reset the detection level to the suggested level</label>
+    <label class="check small"><input id="so-rescan" type="checkbox"> Also scan the recording again with the current settings</label>
     <p class="small muted">Files you've already exported are kept.</p>
     <div class="row wrap end">
       <button value="cancel" class="btn">Cancel</button>
-      <button type="button" id="so-go" class="btn danger">Start over</button>
+      <button type="button" id="so-go" class="btn danger">Reset decisions</button>
     </div>
   </form>
 </dialog>

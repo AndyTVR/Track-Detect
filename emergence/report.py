@@ -290,7 +290,7 @@ def build_report(rec, out_path, opts=None, progress=None):
     r.filters = filters
     mid = evs[0]["f0"] if evs else 0
     story.append(KeepTogether([Paragraph("Region of interest", st["h2"]),
-                               _jpeg(r.image(mid, "raw", rec.roi, show_time=True), 120),
+                               _jpeg(r.image(mid, "raw", rec.roi_shapes(), show_time=True), 120),
                                Paragraph("Figure 2. The region of interest (red outline) used for detection.",
                                          st["small"])]))
 
@@ -332,6 +332,7 @@ def build_report(rec, out_path, opts=None, progress=None):
         details = [
             ["Time", f"{src.time_label(e['f0'])} – {src.time_label(e['f1'])} {src.zone_of(e['f0'])}"],
             ["Frames", f"{e['f0']:,} – {e['f1']:,} ({(e['f1'] - e['f0'] + 1) / src.fps:.1f} s)"],
+            ["ROI", rec.roi_name(e.get("roi"))],
             ["Peak activity", f"{e['peak']:.2f} {_unit(src.units)} at frame {e['peak_frame']:,}"],
             ["Decision", lab],
             ["Classification", e.get("cls") or "–"],
@@ -340,11 +341,11 @@ def build_report(rec, out_path, opts=None, progress=None):
         show_imgs = e["status"] != "rejected" or include_rejected
         if show_imgs:
             ws, we = max(0, e["f0"] - pad), min(src.n_frames - 1, e["f1"] + pad)
-            path_img = r.image(we, "path", rec.roi, window_start=ws, palette=opts.get("palette"), enh=opts.get("enh"))
+            path_img = r.image(we, "path", rec.event_roi_points(e), window_start=ws, palette=opts.get("palette"), enh=opts.get("enh"))
             how, op = opts.get("blend", "overlay"), float(opts.get("opacity", 0.8))
             bf = blend_still_frame(e, how, filters, src.n_frames)
             bf_note = f"first activity + {filters['mfi']} frames" if how == "crossfade" else "peak"
-            hs_img = r.image(bf, "blend", rec.roi, window_start=ws, palette=opts.get("palette"),
+            hs_img = r.image(bf, "blend", rec.event_roi_points(e), window_start=ws, palette=opts.get("palette"),
                              rng=opts.get("blend_range"), opacity=op, blend=how, enh=opts.get("enh"))
             if img_dir:
                 base = os.path.join(img_dir, safe_name(f"event{e['n']}_{src.time_label(e['f0'])[:8].replace(':', '-')}"))
@@ -392,7 +393,7 @@ def build_report(rec, out_path, opts=None, progress=None):
                            + f" at {round(float(opts.get('opacity', 0.8)) * 100)}% opacity"],
         ["Software", f"Track & Detect {_version_label()}"],
         ["Image clean-up", _enh_text(opts.get("enh"))],
-        ["ROI", f"{len(rec.roi)} outline points" if rec.roi else "whole image"],
+        ["ROIs", ", ".join(x["name"] for x in rec.rois if len(x.get("points") or []) >= 3) or "whole image"],
         ["Times", "UK time (BST in summer, GMT in winter), from the UTC start time stored in the recording"],
         ["Temperature data", "°C" if src.units == "°C" else f"raw {src.units}"],
     ]

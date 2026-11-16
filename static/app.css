@@ -331,3 +331,48 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .btn.xs{height:26px;padding:0 10px;font-size:12px;border-radius:6px}
 .badge:empty{display:none}
 #view:not([src]){visibility:hidden}
+/* split Scan button with its ROI menu */
+.split-wrap{position:relative;display:inline-flex}
+.split-main{border-top-right-radius:0;border-bottom-right-radius:0}
+.split-caret{border-top-left-radius:0;border-bottom-left-radius:0;padding:0 10px;border-left:1px solid rgba(0,0,0,.28)}
+.scan-menu{width:270px}
+.scan-list{display:flex;flex-direction:column;gap:6px}
+.scan-list .check{display:flex;align-items:center;gap:8px;justify-content:flex-start;color:var(--text)}
+/* ROI picker and manager */
+.roi-pick-wrap{position:relative}
+.roi-pick{gap:8px}
+.roi-dot{display:inline-block;flex:none;width:11px;height:11px;border-radius:50%;background:#E5484D;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.roi-menu{width:360px}
+.roi-list{display:flex;flex-direction:column;gap:6px}
+.roi-row{display:flex;align-items:center;gap:6px;padding:4px;border-radius:8px;border:1px solid transparent}
+.roi-row.active{border-color:var(--blue);background:var(--panel2)}
+.roi-row input[type=radio]{margin:0 2px;accent-color:var(--blue)}
+.roi-row input[type=text]{flex:1;min-width:0;height:32px;padding:0 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+.roi-row .ib{flex:none;width:32px;height:32px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--soft);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.roi-row .ib:hover:not(:disabled){color:var(--text);border-color:var(--line-strong)}
+.roi-row .ib:disabled{opacity:.35;cursor:default}
+.roi-row .ib.off{color:var(--muted);opacity:.6}
+.roi-row .roi-pts{font-size:11px;color:var(--muted);white-space:nowrap}
+/* Event Log: level row and ROI legend */
+.level-row{align-items:center;gap:8px 10px}
+.level-row .num.sm{width:100px;height:34px}
+.roi-legend{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.roi-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:12px;cursor:pointer}
+.roi-chip[aria-pressed=false]{opacity:.45}
+.roi-chip[aria-pressed=false] .roi-name{text-decoration:line-through}
+/* event cards */
+.roi-tag{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--soft)}
+.ev-when{font-size:12.5px}
+/* Settings > Custom filters */
+.cf-layout{display:grid;grid-template-columns:210px 1fr;gap:18px;align-items:start}
+@media (max-width:760px){.cf-layout{grid-template-columns:1fr}}
+.cf-side{display:flex;flex-direction:column;gap:8px}
+.st-panes .cf-side select{height:auto;padding:4px;width:100%}
+.cf-edit{display:flex;flex-direction:column;gap:12px}
+.cf-n{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px}
+.st-panes .cf-n input[type=number]{width:76px;height:34px}
+.cf-warn{border:1px solid var(--warn);border-radius:10px;padding:10px 12px;background:color-mix(in srgb,var(--warn) 9%,transparent)}
+.cf-warn p{margin:0}
+.cf-warn ul{margin:6px 0 0 18px;padding:0;display:flex;flex-direction:column;gap:3px}
+.cf-warn ul:empty{display:none}
+.small.ok{color:var(--accent)}

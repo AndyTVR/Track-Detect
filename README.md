@@ -61,7 +61,21 @@ clicking **Quit** in the top bar, closes it.
    automatically. **Cancel** (Esc) leaves the current ROI as it is. Keep the
    sky out, but leave a thin strip above the roofline. If the camera didn't
    move, tick *Use for every file from this folder*.
+
+   **Several ROIs**: the button with the coloured dot (for example
+   **● ROI 1 ▾**) opens the ROI list.
+   - **+ Add ROI** adds another, each in its own colour. The selected ROI
+     (the radio button) is the one the shape buttons draw.
+   - Click a name to **rename** it, for example "Gable end" or "Eaves".
+   - The **eye** shows or hides an ROI on the picture and in the Event Log.
+   - **×** deletes an ROI and its events.
+
+   With more than one ROI, each is outlined in its colour with its name on
+   the picture.
 3. **Scan.** The scan buttons sit beside the **Event Log** heading:
+   - The **▾** on the Scan button lists your ROIs. Tick the ones to scan
+     (Scan recording, Scan play limits and Analyse all listed use this). All
+     the ticked ROIs are scanned in one pass, so extra ROIs barely add time.
    - **Scan recording** scans the whole recording. **Analyse all listed**
      in the top bar scans every listed file.
    - **Scan play limits** scans only between the two blue play-limit
@@ -82,7 +96,10 @@ clicking **Quit** in the top bar, closes it.
    recording. It never becomes an event, and it doesn't affect the suggested
    level or set the plot's height. It's shaded grey on the plot and noted in
    the PDF report. The final frame of every recording is never used either.
-4. **Set the detection level.** The activity plot has a dashed **blue
+4. **Set the detection level.** The level box, with **Suggested**, is at
+   the top of the Event Log. With several ROIs, each ROI's trace is drawn in
+   its colour; click an ROI's name above the plot to hide or show it. Each
+   event card says which ROI it was found in. The activity plot has a dashed **blue
    line**. Spikes above it (amber) become numbered events, and anything below
    it (grey) is ignored. Drag the line up or down, type a level, or click
    **Suggested**. Events update straight away. Decisions you've already made
@@ -123,10 +140,10 @@ clicking **Quit** in the top bar, closes it.
    Then choose a classification and **Confirm** or **Reject** the event.
    **Undo** clears your decision.
 
-   To begin the review again, click **Start over…** in the Detection panel.
-   It clears every Confirm, Reject and classification, then rescans the
-   recording with your current settings. You can also reset the detection
-   level to the new suggested level, and delete all comments. Files you've
+   To begin the review again, click **Reset decisions…** at the top of the
+   Events list. It clears every Confirm, Reject and classification. You can
+   also delete all comments, go back to the suggested detection level, and
+   scan the recording again with your current settings. Files you've
    already exported are kept.
 6. **Add comments.** Each event card lists its comments underneath. In the
    selected event, type in its comment box and click **Add comment** (or
@@ -149,7 +166,7 @@ clicking **Quit** in the top bar, closes it.
    comments. If there are any comments, it also writes `<name>_comments.csv`
    listing every comment with its time.
 
-The **Viewing Mode** bar has three modes (keys `1`–`3`):
+The **Viewing Mode** bar has four modes (keys `1`–`4`):
 - **Default**: the plain thermal picture, with no filters.
 - **Tracking**: the whole route is built up in one image.
 - **Detection**: the thermal picture with moving animals shown as bright
@@ -160,6 +177,20 @@ The **Viewing Mode** bar has three modes (keys `1`–`3`):
     100% is trails only.
 
   The colour bar adjusts the thermal picture underneath.
+
+- **Custom**: your own mix of filters. Pick a saved filter from the
+  **Filter** dropdown. **Edit filters…** opens Settings > Custom filters,
+  where you can:
+  - tick any of Window Average, Max Frame Interval, Sliding Subtraction and
+    Max Continuous, and set their frames;
+  - show the result on its own, or overlaid or crossfaded with the thermal
+    picture, at an opacity you choose;
+  - name and save it.
+
+  Some filters conflict, for example Max Continuous with Sliding
+  Subtraction, which can leave the picture almost blank. The editor warns
+  you about these. Custom filters change only what you see, never the
+  scan.
 
 **Trail persistence** (the ▾ on the Detection button) sets how many frames
 the Max Frame Interval and Sliding Subtraction filters use for the trails
@@ -217,6 +248,7 @@ Settings are saved in `settings.json` in the program folder.
 |---|---|
 | Appearance | Colour scheme (Forest, the Thermal Vision Ecology greens, or Ocean, Teal, Heather, Slate) and Dark / Light mode. Changes preview straight away. |
 | Viewing | The palette, detail enhancement, noise reduction, blend type and opacity, playback speed and frame persistence each recording opens with. *Use the current view settings* copies what's on screen now. |
+| Custom filters | Create, name, change and delete the filters for the Custom viewing mode, with warnings when filters conflict. |
 | Detection | Suggested-level sensitivity (Low = fewer events, High = more), merge gap, shortest event kept, and the review window either side of an event. Changing these re-finds events straight away. Your decisions and comments are kept. *Reset detection to recommended* undoes them. |
 | Exports | Default export folder, which items are ticked, overlays, timestamp text size, file-name order, video quality and slow-motion export (½ or ¼ speed). |
 | Time & units | °C or °F, UK time or UTC, and a camera clock correction in seconds if a camera's clock was wrong. It applies to everything shown, exported and reported. Switching °C/°F converts scans already done; no rescan needed. |

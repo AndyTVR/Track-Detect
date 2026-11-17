@@ -525,3 +525,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 #folder-input{overflow-y:auto;max-height:260px;resize:vertical}
 .add-name-wrap{display:flex;flex-direction:column;gap:4px}
 .st-sub{margin:16px 0 4px;font-size:14px}
+/* joined recordings */
+.join-tag{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:999px;background:var(--accent);color:var(--accent-ink);vertical-align:1px}
+.file-wrap.joined .file{border-color:color-mix(in srgb,var(--accent) 50%,transparent)}
+.file-wrap.member .file{padding:4px 8px;opacity:.75}
+.file-wrap.member .file .small{font-size:11px}
+.join-note{margin:2px 4px 0}
+.btn.join-btn{border-style:dashed}
+.gap-badge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:4;padding:10px 16px;border-radius:10px;background:rgba(0,0,0,.72);color:#fff;font-weight:700;pointer-events:none}

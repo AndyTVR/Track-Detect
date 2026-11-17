@@ -247,14 +247,15 @@ function dropZone(box, cameraId) {
     try { await org({ action: "move", paths: [p], camera: cameraId }); } catch (er) { err(er); }
   });
 }
-function fileCard(f, cameraId) {
-  const w = el("div", "file-wrap");
+function fileCard(f, cameraId, opt = {}) {
+  const w = el("div", "file-wrap" + (opt.member ? " member" : "") + (f.joined ? " joined" : ""));
   const b = el("button", "file" + (S.rec && S.rec.path === f.path ? " cur" : ""));
   b.title = f.path + "\nDrag onto a camera to move it there"; w.draggable = true;
   const k = f.status === "Reviewed" ? "ok" : f.status === "In review" ? "todo" : "";
   const times = f.start ? `${hhmm(f.start)}–${hhmm(f.end)} · ` : "";
-  b.innerHTML = `<span class="file-name">${esc(f.name)}<br><span class="small muted">${times}${f.size_gb} GB</span></span><span class="chip ${k}">${esc(f.status)}</span>`;
+  b.innerHTML = `<span class="file-name">${f.joined ? '<span class="join-tag">Joined</span> ' : ""}${esc(f.name)}<br><span class="small muted">${times}${f.size_gb} GB${f.joined ? ` · ${plural(f.members.length, "recording")}` : ""}</span></span>${opt.member ? "" : `<span class="chip ${k}">${esc(f.status)}</span>`}`;
   b.onclick = () => openRec(f.path);
+  if (f.joined) { b.title = "These recordings played, scanned and reviewed as one. Gaps between them show as a flat line at zero."; w.draggable = false; w.append(b); return w; }
   w.addEventListener("dragstart", (e) => { S.dragPath = f.path; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", f.name); w.classList.add("dragging"); });
   w.addEventListener("dragend", () => { S.dragPath = null; w.classList.remove("dragging"); document.querySelectorAll(".drop").forEach((x) => x.classList.remove("drop")); });
   // the same move without dragging
@@ -333,8 +334,18 @@ function renderFiles() {
           const w = el("div", "cam-warn small", `<b>⚠ Times overlap:</b> ${esc(o.a)} and ${esc(o.b)} both cover ${hhmm(o.from)}–${hhmm(o.to)}. One camera records one file at a time, so check each is under the right camera.`);
           w.setAttribute("role", "alert"); g.appendChild(w);
         }
+        if (cam.paths.length >= 2) {   // read the camera's consecutive files as one recording
+          const jb = smallBtn(cam.join ? "Separate files" : "Join files", cam.join ? "Go back to scanning and reviewing each recording on its own" : "Play, scan and review this camera's recordings as one continuous recording, in time order. Gaps between them show as a flat line at zero.", async () => {
+            try { const r = await org({ action: "join", id: cam.id, on: !cam.join }); if (r.opened) openRec(r.opened); else if (!S.rec || !fileRow(S.rec.path)) openRec(cam.paths[0]); } catch (e) { err(e); }
+          }, cam.join ? "" : "join-btn");
+          cb.prepend(jb);
+        }
         if (!cam.paths.length) g.appendChild(el("p", "small muted drop-hint", "Drag recordings here, or use + Add files."));
-        for (const path of cam.paths) { const f = fileRow(path); if (f) g.appendChild(fileCard(f, cam.id)); }
+        if (cam.joined && fileRow(cam.joined)) {
+          g.appendChild(fileCard(fileRow(cam.joined), cam.id));
+          g.appendChild(el("p", "small muted join-note", "Made from:"));
+        }
+        for (const path of cam.paths) { const f = fileRow(path); if (f) g.appendChild(fileCard(f, cam.id, { member: !!cam.joined })); }
         dropZone(g, cam.id);
         sg.appendChild(g);
       }
@@ -475,6 +486,7 @@ function showFrame() {
   S.frame = Math.max(0, Math.min(S.rec.frames - 1, S.frame | 0));
   if (pending) { queued = true; } else { pending = true; loadFrame(frameUrl(S.frame)); }
   $("#badge-frame").textContent = `${fmtStamp(S.frame)} · frame ${S.frame.toLocaleString()}`;
+  $("#gap-badge").hidden = !(S.rec.gaps || []).some(([a, b]) => S.frame >= a && S.frame <= b);
   $("#scrub").value = S.frame;
   positionCursor();
   syncLock(); drawLimits();
@@ -750,7 +762,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-cal";
+const APP_VERSION = "2026.11.17-join";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1535,7 +1547,7 @@ async function viewOnCamera(camId, n) {
   const e = evById(n), f = fileRow(S.rec.path), at = findCam(camId), here = sameSurveyCams().here;
   if (!f || !f.start) return toast("This recording has no start time, so it can't be matched to another camera.", 6000);
   const t0 = Date.parse(f.start) + secAt(e.f0) * 1000, t1 = Date.parse(f.start) + secAt(e.f1) * 1000;
-  const hit = at.camera.paths.map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t1 && Date.parse(r.end) >= t0);
+  const hit = (at.camera.joined ? [at.camera.joined] : at.camera.paths).map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t1 && Date.parse(r.end) >= t0);
   if (!hit) { renderEvents(); return toast(`${at.camera.label} wasn't recording at ${clockAt(t0)} (none of its recordings cover that time).`, 7000); }
   const back = { path: S.rec.path, n, label: here.label };
   S.linking = true;
@@ -1574,7 +1586,7 @@ async function cycleCamera(dir) {
   const n = sc.cams.length, i = sc.cams.findIndex((c) => c.id === sc.at.camera.id);
   for (let k = 1; k < n; k++) {
     const c = sc.cams[(((i + dir * k) % n) + n) % n];
-    const hit = c.paths.map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t && Date.parse(r.end) >= t);
+    const hit = (c.joined ? [c.joined] : c.paths).map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t && Date.parse(r.end) >= t);
     if (!hit) continue;
     try { await openRec(hit.path); } catch (e) { return err(e); }
     if (!S.rec || S.rec.path !== hit.path) return;

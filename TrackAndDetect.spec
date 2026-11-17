@@ -18,7 +18,7 @@ hiddenimports += collect_submodules("docx")
 
 # the app imports these inside functions
 hiddenimports += ["emergence.report", "emergence.settings", "emergence.render", "emergence.analysis",
-                  "emergence.session", "emergence.ats", "emergence.fsutil"]
+                  "emergence.session", "emergence.ats", "emergence.fsutil", "emergence.joined"]
 
 a = Analysis(
     ["app.py"],

@@ -48,6 +48,10 @@ def _range_mask(rs, n):
 ROI_COLOURS = ["#E5484D", "#3E9BFF", "#F5A524", "#A26CF5", "#2EC4B6", "#FF7AB6", "#9BE15D", "#FF8A3D"]
 
 
+# Joined recordings: virtual path -> the recordings joined into it (set by the app)
+JOINS: dict = {}
+
+
 class Recording:
     """One .ats file with its ROIs, an activity trace for each ROI, and the
     reviewed events (each found in one ROI)."""
@@ -57,7 +61,21 @@ class Recording:
         self.state = self._load_state()
         # only a frame rate the user typed in overrides the file's own timing
         # (older versions saved an assumed 16 fps here for every file)
-        self.src = ATSFile(path, fps=fps or (self.state.get("fps") if self.state.get("fps_set") else None))
+        if path in JOINS:
+            from .joined import JoinedSource
+            self.src = JoinedSource(path, JOINS[path])
+            names = [os.path.basename(x.path) for x in self.src.parts]
+            if self.state.get("members") not in (None, names):   # the files joined have changed: earlier work doesn't line up
+                for k in ("events", "level", "suggested_level", "scanned", "roi_scans", "archive"):
+                    self.state.pop(k, None)
+                for e in (".activity.npz",):
+                    try:
+                        os.remove(_sidecar(path, e))
+                    except OSError:
+                        pass
+            self.state["members"] = names
+        else:
+            self.src = ATSFile(path, fps=fps or (self.state.get("fps") if self.state.get("fps_set") else None))
         self.renderer = Renderer(self.src)
         self.renderer.filters = lambda: self.filters
         self.acts = self._load_activity()       # ROI id -> activity trace
@@ -282,6 +300,10 @@ class Recording:
         if whole:
             ranges = [[0, n - 1]]
         ranges = _merge_ranges([[max(0, int(a)), min(n - 1, int(b))] for a, b in ranges if int(b) >= int(a)])
+        gaps = getattr(self.src, "gap_ranges", None) or []
+        if gaps:   # a joined recording: scan each file's frames, not the gaps between them
+            parts = self.src.part_ranges
+            ranges = [[max(a, pa), min(b, pb)] for a, b in ranges for pa, pb in parts if min(b, pb) >= max(a, pa)]
         if not ranges:
             return False
         shape = (self.src.height, self.src.width)
@@ -309,10 +331,13 @@ class Recording:
             done = [] if restart else self.scanned_ranges_of(rid)
             for a, b, seg in segs:
                 act[a:b + 1] = seg[j]
-            done = _merge_ranges(done + ranges)
+            done = _merge_ranges(done + ranges + gaps)
+            for ga, gb in gaps:
+                act[ga:gb + 1] = 0.0   # the camera wasn't recording: a flat line at zero
             real = _range_mask(done, n)
             if not real.all():   # never-scanned frames: a flat line at the quiet baseline of the scanned part
-                act[~real] = float(np.percentile(act[real], 5))
+                data = real & ~self.src.gap_mask if gaps else real
+                act[~real] = float(np.percentile(act[data if data.any() else real], 5))
             self.acts[rid] = act
             scans[rid] = done
             r.pop("changed", None)
@@ -363,6 +388,8 @@ class Recording:
         for rid, act in self.acts.items():
             real = _range_mask(self.scanned_ranges_of(rid), len(act))
             real[self._cut(act):] = False
+            if hasattr(self.src, "gap_mask"):
+                real &= ~self.src.gap_mask
             vals.append(act[real])
         allv = np.concatenate(vals) if vals else np.zeros(0, np.float32)
         return self._suggest(allv if len(allv) else (self.activity if self.activity is not None else allv))
@@ -593,6 +620,8 @@ class Recording:
                 continue
             quiet = _range_mask(self.scanned_ranges_of(r["id"]), len(act))
             quiet[self._cut(act):] = False
+            if hasattr(self.src, "gap_mask"):
+                quiet &= ~self.src.gap_mask
             for e in evs:
                 if e.get("roi", "r1") == r["id"]:
                     quiet[max(0, e["f0"] - pad):e["f1"] + pad + 1] = False

@@ -239,7 +239,7 @@ def survey_label(sv):
 
 def _place(p):
     """Where a recording is filed: (project, survey, camera), or None if unassigned."""
-    cid = _org()["of"].get(p)
+    cid = _org()["of"].get(p) or JOIN_CAM.get(p)
     n = _node(cid) if cid else None
     if not n or n[0] != "camera":
         return None
@@ -493,7 +493,8 @@ def org_tree(rows):
             for c in sorted(sv["cameras"], key=lambda c: c["no"]):
                 files = sorted(byc.get(c["id"], []), key=lambda r: (r["start"] or "", r["name"]))
                 cams.append({"id": c["id"], "no": c["no"], "name": c.get("name") or "", "label": camera_label(c),
-                             "paths": [r["path"] for r in files], "overlaps": _overlaps(files)})
+                             "paths": [r["path"] for r in files], "overlaps": _overlaps(files),
+                             "join": bool(c.get("joined")), "joined": CAM_JOIN.get(c["id"], "")})
             surveys.append({"id": sv["id"], "no": sv["no"], "date": sv.get("date") or "", "label": survey_label(sv), "cameras": cams,
                             "paths": [p for c in cams for p in c["paths"]]})
         tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys,
@@ -668,9 +669,87 @@ def list_files():
     return [_file_row(p) for p in state["files"] if os.path.exists(p)]
 
 
+# ---- joined recordings: a camera's consecutive files read as one
+from emergence.session import JOINS
+JOIN_CAM = {}   # joined recording's path -> camera id
+CAM_JOIN = {}   # camera id -> joined recording's path
+
+
+def _joined_path(cid, first):
+    return os.path.join(os.path.dirname(first), f"Joined recording {cid}.ats")
+
+
+def _refresh_joins(rows=None):
+    """Work out every joined recording from the cameras set to join their files."""
+    rows = rows if rows is not None else list_files()
+    byc = {}
+    for r in rows:
+        if r["camera_id"]:
+            byc.setdefault(r["camera_id"], []).append(r)
+    new = {}
+    for pj, sv, c in _walk():
+        if not c.get("joined"):
+            continue
+        files = sorted(byc.get(c["id"], []), key=lambda r: (r["start"] or "", r["name"].lower()))
+        if len(files) >= 2:
+            new[_joined_path(c["id"], files[0]["path"])] = (c["id"], [r["path"] for r in files])
+    for vp in list(JOINS):
+        if vp not in new or JOINS[vp] != new[vp][1]:
+            JOINS.pop(vp, None)
+            r = recs.pop(vp, None)
+            if r is not None:
+                try:
+                    r.src.close()
+                except Exception:
+                    pass
+    JOIN_CAM.clear(); CAM_JOIN.clear()
+    for vp, (cid, members) in new.items():
+        JOINS[vp] = members
+        JOIN_CAM[vp], CAM_JOIN[cid] = cid, vp
+    return rows
+
+
+def _joined_row(vp, rows):
+    mem = [r for r in rows if r["path"] in JOINS.get(vp, [])]
+    r = recs.get(vp)
+    st = r.status() if r is not None else "Not analysed"
+    if r is None and os.path.exists(vp + ".analysis.json"):
+        try:
+            import json
+            d = json.load(open(vp + ".analysis.json", encoding="utf-8"))
+            if d.get("scanned") and d.get("members") == [os.path.basename(m["path"]) for m in mem]:
+                st = "In review" if any(e["status"] == "todo" for e in d.get("events", [])) else "Reviewed"
+        except (OSError, ValueError):
+            pass
+    starts = [m["start"] for m in mem if m["start"]]
+    ends = [m["end"] for m in mem if m["end"]]
+    return {"path": vp, "name": " + ".join(os.path.splitext(m["name"])[0] for m in mem) + " (joined)", "status": st,
+            "timing": mem[0]["timing"] if mem else None, "size_gb": round(sum(m["size_gb"] for m in mem), 2),
+            **_place_row(vp), "start": min(starts) if starts else None, "end": max(ends) if ends else None,
+            "joined": True, "members": [m["path"] for m in mem]}
+
+
+def _scan_paths(node):
+    """Recordings to scan for a project, survey or camera: a joined camera
+    is scanned as its one joined recording."""
+    out = []
+    for p in _paths_under(node):
+        cid = _org()["of"].get(p)
+        vp = CAM_JOIN.get(cid)
+        if vp:
+            if vp not in out:
+                out.append(vp)
+        elif os.path.exists(p):
+            out.append(p)
+    return out
+
+
 def _files_payload(**extra):
-    rows = list_files()
+    rows = _refresh_joins()
     tree, unassigned = org_tree(rows)
+    rows = rows + [_joined_row(vp, rows) for vp in JOINS]
+    if state["current"] and state["current"] not in {r["path"] for r in rows}:
+        state["current"] = None   # a joined recording that no longer exists
     return {"files": rows, "tree": tree, "unassigned": unassigned, "current": state["current"], **extra}
 
 
@@ -755,6 +834,30 @@ def organise():
                 org["of"][p] = cid
             else:
                 org["of"].pop(p, None)
+    elif act == "join":   # read a camera's consecutive recordings as one (or separately again)
+        n = _node(b.get("id"))
+        if not n or n[0] != "camera":
+            raise UserError("That camera no longer exists")
+        if b.get("on"):
+            n[1]["joined"] = True
+        else:
+            n[1].pop("joined", None)
+        _save_org()
+        rows = _refresh_joins()
+        vp = CAM_JOIN.get(n[1]["id"])
+        if vp:
+            try:
+                j = rec(vp)
+            except UserError:
+                n[1].pop("joined", None)
+                _save_org()
+                _refresh_joins()
+                raise
+            if not any(len(x.get("points") or []) >= 3 for x in j.rois):   # start from a member's ROIs
+                donor = next((rec(p) for p in JOINS[vp] if any(len(x.get("points") or []) >= 3 for x in rec(p).rois)), None)
+                if donor is not None:
+                    j.copy_rois_from(donor)
+            out["opened"] = vp
     elif act == "list_projects":   # every saved project, listed or not
         cams_of = {}
         for path, cid in org["of"].items():
@@ -878,7 +981,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-cal"   # must match static/app.js
+APP_VERSION = "2026.11.17-join"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -907,11 +1010,12 @@ def set_palette():
 def _share_rois(r):
     """Same camera = same view: give the other listed recordings from this
     recording's camera these ROIs."""
-    cid = _org()["of"].get(r.path)
+    cid = _org()["of"].get(r.path) or JOIN_CAM.get(r.path)
     if not cid:
         return
-    for p in _paths_under(cid):
-        if p != r.path and os.path.exists(p):
+    others = [p for p in _paths_under(cid) if os.path.exists(p)] + ([CAM_JOIN[cid]] if cid in CAM_JOIN else [])
+    for p in others:
+        if p != r.path:
             rec(p).copy_rois_from(r)
 
 
@@ -958,7 +1062,8 @@ def edit_rois():
 def start_scan():
     body = request.json or {}
     if body.get("node"):   # every recording in a project, survey or camera, or every unassigned one
-        targets = [p for p in _paths_under(body["node"]) if os.path.exists(p)]
+        _refresh_joins()
+        targets = _scan_paths(body["node"])
     else:
         targets = [row["path"] for row in list_files()] if body.get("all") else [state["current"]]
     # "a" and "b": scan only those frames of the current recording (the play limits)
@@ -1169,7 +1274,8 @@ def test_scan():
     saving anything, and rate the noise between spikes."""
     import random
     b = request.json or {}
-    paths = [p for p in (_paths_under(b["node"]) if b.get("node") else [state["current"]]) if p and os.path.exists(p)]
+    _refresh_joins()
+    paths = [p for p in (_scan_paths(b["node"]) if b.get("node") else [state["current"]]) if p and (os.path.exists(p) or p in JOINS)]
     cands = [p for p in paths if any(len(x.get("points") or []) >= 3 for x in rec(p).rois)]
     if not cands:
         raise UserError("Draw an ROI on a recording from this camera first (tick 'Use for every file from this camera' to share it)")
@@ -1177,8 +1283,13 @@ def test_scan():
     r = rec(p)
     n, fps = r.src.n_frames, r.src.fps
     length = int(min(n, max(fps * 60, 30)))   # one minute
-    edge = int(min(fps * 10, max(0, n - length) // 4))
-    a = random.randint(edge, max(edge, n - length - edge))
+    if getattr(r.src, "part_ranges", None):   # a joined recording: a minute inside one of its files, not a gap
+        pa, pb = random.choice([x for x in r.src.part_ranges])
+        length = int(min(pb - pa + 1, max(fps * 60, 30)))
+        a = random.randint(pa, max(pa, pb - length + 1))
+    else:
+        edge = int(min(fps * 10, max(0, n - length) // 4))
+        a = random.randint(edge, max(edge, n - length - edge))
     bb = min(n - 1, a + length - 1)
     rois = [x for x in r.rois if len(x.get("points") or []) >= 3]
 

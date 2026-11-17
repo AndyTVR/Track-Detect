@@ -105,6 +105,23 @@ clicking **Quit** in the top bar, closes it.
    - **Scan project**, **Scan survey** and **Scan camera** scan every
      recording in it; **Scan unassigned** scans the unassigned ones. Each
      uses its own ROIs.
+   - **Join files** (on a camera with two or more recordings) stitches the
+     camera's consecutive recordings into one: they play, scan, plot and are
+     reviewed as one continuous recording, in time order, shown at the top
+     of the camera as **Joined**, with the files it's made from listed
+     underneath. Nothing is written to the original files; the joined
+     recording's work is saved beside the first file as
+     `Joined recording <id>.ats.analysis.json` (and `.activity.npz`). If the
+     camera wasn't recording between two files, the gap is kept at its real
+     length: the activity there is a flat line at zero, it doesn't count
+     towards the suggested level or the noise rating, and the picture shows
+     "No recording here". Times stay true throughout. Scan camera, survey and
+     project scan the joined recording instead of the separate files, and the
+     camera buttons and "View this time on" use it too. **Separate files**
+     goes back to the separate recordings (their own scans are kept). Adding
+     or removing a file from a joined camera starts its joined scan afresh,
+     because the frames no longer line up. Files of different picture sizes
+     can't be joined.
    - **Tree** shows everything as Project › Survey › Camera › recording.
      Click a recording there to open it.
    - The report's *Location* starts as the project name.

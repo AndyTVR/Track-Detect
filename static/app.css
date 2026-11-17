@@ -485,3 +485,5 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .cam-sub .row-btns{flex-wrap:wrap}
 .linked-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:8px 14px;background:color-mix(in srgb,var(--accent) 14%,var(--panel));border-bottom:1px solid var(--line);font-size:13px}
 .ev-view{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.add-folders-note{padding-left:26px;margin:0}.add-folders-note.off{opacity:.5}
+#dlg-folder .dlg{width:min(680px,92vw)}

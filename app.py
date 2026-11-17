@@ -300,6 +300,70 @@ def _clean_date(d):
         raise UserError("Give the survey date as a date, for example 2026-08-10")
 
 
+
+
+def _folder_date(name):
+    """A survey date in a folder name ('10.8.26', '19-10-2026', '2026-08-10'),
+    as (ISO date, the name with the date taken out); ("", name) if none."""
+    import re, datetime as _d
+    for pat, order in ((r"(?<!\d)(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(?!\d)", "ymd"),
+                       (r"(?<!\d)(\d{1,2})[-_.](\d{1,2})[-_.](\d{2}|\d{4})(?!\d)", "dmy")):
+        m = re.search(pat, name)
+        if not m:
+            continue
+        a, b, c = (int(x) for x in m.groups())
+        y, mo, d = (a, b, c) if order == "ymd" else (c + 2000 if c < 100 else c, b, a)
+        try:
+            iso = _d.date(y, mo, d).isoformat()
+        except ValueError:
+            continue
+        rest = (name[:m.start()] + " " + name[m.end():]).strip(" _-.,")
+        return iso, " ".join(rest.split())
+    return "", name
+
+
+def _file_by_folders(paths, roots):
+    """Sort recordings into projects, surveys and cameras from their folders.
+    Below the folder they were added from (root):
+      root/file          project = root's name, cameras by file name (front 1 -> Front)
+      root/A/file        A is a date: survey A, cameras by file name; otherwise camera A
+      root/A/B/file      survey A, camera B
+    A date in a folder name becomes the survey's date ("St Fagans 10.8.26" ->
+    project St Fagans, survey dated 10/08/2026). A root named only by a date
+    takes its project name from the folder above. Existing projects, surveys
+    (same date) and cameras (same name) with matching names are reused."""
+    of = _org()["of"]
+    made = {}   # (project id, survey key) -> survey made in this add
+    for p in paths:
+        root = roots.get(p) or os.path.dirname(p)
+        rel = os.path.relpath(os.path.dirname(p), root)
+        parts = [] if rel in (".", "") else rel.split(os.sep)
+        rdate, rname = _folder_date(os.path.basename(root))
+        if not rname:   # the root is just a date: the project is the folder above
+            rname = _folder_date(os.path.basename(os.path.dirname(root)))[1] or "Project"
+        sv_name, cam_name = "", None
+        if len(parts) == 1:
+            d1, n1 = _folder_date(parts[0])
+            if d1:
+                sv_name = parts[0]
+            else:
+                cam_name = parts[0]
+        elif len(parts) >= 2:
+            sv_name, cam_name = parts[-2], parts[-1]
+        sdate = _folder_date(sv_name)[0] if sv_name else rdate
+        pj = next((x for x in _org()["projects"] if x["name"].lower() == rname[:40].lower()), None) or _new_project(rname)
+        key = (pj["id"], sdate or sv_name or "")
+        sv = made.get(key) or next((x for x in pj["surveys"] if sdate and x.get("date") == sdate), None)
+        if sv is None:
+            sv = _new_survey(pj, sdate)
+        made[key] = sv
+        if cam_name is None:   # cameras by file name
+            stem = _name_stem(p)
+            cam_name = stem[:1].upper() + stem[1:] if stem else ""
+        c = next((x for x in sv["cameras"] if (x.get("name") or "").lower() == cam_name[:40].lower()), None) or _new_camera(sv, cam_name)
+        of[p] = c["id"]
+
+
 def _file_into(paths, target):
     """File recordings as the Add dialog asked. target: None/"" = leave as they are
     (new ones stay unassigned); {"camera": id}; or {"project": {id|new}, "survey":
@@ -539,11 +603,15 @@ def pick():
                              f"(in File Explorer: select the files, then Shift + right-click > Copy as path). Details: {e}"), 500
 
 
-def _expand(entry: str):
-    """A pasted line -> .ats paths. A folder gives every .ats file in it."""
+def _expand(entry: str, deep=False):
+    """A pasted line -> .ats paths. A folder gives every .ats file in it; with
+    deep, also those in its subfolders (up to 3 levels down)."""
     p = os.path.normpath(os.path.expanduser(entry.strip().strip('"').strip()))
     if os.path.isdir(p):
-        found = glob.glob(os.path.join(p, "*.ats")) + glob.glob(os.path.join(p, "*.ATS"))
+        found = []
+        for lvl in range(4 if deep else 1):
+            pat = os.path.join(p, *(["*"] * lvl))
+            found += glob.glob(os.path.join(pat, "*.ats")) + glob.glob(os.path.join(pat, "*.ATS"))
         return sorted(dict.fromkeys(os.path.normpath(f) for f in found)), None
     if os.path.isfile(p):
         if not p.lower().endswith(".ats"):
@@ -559,20 +627,28 @@ def add():
     if body.get("replace"):
         state["files"] = []
     problems, added = [], []
+    target = body.get("target")
+    deep = isinstance(target, dict) and bool(target.get("folders"))
+    roots = {}   # each recording -> the folder it was added from (for sorting by folder names)
     for entry in body.get("paths", []):
         if not entry.strip():
             continue
-        found, err = _expand(entry)
+        found, err = _expand(entry, deep)
         if err:
             problems.append(err)
+        top = os.path.normpath(os.path.expanduser(entry.strip().strip('"').strip()))
         for f in found:
             if f not in state["files"]:
                 state["files"].append(f)
             added.append(f)
+            roots[f] = top if os.path.isdir(top) else os.path.dirname(f)
     if not state["files"] and problems:
         return jsonify(error="; ".join(problems)), 404
     # where they go: left as they are (new ones unassigned), or into a project, survey and camera
-    _file_into(added, body.get("target"))
+    if deep:
+        _file_by_folders(added, roots)
+    else:
+        _file_into(added, target)
     _save_org()
     first = next((f for f in added if os.path.exists(f)), None)
     return jsonify(_files_payload(problems=problems, added=added, first=first))
@@ -775,7 +851,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-surveys"   # must match static/app.js
+APP_VERSION = "2026.11.17-folders"   # must match static/app.js
 
 
 @app.get("/api/version")

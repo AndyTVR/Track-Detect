@@ -308,8 +308,8 @@
     <fieldset class="add-cam">
       <legend>Where to put them</legend>
       <div class="add-cam-row"><label class="check"><input type="radio" name="add-where" value="none"> Leave unassigned</label>
-        <span class="small muted">They go in the Unassigned box. Drag them into a camera later.</span></div>
-      <div class="add-cam-row"><label class="check"><input type="radio" name="add-where" value="camera"> Put them in a project, survey and camera</label></div>
+        <span class="small muted">Files can be assigned after upload</span></div>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-where" value="camera"> Assign files to New/Existing Project</label></div>
       <div class="add-place" id="add-place">
         <label class="small">Project <select id="add-proj" aria-label="Project"></select></label>
         <input id="add-proj-name" type="text" maxlength="40" placeholder="New project name, e.g. St Fagans" aria-label="New project name">
@@ -319,6 +319,11 @@
         <input id="add-cam-name" type="text" maxlength="40" placeholder="Camera name (optional)" aria-label="New camera name">
         <span class="small muted" id="add-auto-note">Files from one folder with the same name share a camera: front 1, front 2 → Camera: Front.</span>
       </div>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-where" value="folders"> Auto-assign from folder names</label></div>
+      <p class="small muted add-folders-note" id="add-folders-note">Project, survey and camera come from the folders the files are in. Subfolders of a chosen folder are included.
+        For example <span class="mono">St Fagans 10.8.26\front 1.ats</span> → project St Fagans, survey dated 10/08/2026, Camera: Front;
+        <span class="mono">St Fagans\10.8.26\Rear\rec 1.ats</span> → project St Fagans, survey 10/08/2026, Camera: Rear.
+        Projects, survey dates and camera names that already exist are reused.</p>
       <p id="add-cam-msg" class="small err" hidden></p>
     </fieldset>
     <label class="check"><input id="add-replace" type="checkbox"> Clear the current list first</label>

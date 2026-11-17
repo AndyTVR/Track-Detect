@@ -55,12 +55,28 @@ clicking **Quit** in the top bar, closes it.
    or night there (Survey 1, Survey 2 …, each with an optional date), and
    each survey has numbered cameras (Camera 1, Camera 2 …), each with an
    optional name such as "Front elevation".
-   - Recordings added from the top bar go in the **Unassigned** box at the
-     top of the list, unless you choose **Put them in a project, survey and
-     camera** in the Add dialog. There you pick an existing project, survey
-     and camera or make new ones (a new survey can be given its date), or
-     choose **Sort automatically by file name**: files from one folder with
-     the same name share a camera ("front 1", "front 2" → Camera: Front).
+   - The Add dialog asks where to put the recordings:
+     - **Leave unassigned**: they go in the **Unassigned** box at the top of
+       the list, and can be assigned after upload.
+     - **Assign files to New/Existing Project**: pick an existing project,
+       survey and camera or make new ones (a new survey can be given its
+       date), or choose **Sort automatically by file name**: files from one
+       folder with the same name share a camera ("front 1", "front 2" →
+       Camera: Front).
+     - **Auto-assign from folder names**: the project, survey and camera
+       come from the folders. Subfolders of a chosen folder are included.
+       A date in a folder name (10.8.26, 10-08-2026 or 2026-08-10) becomes
+       the survey's date. For example:
+       - `St Fagans 10.8.26\front 1.ats` → project St Fagans, survey dated
+         10/08/2026, Camera: Front (cameras come from the file names);
+       - `BCT\19.10.26\rear 1.ats` → project BCT, survey dated 19/10/2026,
+         Camera: Rear;
+       - `Barn\24.8.26\Roof\rec 1.ats` → project Barn, survey dated
+         24/08/2026, Camera: Roof.
+
+       Projects with the same name, surveys with the same date and cameras
+       with the same name are reused, so adding more files later puts them
+       in the right place.
    - **+ Project** (at the top of the list) starts a project with Survey 1
      and Camera 1. **+ Survey** and **+ Camera** add more.
    - **Drag** a recording onto a camera to move it there, or onto

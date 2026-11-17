@@ -92,6 +92,7 @@ function fillAddPlace(want) {   // want: {project, survey, camera} ids to presel
   $("#add-auto-note").hidden = cs.value !== "__auto";
   const on = radio("add-where", "camera").checked;
   $("#add-place").classList.toggle("off", !on);
+  $("#add-folders-note").classList.toggle("off", !radio("add-where", "folders").checked);
   $("#add-place").querySelectorAll("select, input").forEach((el) => (el.disabled = !on));
 }
 // opened from the top bar or the empty viewer: Unassigned; from a camera's "+ Add files": that camera
@@ -108,6 +109,7 @@ $("#add-proj").onchange = () => fillAddPlace({ survey: "", camera: "" });
 $("#add-sv").onchange = () => fillAddPlace({ camera: "" });
 $("#add-cam").onchange = () => fillAddPlace({});
 function addTarget() {
+  if (radio("add-where", "folders").checked) return { folders: true };
   if (!radio("add-where", "camera").checked) return null;
   const p = $("#add-proj").value, sv = $("#add-sv").value, c = $("#add-cam").value;
   return {
@@ -141,7 +143,7 @@ $("#dlg-folder").addEventListener("close", async () => {
   if (!paths.length) return;
   try {
     const t = addTarget();
-    if (t && t.project.name && (S.tree || []).some((p) => p.name.toLowerCase() === t.project.name.toLowerCase()))
+    if (t && t.project && t.project.name && (S.tree || []).some((p) => p.name.toLowerCase() === t.project.name.toLowerCase()))
       return toast(`There's already a project called ${t.project.name}. Nothing was added: choose it from the Project list, or give the new project another name.`, 8000);
     const r = await api("/api/add", { paths, replace: $("#add-replace").checked, target: t });
     setFiles(r);
@@ -643,7 +645,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-surveys";
+const APP_VERSION = "2026.11.17-folders";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

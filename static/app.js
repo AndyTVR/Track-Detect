@@ -162,6 +162,14 @@ $("#np-go").onclick = async (ev) => {
     $("#dlg-newproj").close(); openAdd(r.created);
   } catch (e) { $("#np-msg").hidden = false; $("#np-msg").textContent = e.message || String(e); }
 };
+$("#op-file").onclick = async () => {
+  try {
+    const p = await api("/api/pick", { kind: "project" }); if (!p.paths.length) return;
+    const r = await api("/api/org", { action: "open_project_file", path: p.paths[0] });
+    setFiles(r); $("#dlg-openproj").close();
+    toast(`Project opened: ${plural(r.opened, "recording")} listed${r.missing ? `, ${r.missing} not found` : ""}.`, 7000);
+  } catch (e) { err(e); }
+};
 $("#om-open").onclick = async () => {
   toggleMenu("#open-menu", "#btn-open", false);
   try {
@@ -296,11 +304,11 @@ function renderFiles() {
   }
   for (const pj of tree) {
     const pg = el("div", "proj-group");
-    pg.appendChild(el("span", "lvl", "Project"));
+    const lv = el("div", "lvl-row"); lv.appendChild(el("span", "lvl", "Project")); lv.appendChild(projMenu(pj)); pg.appendChild(lv);
     const ph = el("div", "proj-head", ICON_PROJ);
     ph.prepend(foldBtn(pj.id, `project ${pj.name}`, pg));
     ph.appendChild(nameBox("proj-name", pj.name, "Project name", (v) => org({ action: "rename", id: pj.id, name: v })));
-    ph.appendChild(binBtn(`project ${pj.name}`, () => org({ action: "delete", id: pj.id }).catch(err)));
+
     const psub = el("div", "cam-sub proj-sub", `<span class="small muted">${plural(pj.surveys.length, "survey")} · ${plural(pj.paths.length, "recording")}</span>`);
     const pb = el("span", "row-btns");
     pb.append(smallBtn("Map", `Map of ${pj.name}: the site and where each camera stood and looked`, () => openMap(pj.id), "map-btn"),
@@ -389,7 +397,7 @@ function showTestResult(t) {
   let h = "";
   for (const x of t.rois) {
     const rating = x.rating || "none";
-    h += `<div class="noise-row ${rating}"><span class="noise-chip" ${x.rating ? "" : 'title="Too few quiet frames in this stretch to judge the background"'}>${word[rating] || "Not enough data"}</span><span class="small"><b>${esc(x.name)}</b> · ${plural(x.spikes, "spike")} above the suggested level (${fv(x.level)})${x.sd != null ? ` · background ${fv(x.base)}, varies ±${fv(x.sd)}, small rises ${(x.rises * 100).toFixed(1)}% of the time` : ""}</span></div>`;
+    h += `<div class="noise-row ${rating}"><span class="noise-chip" ${x.rating ? "" : 'title="Too few quiet frames in this stretch to judge the background"'}>${word[rating] || "Not enough data"}</span><span class="small"><b>${esc(x.name)}</b> · ${plural(x.spikes, "spike")} above the test level of ${fv(x.level)}${x.sd != null ? ` · background ${fv(x.base)}, varies ±${fv(x.sd)}, small rises ${(x.rises * 100).toFixed(1)}% of the time` : ""}</span></div>`;
   }
   const bad = t.rois.filter((x) => x.rating && x.rating !== "low");
   const none = t.rois.every((x) => !x.rating);
@@ -407,6 +415,33 @@ $("#ts-view").onclick = async () => {
   S.lim = [t.a, t.b]; $("#in-window").checked = false; S.frame = t.a; drawLimits(); showFrame();
 };
 $("#ts-again").onclick = () => { if (S.testNode) { $("#dlg-test").close(); testScan(S.testNode.node, S.testNode.what); } };
+// The ⚙ beside PROJECT: save, rename, site plan, close, reset, delete
+function projMenu(pj) {
+  const wrap = el("span", "pm-wrap");
+  const b = el("button", "pm-btn", '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>');
+  b.type = "button"; b.title = `Project options: ${pj.name}`; b.setAttribute("aria-label", b.title); b.setAttribute("aria-haspopup", "true");
+  const m = el("div", "persist-menu pm-menu"); m.hidden = true; m.setAttribute("role", "menu");
+  const item = (label, fn, cls = "") => { const i = el("button", "menu-item " + cls, label); i.type = "button"; i.setAttribute("role", "menuitem");
+    i.onclick = async (e) => { e.stopPropagation(); m.hidden = true; try { await fn(); } catch (er) { err(er); } }; m.appendChild(i); };
+  item("Save project", async () => { const r = await api("/api/org", { action: "save_project", id: pj.id }); toast(`${pj.name} saved. Project file: ${r.file}`, 8000); });
+  item("Rename…", () => { const i = [...document.querySelectorAll(".proj-name")].find((x) => x.value === pj.name); if (i) { i.focus(); i.select(); } });
+  item("Map and site plan…", () => openMap(pj.id));
+  item(pj.template ? `New survey from site plan (${plural(pj.template, "camera")})` : "New survey", async () => {
+    const r = await org({ action: "new_survey", project: pj.id }); if (r.from_template) toast("New survey made from the site plan: the same cameras, positions and lenses.", 6000); });
+  if (pj.template) item("Stop using the site plan template", () => org({ action: "clear_template", project: pj.id }));
+  const first = pj.paths[0];
+  if (first) item("Open recordings folder", () => api("/api/open-path", { path: first.replace(/[\\/][^\\/]*$/, "") }));
+  item("Close project", async () => { const r = await org({ action: "close_project", id: pj.id }); if (S.rec && !fileRow(S.rec.path)) location.reload(); toast(`${pj.name} closed (${plural(r.closed, "recording")} taken off the list). Open it again from the folder button > Open project.`, 7000); });
+  item("Reset all decisions…", async () => {
+    if (!confirm(`Reset every Confirm, Reject and classification on all recordings in ${pj.name}? Scans and comments are kept.`)) return;
+    const r = await org({ action: "reset_project", id: pj.id }); if (S.rec) { S.rec = await api("/api/recording"); renderEvents(); drawPlot(); }
+    toast(`Decisions reset on ${plural(r.reset, "recording")}.`); });
+  item("Delete project…", async () => { if (!confirm(`Delete project ${pj.name}? Its recordings move to Unassigned; no files are deleted.`)) return; await org({ action: "delete", id: pj.id }); }, "danger");
+  b.onclick = (e) => { e.stopPropagation(); const open = m.hidden; document.querySelectorAll(".pm-menu").forEach((x) => (x.hidden = true)); m.hidden = !open; };
+  m.addEventListener("click", (e) => e.stopPropagation());
+  wrap.append(b, m); return wrap;
+}
+document.addEventListener("click", () => document.querySelectorAll(".pm-menu").forEach((x) => (x.hidden = true)));
 async function scanGroup(node, what) {
   try {
     const r = await api("/api/scan", { node });
@@ -782,7 +817,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-map";
+const APP_VERSION = "2026.11.17-plan";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2233,7 +2268,7 @@ function openMap(projectId) {
       const placed = pj.surveys.flatMap((s) => s.cameras).map((c) => c.map).filter(Boolean);
       if (placed.length) MAPS.map.setView([placed[0].lat, placed[0].lon], 19);
     }
-    drawMap();
+    drawMap(); templateNote();
   }, 60);
 }
 function mapProject() { return (S.tree || []).find((p) => p.id === MAPS.pj); }
@@ -2329,6 +2364,31 @@ async function setSite(ll) {
   } catch (e) { err(e); }
 }
 $("#map-site").onclick = () => setSite(MAPS.map.getCenter());
+function templateNote() {
+  const pj = mapProject();
+  $("#map-template-note").textContent = pj && pj.template ? `Site plan template: ${plural(pj.template, "camera")}. New surveys start with them.` : "No site plan template yet.";
+}
+$("#map-template").onclick = async () => {
+  const sv = mapSurvey(); if (!sv) return;
+  try { const r = await api("/api/org", { action: "save_template", survey: sv.id }); mapProject().template = r.template; templateNote();
+    toast(`${sv.label} saved as the site plan: new surveys of this project start with its ${plural(r.template, "camera")}.`, 7000); } catch (e) { err(e); }
+};
+$("#map-print").onclick = () => {
+  const pj = mapProject(), sv = mapSurvey(); if (!pj) return;
+  const cams = (sv ? sv.cameras : []).filter((c) => c.map);
+  const rows = cams.map((c) => { const m = c.map; return `<tr><td>${c.no}</td><td>${esc(c.label)}</td><td>${esc(m.model)} ${m.fov}°</td><td>${Math.round(m.bearing)}°</td><td>${Math.round(m.range)} m</td><td>${ifovMm(m).toFixed(1)} mm</td><td>${targetPx(m).toFixed(2)} px</td><td>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</td></tr>`; }).join("");
+  const d = new Date();
+  $("#plan-print").innerHTML = `<h1>${esc(pj.name)}: site plan</h1>
+    <p>${sv ? esc(sv.label) + " · " : ""}Printed ${d.toLocaleDateString("en-GB")}${pj.site ? ` · Site ${pj.site.lat.toFixed(6)}, ${pj.site.lon.toFixed(6)}` : ""}</p>
+    <table><thead><tr><th>No.</th><th>Camera</th><th>Model and lens</th><th>Facing</th><th>Range</th><th>IFOV</th><th>Pixels on 0.1 m target</th><th>GPS</th></tr></thead><tbody>${rows || '<tr><td colspan="8">No cameras placed yet.</td></tr>'}</tbody></table>`;
+  if (cams.length) {
+    const pts = cams.flatMap((c) => conePoints(c.map));
+    MAPS.map.fitBounds(L.latLngBounds(pts), { padding: [30, 30] });
+  }
+  document.body.classList.add("printing-plan");
+  setTimeout(() => { MAPS.map.invalidateSize(); setTimeout(() => { window.print(); }, 900); }, 200);
+};
+window.addEventListener("afterprint", () => { document.body.classList.remove("printing-plan"); if (MAPS.map) MAPS.map.invalidateSize(); });
 $("#map-survey").onchange = () => { MAPS.sv = $("#map-survey").value; MAPS.sel = null; drawMap(); };
 $("#map-close").onclick = () => $("#dlg-map").close();
 $("#dlg-map").addEventListener("close", () => refreshFiles());

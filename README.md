@@ -127,6 +127,17 @@ clicking **Quit** in the top bar, closes it.
      program remembers what's folded.
    - The Event Log names the camera you're looking at (camera, survey,
      project), or "Unassigned".
+   - The **⚙** beside PROJECT holds the project's options: **Save project**
+     (everything is saved as you go; this also writes `<project>.tdproject`
+     beside its recordings, a project file to keep or share), **Rename**,
+     **Map and site plan**, **New survey** (from the site plan, if there is
+     one), **Open recordings folder**, **Close project** (takes its
+     recordings off the list; reopen it from the folder button > Open
+     project), **Reset all decisions** and **Delete project** (its
+     recordings move to Unassigned; no files are deleted). Open project also
+     has **Open a project file…** for a `.tdproject` file, for example from
+     another computer; recordings that have moved are looked for beside the
+     project file.
    - **Map** (on each project) opens a satellite map of the site. Search for
      a place or postcode (or type latitude, longitude), then **Set site
      here** to pin the site. Pick a survey and **Place on map** each camera:
@@ -137,7 +148,11 @@ clicking **Quit** in the top bar, closes it.
      angle. Each camera shows its IFOV at that range and the pixels on a
      0.1 m target, worked out as in FLIR Raven (range × lens angle ÷ 640
      pixels; a round target). Everything is saved as you go, with the
-     projects. The map needs an internet connection for the imagery (Esri
+     projects. **Save as site plan template** makes the survey's cameras
+     (names, positions, facing, range and lenses) the plan for the project:
+     every new survey starts with them, so a repeat visit needs no setting
+     up. **Print site plan** prints the map with a camera table (or saves it
+     as a PDF: choose Save as PDF as the printer). The map needs an internet connection for the imagery (Esri
      World Imagery, or OpenStreetMap from the layers button); place names
      come from OpenStreetMap's Nominatim.
    - **Tree** shows everything as Project › Survey › Camera › recording.
@@ -180,8 +195,8 @@ clicking **Quit** in the top bar, closes it.
      each ROI to include. All the ticked ROIs are scanned in one pass, so
      extra ROIs barely add time.
    - **Test scan** (on each camera) scans one randomly chosen minute of one
-     of the camera's recordings, with its ROIs, and rates the background
-     noise there: a quick scan can check if the ROI is affected by background
+     of the camera's recordings, with its ROIs, counts the rises of more
+     than 0.2 °C (the test level), and rates the background noise there: a quick scan can check if the ROI is affected by background
      movement without scanning the full recording. Nothing is saved. **View
      this minute** opens that stretch so you can see what's moving; **Test
      another minute** tries a different one.

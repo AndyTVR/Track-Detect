@@ -578,3 +578,26 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .cone-tip{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #2bb7c8;box-shadow:0 1px 4px rgba(0,0,0,.5);cursor:grab}
 .btn.map-btn{border-color:#2bb7c8}
 @media (max-width:800px){.map-wrap{flex-direction:column}.map-side{width:auto;max-height:45%}}
+/* project options menu */
+.lvl-row{display:flex;align-items:center;gap:6px;padding-left:6px}
+.pm-wrap{position:relative;display:inline-flex}
+.pm-btn{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:24px;height:22px;border-radius:6px;color:var(--soft)}
+.pm-btn:hover,.pm-btn:focus-visible{background:var(--panel2);color:var(--text)}
+.pm-menu{position:absolute;top:26px;left:0;z-index:30;width:250px;padding:6px;gap:2px}
+.menu-item.danger{color:#ff8a8e}
+/* printing the site plan: just the map and the camera table */
+.plan-print{display:none}
+@media print{
+  body.printing-plan>*:not(#dlg-map){display:none!important}
+  body.printing-plan{background:#fff!important}
+  body.printing-plan #dlg-map{position:static;display:block;width:100%;height:auto;max-height:none;border:0;background:#fff;color:#000;box-shadow:none;overflow:visible}
+  body.printing-plan #dlg-map::backdrop{display:none}
+  body.printing-plan .map-side,body.printing-plan .leaflet-control-zoom,body.printing-plan .leaflet-control-layers,body.printing-plan .cone-tip{display:none!important}
+  body.printing-plan .map-wrap{display:block;height:auto}
+  body.printing-plan .map{height:150mm;width:100%}
+  body.printing-plan .plan-print{display:block;color:#000;font:11px/1.4 Arial,sans-serif;margin-top:6mm}
+  .plan-print h1{font-size:18px;margin:0 0 2mm}
+  .plan-print table{width:100%;border-collapse:collapse;margin-top:3mm}
+  .plan-print th,.plan-print td{border:1px solid #bbb;padding:3px 5px;text-align:left}
+  .plan-print th{background:#eee}
+}

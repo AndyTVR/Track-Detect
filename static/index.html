@@ -357,6 +357,7 @@
     <h2>Open project</h2>
     <p class="small muted">Lists every recording saved in the project. Recordings that have been moved or deleted since are skipped.</p>
     <div id="op-list" class="op-list"></div>
+    <div class="row wrap"><button id="op-file" type="button" class="btn sm">Open a project file…</button><span class="small muted">A .tdproject file saved with Save project, for example from another computer.</span></div>
     <label class="check"><input id="op-replace" type="checkbox"> Clear the current list first</label>
     <div class="row wrap end"><button value="cancel" class="btn">Close</button></div>
   </form>
@@ -391,6 +392,7 @@
 </dialog>
 
 <dialog id="dlg-map" class="map-dlg" aria-labelledby="map-title">
+  <section id="plan-print" class="plan-print" aria-hidden="true"></section>
   <div class="map-wrap">
     <aside class="map-side">
       <div class="row between"><h2 id="map-title">Project map</h2><button id="map-close" class="btn sm" type="button">Close</button></div>
@@ -404,6 +406,11 @@
         <span id="map-site-note" class="small muted"></span>
       </div>
       <label class="small">Survey <select id="map-survey"></select></label>
+      <div class="row wrap">
+        <button id="map-template" class="btn sm" type="button" title="Later surveys of this project start with these cameras: their names, positions, facing, range and lenses">Save as site plan template</button>
+        <button id="map-print" class="btn sm" type="button" title="Print the site plan, or save it as a PDF">Print site plan</button>
+      </div>
+      <p id="map-template-note" class="small muted"></p>
       <div id="map-cams" class="map-cams"></div>
       <p class="small muted">Drag a camera to move it. Drag the white dot at the end of its cone to turn it and set how far it reaches. Changes are saved as you go.</p>
     </aside>

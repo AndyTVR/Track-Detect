@@ -497,7 +497,7 @@ def org_tree(rows):
                              "join": bool(c.get("joined")), "joined": CAM_JOIN.get(c["id"], ""), "map": c.get("map")})
             surveys.append({"id": sv["id"], "no": sv["no"], "date": sv.get("date") or "", "label": survey_label(sv), "cameras": cams,
                             "paths": [p for c in cams for p in c["paths"]]})
-        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"),
+        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"), "template": len(pj.get("template") or []),
                      "paths": [p for sv in surveys for p in sv["paths"]]})
     unassigned = sorted([r for r in rows if not r["camera_id"]], key=lambda r: (os.path.dirname(r["path"]), r["start"] or "", r["name"]))
     return tree, [r["path"] for r in unassigned if r["path"] in listed]
@@ -530,6 +530,15 @@ if (__START__) { $d.InitialDirectory = __START__ }
 if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileNames | ForEach-Object { [Console]::Out.WriteLine($_) } }
 $owner.Close()
 """
+_PS_PROJECT = _PS_COMMON + r"""
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.Title = 'Open a Track & Detect project file'
+$d.Filter = 'Track & Detect projects (*.tdproject)|*.tdproject|All files (*.*)|*.*'
+$d.Multiselect = $false
+if (__START__) { $d.InitialDirectory = __START__ }
+if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.WriteLine($d.FileName) }
+$owner.Close()
+"""
 _PS_FOLDER = _PS_COMMON + r"""
 $d = New-Object System.Windows.Forms.FolderBrowserDialog
 $d.Description = 'Choose a folder of .ats recordings'
@@ -549,7 +558,7 @@ def _dialog_windows(kind):
     import base64
     import subprocess
     start = _last_dir["path"] if os.path.isdir(_last_dir["path"]) else ""
-    script = (_PS_FILES if kind == "files" else _PS_FOLDER).replace("__START__", _ps_str(start))
+    script = (_PS_FILES if kind == "files" else _PS_PROJECT if kind == "project" else _PS_FOLDER).replace("__START__", _ps_str(start))
     enc = base64.b64encode(script.encode("utf-16-le")).decode()
     out = subprocess.run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
@@ -562,7 +571,10 @@ def _dialog_windows(kind):
 
 def _dialog_tk(kind):
     import subprocess
-    if kind == "files":
+    if kind == "project":
+        ask = ("filedialog.askopenfilename(title='Open a Track & Detect project file', "
+               "filetypes=[('Track & Detect projects', '*.tdproject'), ('All files', '*.*')]) or ''")
+    elif kind == "files":
         ask = ("'\\n'.join(filedialog.askopenfilenames(title='Choose .ats recordings', "
                "filetypes=[('FLIR recordings', '*.ats'), ('All files', '*.*')]))")
     else:
@@ -758,6 +770,62 @@ def files():
     return jsonify(_files_payload())
 
 
+def _write_project_file(pj):
+    """<project>.tdproject beside its recordings (or in the settings folder):
+    the project's surveys, cameras, site plan and which recording is where."""
+    import json
+    from emergence.render import safe_name
+    cids = {c["id"] for sv in pj["surveys"] for c in sv["cameras"]}
+    of = {p: c for p, c in _org()["of"].items() if c in cids}
+    folder = os.path.dirname(sorted(of)[0]) if of else DATA
+    path = os.path.join(folder, safe_name(pj["name"]) + ".tdproject")
+    data = {"v": 1, "app": "Track & Detect", "saved": time.strftime("%Y-%m-%d %H:%M:%S"), "project": pj, "of": of}
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=1)
+        safe_replace(tmp, path)
+    except OSError as e:
+        raise UserError(f"Couldn't write the project file in {folder}: {e}")
+    _save_org()
+    return path
+
+
+def _read_project_file(path):
+    """Bring in a project from a .tdproject file (from another computer, say):
+    its structure, site plan and recordings. Recordings found are listed."""
+    import json, copy
+    path = os.path.normpath(path.strip().strip('"'))
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+        pj = d["project"]
+        assert isinstance(pj.get("surveys"), list)
+    except (OSError, ValueError, KeyError, AssertionError, AttributeError):
+        raise UserError("That isn't a Track & Detect project file")
+    if any(x["name"].lower() == str(pj.get("name", "")).lower() for x in _org()["projects"]):
+        raise UserError(f"There's already a project called {pj.get('name')}. Use Open project to open it, or rename it first.")
+    new = copy.deepcopy(pj)
+    remap = {}
+    new["id"] = _nid("p")
+    for sv in new["surveys"]:
+        sv["id"] = _nid("s")
+        for c in sv["cameras"]:
+            remap[c["id"]] = c["id"] = _nid("c")
+    _org()["projects"].append(new)
+    base = os.path.dirname(path)
+    found = 0
+    for p, cid in (d.get("of") or {}).items():
+        q = p if os.path.exists(p) else os.path.join(base, os.path.basename(p))   # moved with the project file
+        if cid in remap and os.path.exists(q):
+            _org()["of"][q] = remap[cid]
+            if q not in state["files"]:
+                state["files"].append(q)
+            found += 1
+    _save_org()
+    return {"opened": found, "missing": len(d.get("of") or {}) - found, "project": new["id"]}
+
+
 def _num_in(v, lo, hi):
     try:
         x = float(v)
@@ -788,7 +856,17 @@ def organise():
         if not n or n[0] != "project":
             raise UserError("That project no longer exists")
         sv = _new_survey(n[1], b.get("date", ""))
-        out["created"] = _new_camera(sv)["id"]
+        tpl = n[1].get("template") if b.get("template", True) else None
+        if tpl:   # the site plan: the same cameras, names, positions and lenses as before
+            import copy
+            for t in tpl:
+                c = _new_camera(sv, t.get("name", ""))
+                if t.get("map"):
+                    c["map"] = copy.deepcopy(t["map"])
+            out["from_template"] = True
+            out["created"] = sv["cameras"][0]["id"]
+        else:
+            out["created"] = _new_camera(sv)["id"]
     elif act == "new_camera":
         n = _node(b.get("survey"))
         if not n or n[0] != "survey":
@@ -866,6 +944,51 @@ def organise():
                            "lens": str(m.get("lens") or "")[:30]}
         else:
             n[1].pop("map", None)
+    elif act == "save_template":   # a survey's cameras become the plan for the project's later surveys
+        n = _node(b.get("survey"))
+        if not n or n[0] != "survey":
+            raise UserError("That survey no longer exists")
+        import copy
+        n[2]["template"] = [{"name": c.get("name") or "", "map": copy.deepcopy(c.get("map"))} for c in sorted(n[1]["cameras"], key=lambda c: c["no"])]
+        out["template"] = len(n[2]["template"])
+    elif act == "clear_template":
+        n = _node(b.get("project"))
+        if not n or n[0] != "project":
+            raise UserError("That project no longer exists")
+        n[1].pop("template", None)
+    elif act == "close_project":   # take its recordings off the list (the project stays saved)
+        n = _node(b.get("id"))
+        if not n or n[0] != "project":
+            raise UserError("That project no longer exists")
+        gone = set(_paths_under(n[1]["id"]))
+        _refresh_joins()
+        gone |= {vp for vp, cid in JOIN_CAM.items() if _node(cid) and _node(cid)[2] is n[1]}
+        state["files"] = [f for f in state["files"] if f not in gone]
+        if state["current"] in gone:
+            state["current"] = None
+        out["closed"] = len(gone)
+    elif act == "reset_project":   # undo every decision on every recording in the project
+        n = _node(b.get("id"))
+        if not n or n[0] != "project":
+            raise UserError("That project no longer exists")
+        _refresh_joins()
+        k = 0
+        for p in _scan_paths(n[1]["id"]):
+            try:
+                r = rec(p)
+            except UserError:
+                continue
+            if r.state.get("events") or r.state.get("comments"):
+                r.start_over(delete_comments=bool(b.get("delete_comments")), reset_level=False)
+                k += 1
+        out["reset"] = k
+    elif act == "save_project":   # everything is saved as you go; this also writes a project file to keep or share
+        n = _node(b.get("id"))
+        if not n or n[0] != "project":
+            raise UserError("That project no longer exists")
+        out["file"] = _write_project_file(n[1])
+    elif act == "open_project_file":
+        out.update(_read_project_file(b.get("path") or ""))
     elif act == "join":   # read a camera's consecutive recordings as one (or separately again)
         n = _node(b.get("id"))
         if not n or n[0] != "camera":
@@ -1013,7 +1136,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-map"   # must match static/app.js
+APP_VERSION = "2026.11.17-plan"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -1331,11 +1454,15 @@ def test_scan():
         seg = scan_multi(r.src, [roi_mask(x["points"], shape) for x in rois], prog, stop, start=a, stop=bb)
         if seg.shape[1] < bb - a + 1:
             return {"cancelled": True}
+        # a fixed test level: rises of more than 0.2 °C (0.36 °F; counts through the calibration)
+        u = r.src.units
+        slope = getattr(r.src, "count_slope", None)
+        fixed = 0.2 if u == "°C" else 0.36 if u == "°F" else (0.2 / slope if slope else None)
         sens = cfg_mod().SENSITIVITY[cfg_mod().get("detect", "sensitivity")]
         out = []
         for j, x in enumerate(rois):
             act = seg[j]
-            lvl = suggested_level(act, sens, r.src.units)
+            lvl = fixed if fixed is not None else suggested_level(act, sens, r.src.units)
             quiet = act <= lvl
             hot = np.flatnonzero(~quiet)
             pad = int(fps)
@@ -1489,6 +1616,40 @@ _last_seen = {"t": time.time()}
 @app.before_request
 def _seen():
     _last_seen["t"] = time.time()
+    from flask import g
+    g.t0 = time.time()
+
+
+@app.after_request
+def _slow(resp):
+    """Note any request that took over 20 s, to help trace a program that
+    seems to have stopped responding."""
+    from flask import g
+    dt = time.time() - getattr(g, "t0", time.time())
+    if dt > 20:
+        try:
+            with open(os.path.join(DATA, "error_log.txt"), "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} slow request: {request.method} {request.path} took {dt:.0f} s\n")
+        except OSError:
+            pass
+    return resp
+
+
+def _no_console_freeze():
+    """In the black console window, a click starts Windows' text selection
+    (QuickEdit), which pauses the program until a key is pressed, so the
+    page says it has stopped responding. Turn that off for this window."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.GetStdHandle(-10)   # console input
+        mode = ctypes.c_uint32()
+        if k.GetConsoleMode(h, ctypes.byref(mode)):
+            k.SetConsoleMode(h, (mode.value & ~0x0040) | 0x0080)   # no QuickEdit; extended flags
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------- customer beta
@@ -1709,6 +1870,7 @@ def main():
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("paths", nargs="*", help=".ats files or folders to list")
     a = ap.parse_args()
+    _no_console_freeze()
     port = a.port
     if _already_running(port):
         _load_settings()

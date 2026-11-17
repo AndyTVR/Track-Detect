@@ -750,7 +750,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-test";
+const APP_VERSION = "2026.11.17-temp";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1346,7 +1346,9 @@ function positionCursor() {
   const cur = $("#cursor"); cur.style.display = x < 0 || x > g.W ? "none" : "block"; cur.style.left = x + "px";
 }
 function updateLevelInputs() {
-  $("#level-unit").textContent = P.units ? `(${P.units})` : "";
+  const approx = S.rec && S.rec.temp_approx && isTemp(P.units);
+  $("#level-unit").textContent = P.units ? `(${P.units}${approx ? ", approx." : ""})` : "";
+  $("#level-unit").title = approx ? "This file stores raw sensor values. They're converted to temperature from the range Research Studio showed when recording started: right for temperature differences, but the absolute values are approximate." : "";
   if (P.level != null && document.activeElement !== $("#level")) $("#level").value = (+P.level).toFixed(2);
   $("#level-info").textContent = P.suggested != null ? `Suggested: ${fmtVal(P.suggested)}. Or drag the blue line on the plot.` : "Or drag the blue line on the plot.";
 }

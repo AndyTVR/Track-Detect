@@ -137,6 +137,11 @@ class ATSFile:
         s = re.search(r'<source unit="([^"]+)"', txt)
         if s:
             out["source_unit"] = s.group(1)
+        ls = re.search(r'<levelAndSpan mode="([^"]+)"(.*?)</levelAndSpan>', txt, re.S)
+        if ls:   # the colour range Research Studio showed when recording started
+            out["span_mode"] = ls.group(1)
+            for unit, lo, hi in re.findall(r'<levelAndSpanValue unit="([^"]+)" min="([^"]+)" max="([^"]+)"', ls.group(2)):
+                out.setdefault("span", {})[unit] = (float(lo), float(hi))
         return out
 
     @staticmethod
@@ -194,6 +199,21 @@ class ATSFile:
             if 20000 < med < 40000:
                 self.count_slope = 0.01
                 to_c = lambda a: a.astype(np.float32) / 100.0 - 273.15
+        self.temp_approx = False
+        if to_c is None and "Temperature" in src and self.xml.get("span_mode") == "FromImage" and "TemperatureC" in self.xml.get("span", {}):
+            # Raw sensor values from a radiometric camera (A700 files saved this way):
+            # Research Studio's automatic colour range for the first frame runs from
+            # its coldest to its hottest pixel, so those two pixels give a straight-line
+            # conversion. Good for temperature differences; absolute values are approximate.
+            c0, c1 = self.xml["span"]["TemperatureC"]
+            first = self.raw(0)
+            k0, k1 = float(first.min()), float(first.max())
+            if k1 > k0 and c1 > c0:
+                slope = (c1 - c0) / (k1 - k0)
+                if 0.001 < slope < 0.5:
+                    self.count_slope = float(slope)
+                    self.temp_approx = True
+                    to_c = lambda a, k0=k0, c0=c0, slope=slope: (a.astype(np.float32) - k0) * slope + c0
         if to_c is None or TEMP["unit"] == "counts":   # Settings > Time & units: show raw counts
             return "counts", None
         return self._temp_unit(to_c)
@@ -441,6 +461,7 @@ class ATSFile:
             "frames": self.n_frames,
             "fps": self.fps,
             "fps_source": self.fps_source,
+            "temp_approx": bool(getattr(self, "temp_approx", False)),
             "duration_s": self.seconds_at(self.n_frames - 1) + 1 / self.fps,
             "start": self.time_utc(0).isoformat() if self.start_time else None,   # includes clock correction
             "zone": self.zone_of(0),

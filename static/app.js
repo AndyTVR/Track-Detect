@@ -397,7 +397,7 @@ function showTestResult(t) {
   let h = "";
   for (const x of t.rois) {
     const rating = x.rating || "none";
-    h += `<div class="noise-row ${rating}"><span class="noise-chip" ${x.rating ? "" : 'title="Too few quiet frames in this stretch to judge the background"'}>${word[rating] || "Not enough data"}</span><span class="small"><b>${esc(x.name)}</b> · ${plural(x.spikes, "spike")} above the test level of ${fv(x.level)}${x.sd != null ? ` · background ${fv(x.base)}, varies ±${fv(x.sd)}, small rises ${(x.rises * 100).toFixed(1)}% of the time` : ""}</span></div>`;
+    h += `<div class="noise-row ${rating}"><span class="noise-chip" ${x.rating ? "" : 'title="Too few quiet frames in this stretch to judge the background"'}>${word[rating] || "Not enough data"}</span><span class="small"><b>${esc(x.name)}</b> · ${plural(x.spikes, "spike")} above the test level of ${fv(x.level)} (0.2 °C above the background)${x.sd != null ? ` · background ${fv(x.base)}, varies ±${fv(x.sd)}, small rises ${(x.rises * 100).toFixed(1)}% of the time` : ""}</span></div>`;
   }
   const bad = t.rois.filter((x) => x.rating && x.rating !== "low");
   const none = t.rois.every((x) => !x.rating);
@@ -817,7 +817,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-plan";
+const APP_VERSION = "2026.11.17-low";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

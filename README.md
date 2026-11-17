@@ -196,7 +196,7 @@ clicking **Quit** in the top bar, closes it.
      extra ROIs barely add time.
    - **Test scan** (on each camera) scans one randomly chosen minute of one
      of the camera's recordings, with its ROIs, counts the rises of more
-     than 0.2 °C (the test level), and rates the background noise there: a quick scan can check if the ROI is affected by background
+     than 0.2 °C above that minute's background (the test level), and rates the background noise there: a quick scan can check if the ROI is affected by background
      movement without scanning the full recording. Nothing is saved. **View
      this minute** opens that stretch so you can see what's moving; **Test
      another minute** tries a different one.
@@ -221,6 +221,9 @@ clicking **Quit** in the top bar, closes it.
    line**. Spikes above it (amber) become numbered events, and anything below
    it (grey) is ignored. Drag the line up or down, type a level, or click
    **Suggested**. Events update straight away. Decisions you've already made
+   The **suggested level** starts 0.2 °C above the ROI's background (the
+   median of its trace): deliberately low, so faint passes aren't missed.
+   Raise the line if it catches too much (insects, flicker).
    are kept, even if you move the line away and back.
    - Scroll on the plot to zoom, drag to pan, and click to jump to that
      moment.
@@ -413,7 +416,7 @@ Settings are saved in `settings.json` in the program folder.
 | Appearance | Colour scheme (Forest, the Thermal Vision Ecology greens, or Ocean, Teal, Heather, Slate) and Dark / Light mode. Changes preview straight away. |
 | Viewing | The palette, detail enhancement, noise reduction, blend type and opacity, playback speed and frame persistence each recording opens with. *Use the current view settings* copies what's on screen now. |
 | Custom filters | An advanced option: read the manual first. Create, name, change and delete the filters for the Custom viewing mode, with warnings when filters conflict. |
-| Detection | Suggested-level sensitivity (Low = fewer events, High = more), merge gap, shortest event kept, and the review window either side of an event. Changing these re-finds events straight away. Your decisions and comments are kept. *Reset detection to recommended* undoes them. |
+| Detection | Suggested-level sensitivity for raw-count recordings with no temperature scale (Low = fewer events, High = more; recordings in °C or °F always start 0.2 °C above the background), merge gap, shortest event kept, and the review window either side of an event. Changing these re-finds events straight away. Your decisions and comments are kept. *Reset detection to recommended* undoes them. |
 | Exports | Default export folder, which items are ticked, overlays, timestamp text size, file-name order, video quality and slow-motion export (½ or ¼ speed). |
 | Time & units | Pixel values as temperature or raw counts (the colour bar, plot, level and exports follow it; scanned recordings are converted), °C or °F, UK time or UTC, and a camera clock correction in seconds if a camera's clock was wrong. It applies to everything shown, exported and reported. Switching °C/°F converts scans already done; no rescan needed. |
 | Classifications | Your own list for the Classification menu, for example species groups. |

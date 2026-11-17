@@ -1136,7 +1136,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-plan"   # must match static/app.js
+APP_VERSION = "2026.11.17-low"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -1454,15 +1454,12 @@ def test_scan():
         seg = scan_multi(r.src, [roi_mask(x["points"], shape) for x in rois], prog, stop, start=a, stop=bb)
         if seg.shape[1] < bb - a + 1:
             return {"cancelled": True}
-        # a fixed test level: rises of more than 0.2 °C (0.36 °F; counts through the calibration)
-        u = r.src.units
-        slope = getattr(r.src, "count_slope", None)
-        fixed = 0.2 if u == "°C" else 0.36 if u == "°F" else (0.2 / slope if slope else None)
+        # the test level: 0.2 °C above this stretch's background, the same as the suggested level
         sens = cfg_mod().SENSITIVITY[cfg_mod().get("detect", "sensitivity")]
         out = []
         for j, x in enumerate(rois):
             act = seg[j]
-            lvl = fixed if fixed is not None else suggested_level(act, sens, r.src.units)
+            lvl = suggested_level(act, sens, r.src.units, getattr(r.src, "count_slope", None))
             quiet = act <= lvl
             hot = np.flatnonzero(~quiet)
             pad = int(fps)

@@ -81,6 +81,11 @@ class Recording:
         self.acts = self._load_activity()       # ROI id -> activity trace
         self._notes_to_comments()
         self._sync_units()
+        if self.acts and self.state.get("scanned"):   # the suggestion follows the current rule (0.2 °C above the background)
+            try:
+                self.state["suggested_level"] = self._suggest_scanned()
+            except Exception:
+                pass
 
     # ---------------------------------------------------------- activity traces
     @property
@@ -431,7 +436,8 @@ class Recording:
         self.save()
 
     def _suggest(self, act):
-        return suggested_level(act, sensitivity=cfg.SENSITIVITY[cfg.get("detect", "sensitivity")], units=self.src.units)
+        return suggested_level(act, sensitivity=cfg.SENSITIVITY[cfg.get("detect", "sensitivity")], units=self.src.units,
+                               count_slope=getattr(self.src, "count_slope", None))
 
     def apply_detection_settings(self):
         """Sensitivity, merge gap or minimum length changed on the Settings

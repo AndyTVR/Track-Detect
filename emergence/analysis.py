@@ -189,12 +189,21 @@ def temp_scale(units: str) -> float:
     return 1.8 if units == "°F" else 1.0
 
 
-def suggested_level(activity: np.ndarray, sensitivity: float = 6.0, units: str = "°C") -> float:
-    """A starting detection level: the noise floor plus a safety margin.
-    The analyst can then drag it up or down on the plot."""
+START_MARGIN_C = 0.2   # the suggested level starts this far above the background: low, so faint passes show
+
+
+def suggested_level(activity: np.ndarray, sensitivity: float = 6.0, units: str = "°C", count_slope=None) -> float:
+    """A starting detection level: the background (the median of the trace)
+    plus 0.2 °C, deliberately low so faint passes aren't missed; the analyst
+    raises it on the plot if it catches too much. Raw counts with no
+    temperature calibration fall back to the noise-based margin."""
     if len(activity) == 0:
         return 0.0
     base = float(np.median(activity))
+    if units in TEMP_UNITS:
+        return round(base + START_MARGIN_C * temp_scale(units), 3)
+    if count_slope:
+        return round(base + START_MARGIN_C / float(count_slope), 3)
     mad = float(np.median(np.abs(activity - base))) * 1.4826
     if units in TEMP_UNITS:
         floor = 0.6 * temp_scale(units)

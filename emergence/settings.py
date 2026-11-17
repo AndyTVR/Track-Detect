@@ -28,7 +28,6 @@ DEFAULTS = {
     "report": {"company": "", "contact": "", "analyst": "", "camera": ""},
     # the Custom viewing mode's saved filters (Settings > Custom filters)
     "custom_filters": [
-        {"name": "Smoothed trails", "wa": True, "mfi": 5, "ss": 5, "mc": False, "blend": "overlay", "opacity": 0.8},
         {"name": "Trails only", "wa": False, "mfi": 5, "ss": 5, "mc": False, "blend": "none", "opacity": 0.8},
     ],
 }

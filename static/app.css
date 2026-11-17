@@ -550,3 +550,31 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 #persist-menu label{white-space:nowrap}
 #persist-menu{min-width:240px}
 .rec-head .btn{white-space:nowrap}
+/* project map */
+.map-dlg{width:min(1400px,96vw);height:min(900px,92vh);max-width:none;max-height:none;padding:0;border-radius:14px;border:1px solid var(--line-strong);background:var(--panel);color:var(--text);overflow:hidden}
+.map-dlg::backdrop{background:rgba(0,0,0,.55)}
+.map-wrap{display:flex;height:100%}
+.map-side{width:360px;flex:none;display:flex;flex-direction:column;gap:10px;padding:16px;overflow-y:auto;border-right:1px solid var(--line)}
+.map-side h2{margin:0;font-size:18px}
+.map-side select,.map-side input{height:32px;padding:0 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);min-width:0}
+.map-side label{display:flex;flex-direction:column;gap:3px}
+.map{flex:1;min-width:0;background:#1a1f1a}
+.map-search{display:flex;gap:6px}
+.map-search input{flex:1}
+.map-results{display:flex;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:4px;font-size:12px}
+.map-hit{all:unset;cursor:pointer;padding:5px 6px;border-radius:6px}
+.map-hit:hover{background:var(--panel2)}
+.map-cams{display:flex;flex-direction:column;gap:8px}
+.mc{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:pointer}
+.mc.sel{border-color:#2bb7c8;box-shadow:0 0 0 1px #2bb7c8 inset}
+.mc-head{display:flex;align-items:center;gap:8px}
+.mc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;font-size:12px}
+.mc-grid [hidden]{display:none}
+.mc-stats{font-size:11px;line-height:1.4}
+.cam-pin{background:none;border:0}
+.cam-pin span,.cam-pin-s{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px 6px 6px 0;background:#8e2fb5;color:#fff;font-size:12px;font-weight:800;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.cam-pin span{width:26px;height:26px;border-radius:7px 7px 7px 0;transform:translateY(0)}
+.cam-pin.sel span{background:#b84ee0;outline:2px solid #fff}
+.cone-tip{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #2bb7c8;box-shadow:0 1px 4px rgba(0,0,0,.5);cursor:grab}
+.btn.map-btn{border-color:#2bb7c8}
+@media (max-width:800px){.map-wrap{flex-direction:column}.map-side{width:auto;max-height:45%}}

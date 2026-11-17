@@ -16,7 +16,9 @@ fs.mkdirSync(OUT, { recursive: true });
 for (const name of fs.readdirSync(SRC)) {
   const from = path.join(SRC, name), to = path.join(OUT, name);
   const text = () => fs.readFileSync(from, "utf8");
-  if (name.endsWith(".js")) {
+  if (fs.statSync(from).isDirectory()) {   // third-party libraries (Leaflet): already minified, copied as they are
+    fs.cpSync(from, to, { recursive: true });
+  } else if (name.endsWith(".js")) {
     // wrapped in its own function so its scrambled names can't clash with
     // any other script on the page
     const r = await terser("(() => {\n" + text() + "\n})();", {

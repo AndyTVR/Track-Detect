@@ -127,6 +127,19 @@ clicking **Quit** in the top bar, closes it.
      program remembers what's folded.
    - The Event Log names the camera you're looking at (camera, survey,
      project), or "Unassigned".
+   - **Map** (on each project) opens a satellite map of the site. Search for
+     a place or postcode (or type latitude, longitude), then **Set site
+     here** to pin the site. Pick a survey and **Place on map** each camera:
+     drag its numbered pin to where it stood, and drag the white dot at the
+     end of its cone to turn it and set how far it reaches (or type the
+     facing in degrees and the range in metres). Choose the camera and lens:
+     FLIR A70 29°, 51° or 95°; FLIR A700 14°, 24°, 42° or 80°; or another
+     angle. Each camera shows its IFOV at that range and the pixels on a
+     0.1 m target, worked out as in FLIR Raven (range × lens angle ÷ 640
+     pixels; a round target). Everything is saved as you go, with the
+     projects. The map needs an internet connection for the imagery (Esri
+     World Imagery, or OpenStreetMap from the layers button); place names
+     come from OpenStreetMap's Nominatim.
    - **Tree** shows everything as Project › Survey › Camera › recording.
      Click a recording there to open it.
    - The report's *Location* starts as the project name.

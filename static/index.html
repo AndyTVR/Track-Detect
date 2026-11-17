@@ -12,6 +12,7 @@
           document.documentElement.dataset.theme = look.theme || "dark"; } catch (e) {}
   })();
 </script>
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/app.css">
 <link rel="icon" href="/static/favicon.png">
 <link rel="manifest" href="/static/manifest.json">
@@ -389,6 +390,27 @@
   </form>
 </dialog>
 
+<dialog id="dlg-map" class="map-dlg" aria-labelledby="map-title">
+  <div class="map-wrap">
+    <aside class="map-side">
+      <div class="row between"><h2 id="map-title">Project map</h2><button id="map-close" class="btn sm" type="button">Close</button></div>
+      <form id="map-search" class="map-search" role="search">
+        <input id="map-q" type="search" placeholder="Search a place or postcode, or type lat, long" aria-label="Search the map">
+        <button class="btn sm" type="submit">Find</button>
+      </form>
+      <div id="map-results" class="map-results" hidden></div>
+      <div class="row wrap">
+        <button id="map-site" class="btn sm" type="button" title="Put the site pin in the middle of the map">Set site here</button>
+        <span id="map-site-note" class="small muted"></span>
+      </div>
+      <label class="small">Survey <select id="map-survey"></select></label>
+      <div id="map-cams" class="map-cams"></div>
+      <p class="small muted">Drag a camera to move it. Drag the white dot at the end of its cone to turn it and set how far it reaches. Changes are saved as you go.</p>
+    </aside>
+    <div id="map" class="map" aria-label="Map of the site"></div>
+  </div>
+</dialog>
+
 <dialog id="dlg-tree">
   <form method="dialog" class="dlg wide">
     <h2>Recordings tree</h2>
@@ -706,6 +728,7 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/static/leaflet/leaflet.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

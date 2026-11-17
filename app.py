@@ -494,10 +494,10 @@ def org_tree(rows):
                 files = sorted(byc.get(c["id"], []), key=lambda r: (r["start"] or "", r["name"]))
                 cams.append({"id": c["id"], "no": c["no"], "name": c.get("name") or "", "label": camera_label(c),
                              "paths": [r["path"] for r in files], "overlaps": _overlaps(files),
-                             "join": bool(c.get("joined")), "joined": CAM_JOIN.get(c["id"], "")})
+                             "join": bool(c.get("joined")), "joined": CAM_JOIN.get(c["id"], ""), "map": c.get("map")})
             surveys.append({"id": sv["id"], "no": sv["no"], "date": sv.get("date") or "", "label": survey_label(sv), "cameras": cams,
                             "paths": [p for c in cams for p in c["paths"]]})
-        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys,
+        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"),
                      "paths": [p for sv in surveys for p in sv["paths"]]})
     unassigned = sorted([r for r in rows if not r["camera_id"]], key=lambda r: (os.path.dirname(r["path"]), r["start"] or "", r["name"]))
     return tree, [r["path"] for r in unassigned if r["path"] in listed]
@@ -758,6 +758,16 @@ def files():
     return jsonify(_files_payload())
 
 
+def _num_in(v, lo, hi):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        raise UserError("That isn't a number")
+    if not (lo <= x <= hi) or x != x:
+        raise UserError("That number is out of range")
+    return x
+
+
 @app.post("/api/org")
 def organise():
     """Organise recordings into projects, surveys and cameras.
@@ -834,6 +844,28 @@ def organise():
                 org["of"][p] = cid
             else:
                 org["of"].pop(p, None)
+    elif act == "set_site":   # the project's site on the map: {lat, lon, zoom}, or null to clear
+        n = _node(b.get("id"))
+        if not n or n[0] != "project":
+            raise UserError("That project no longer exists")
+        site = b.get("site")
+        if site:
+            n[1]["site"] = {"lat": _num_in(site.get("lat"), -90, 90), "lon": _num_in(site.get("lon"), -180, 180),
+                            "zoom": int(_num_in(site.get("zoom", 17), 1, 21))}
+        else:
+            n[1].pop("site", None)
+    elif act == "set_camera_map":   # where a camera stood and where it looked
+        n = _node(b.get("id"))
+        if not n or n[0] != "camera":
+            raise UserError("That camera no longer exists")
+        m = b.get("map")
+        if m:
+            n[1]["map"] = {"lat": _num_in(m.get("lat"), -90, 90), "lon": _num_in(m.get("lon"), -180, 180),
+                           "bearing": _num_in(m.get("bearing", 0), -360, 720) % 360, "range": _num_in(m.get("range", 30), 1, 2000),
+                           "fov": _num_in(m.get("fov", 51), 1, 180), "model": str(m.get("model") or "")[:30],
+                           "lens": str(m.get("lens") or "")[:30]}
+        else:
+            n[1].pop("map", None)
     elif act == "join":   # read a camera's consecutive recordings as one (or separately again)
         n = _node(b.get("id"))
         if not n or n[0] != "camera":
@@ -981,7 +1013,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-fold"   # must match static/app.js
+APP_VERSION = "2026.11.17-map"   # must match static/app.js
 
 
 @app.get("/api/version")

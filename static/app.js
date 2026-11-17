@@ -303,7 +303,8 @@ function renderFiles() {
     ph.appendChild(binBtn(`project ${pj.name}`, () => org({ action: "delete", id: pj.id }).catch(err)));
     const psub = el("div", "cam-sub proj-sub", `<span class="small muted">${plural(pj.surveys.length, "survey")} · ${plural(pj.paths.length, "recording")}</span>`);
     const pb = el("span", "row-btns");
-    pb.append(smallBtn("+ Survey", `Add a survey (a visit or night) to ${pj.name}`, () => org({ action: "new_survey", project: pj.id }).catch(err)),
+    pb.append(smallBtn("Map", `Map of ${pj.name}: the site and where each camera stood and looked`, () => openMap(pj.id), "map-btn"),
+              smallBtn("+ Survey", `Add a survey (a visit or night) to ${pj.name}`, () => org({ action: "new_survey", project: pj.id }).catch(err)),
               smallBtn("Scan project", `Scan every recording in ${pj.name}`, () => scanGroup(pj.id, pj.name), "scan-btn"));
     psub.appendChild(pb); pg.append(ph, psub);
     for (const sv of pj.surveys) {
@@ -781,7 +782,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-fold";
+const APP_VERSION = "2026.11.17-map";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2174,3 +2175,178 @@ setInterval(async () => {
   try { const r = await fetch("/api/ping", { cache: "no-store" }); if (!r.ok) throw new Error(); missedPings = 0; $("#stopped-banner").hidden = true; }
   catch (e) { if (++missedPings >= 2) $("#stopped-banner").hidden = false; }
 }, 20000);
+
+// ------------------------------------------------------------ project map
+// A satellite map of the project's site (Leaflet, with Esri imagery or
+// OpenStreetMap), with each camera of a survey placed where it stood and a
+// cone showing which way it looked, how wide its lens sees and how far.
+const LENSES = { "FLIR A70": [29, 51, 95], "FLIR A700": [14, 24, 42, 80] };
+const SENSOR_PX = 640;   // both cameras are 640 × 480
+const MAPS = {};
+function geoDest(lat, lon, brg, dist) {   // the point dist metres from lat/lon on bearing brg
+  const R = 6371000, d = dist / R, t = brg * Math.PI / 180, p1 = lat * Math.PI / 180, l1 = lon * Math.PI / 180;
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(t));
+  const l2 = l1 + Math.atan2(Math.sin(t) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+  return [p2 * 180 / Math.PI, l2 * 180 / Math.PI];
+}
+function geoBearing(a, b) {
+  const p1 = a.lat * Math.PI / 180, p2 = b.lat * Math.PI / 180, dl = (b.lng - a.lng) * Math.PI / 180;
+  const t = Math.atan2(Math.sin(dl) * Math.cos(p2), Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl));
+  return (t * 180 / Math.PI + 360) % 360;
+}
+function conePoints(m) {
+  const pts = [[m.lat, m.lon]], n = 24;
+  for (let k = 0; k <= n; k++) pts.push(geoDest(m.lat, m.lon, m.bearing - m.fov / 2 + m.fov * k / n, m.range));
+  return pts;
+}
+// as FLIR Raven: IFOV = range × angle ÷ pixels; pixels on a round 0.1 m target
+function ifovMm(m) { return m.range * (m.fov * Math.PI / 180) / SENSOR_PX * 1000; }
+function targetPx(m, size = 0.1) { return Math.PI / 4 * Math.pow(size * 1000 / ifovMm(m), 2); }
+const camIcon = (no, sel) => L.divIcon({ className: "cam-pin" + (sel ? " sel" : ""), html: `<span>${no}</span>`, iconSize: [26, 30], iconAnchor: [13, 30] });
+const tipIcon = L.divIcon({ className: "cone-tip", iconSize: [14, 14], iconAnchor: [7, 7] });
+
+function openMap(projectId) {
+  const pj = (S.tree || []).find((p) => p.id === projectId); if (!pj) return;
+  MAPS.pj = pj.id; MAPS.sel = null;
+  $("#map-title").textContent = `Map: ${pj.name}`;
+  $("#map-survey").innerHTML = pj.surveys.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
+  $("#map-survey").value = MAPS.sv && pj.surveys.some((s) => s.id === MAPS.sv) ? MAPS.sv : (pj.surveys[pj.surveys.length - 1] || {}).id || "";
+  MAPS.sv = $("#map-survey").value;
+  $("#map-results").hidden = true; $("#map-q").value = "";
+  $("#dlg-map").showModal();
+  if (!MAPS.map) {
+    L.Icon.Default.imagePath = "/static/leaflet/images/";
+    const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 21, maxNativeZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics" });
+    const labels = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 21, maxNativeZoom: 19 });
+    const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 21, maxNativeZoom: 19, attribution: "© OpenStreetMap contributors" });
+    MAPS.map = L.map("map", { layers: [sat, labels], zoomControl: true, attributionControl: true }).setView([54, -2.5], 6);
+    L.control.layers({ "Satellite": sat, "Map": osm }, { "Place names": labels }, { position: "topright" }).addTo(MAPS.map);
+    L.control.scale({ imperial: false }).addTo(MAPS.map);
+    MAPS.layer = L.layerGroup().addTo(MAPS.map);
+  }
+  setTimeout(() => {
+    MAPS.map.invalidateSize();
+    if (pj.site) MAPS.map.setView([pj.site.lat, pj.site.lon], pj.site.zoom || 18);
+    else {
+      const placed = pj.surveys.flatMap((s) => s.cameras).map((c) => c.map).filter(Boolean);
+      if (placed.length) MAPS.map.setView([placed[0].lat, placed[0].lon], 19);
+    }
+    drawMap();
+  }, 60);
+}
+function mapProject() { return (S.tree || []).find((p) => p.id === MAPS.pj); }
+function mapSurvey() { const pj = mapProject(); return pj && pj.surveys.find((s) => s.id === MAPS.sv); }
+function camDefaults(cam) {
+  const f = cam.paths.map(fileRow).find(Boolean);
+  const model = S.rec && S.rec.camera && LENSES[S.rec.camera] && f && fileRow(S.rec.path) && fileRow(S.rec.path).camera_id === cam.id ? S.rec.camera : "FLIR A70";
+  const c = MAPS.map.getCenter(), at = geoDest(c.lat, c.lng, 90, 6 * (cam.no - 1));   // a few metres apart, so they don't stack
+  return { lat: at[0], lon: at[1], bearing: 0, range: 15, model, lens: String(LENSES[model].includes(95) ? 95 : LENSES[model][0]), fov: LENSES[model].includes(95) ? 95 : LENSES[model][0] };
+}
+function saveCamMap(cam, m) {
+  cam.map = m;
+  clearTimeout(MAPS.t && MAPS.t[cam.id]); MAPS.t = MAPS.t || {};
+  MAPS.t[cam.id] = setTimeout(async () => {
+    try { await api("/api/org", { action: "set_camera_map", id: cam.id, map: m }); } catch (e) { err(e); }
+  }, 350);
+}
+function drawMap() {
+  const sv = mapSurvey(), pj = mapProject(); if (!MAPS.map || !pj) return;
+  MAPS.layer.clearLayers();
+  if (pj.site) {
+    const sm = L.marker([pj.site.lat, pj.site.lon], { draggable: true, title: "Site" }).addTo(MAPS.layer).bindTooltip(pj.name);
+    sm.on("dragend", () => setSite(sm.getLatLng()));
+    $("#map-site-note").textContent = `Site: ${pj.site.lat.toFixed(5)}, ${pj.site.lon.toFixed(5)}`;
+  } else $("#map-site-note").textContent = "No site pin yet.";
+  for (const cam of (sv ? sv.cameras : [])) {
+    const m = cam.map; if (!m) continue;
+    const sel = MAPS.sel === cam.id;
+    const cone = L.polygon(conePoints(m), { color: "#2bb7c8", weight: 1.5, fillColor: "#2bb7c8", fillOpacity: sel ? 0.42 : 0.28, interactive: true }).addTo(MAPS.layer);
+    cone.on("click", () => { MAPS.sel = cam.id; drawMap(); });
+    const pin = L.marker([m.lat, m.lon], { draggable: true, icon: camIcon(cam.no, sel), title: cam.label, zIndexOffset: 1000 }).addTo(MAPS.layer);
+    const tipAt = geoDest(m.lat, m.lon, m.bearing, m.range);
+    const tip = L.marker(tipAt, { draggable: true, icon: tipIcon, title: `Turn ${cam.label} or change how far it reaches`, zIndexOffset: 900 }).addTo(MAPS.layer);
+    pin.on("click", () => { MAPS.sel = cam.id; drawMap(); });
+    pin.on("drag", () => { const p = pin.getLatLng(); m.lat = p.lat; m.lon = p.lng; cone.setLatLngs(conePoints(m)); tip.setLatLng(geoDest(m.lat, m.lon, m.bearing, m.range)); });
+    pin.on("dragend", () => { saveCamMap(cam, m); renderMapCams(); });
+    tip.on("drag", () => {
+      const p = tip.getLatLng(), c = L.latLng(m.lat, m.lon);
+      m.bearing = Math.round(geoBearing(c, p)); m.range = Math.max(1, Math.round(c.distanceTo(p)));
+      cone.setLatLngs(conePoints(m)); renderMapCams(true);
+    });
+    tip.on("dragend", () => { saveCamMap(cam, m); renderMapCams(); });
+  }
+  renderMapCams();
+}
+function renderMapCams(quiet) {
+  const sv = mapSurvey(), box = $("#map-cams");
+  if (!sv) { box.innerHTML = '<p class="small muted">This project has no surveys yet.</p>'; return; }
+  if (quiet) {   // while dragging: just refresh the numbers
+    for (const cam of sv.cameras) { const r = box.querySelector(`[data-mc="${cam.id}"]`); if (!r || !cam.map) continue;
+      r.querySelector("[data-k=bearing]").value = cam.map.bearing; r.querySelector("[data-k=range]").value = cam.map.range;
+      r.querySelector(".mc-stats").innerHTML = camStats(cam.map); }
+    return;
+  }
+  box.innerHTML = "";
+  for (const cam of sv.cameras) {
+    const m = cam.map, row = el("div", "mc" + (MAPS.sel === cam.id ? " sel" : "")); row.dataset.mc = cam.id;
+    row.innerHTML = `<div class="mc-head"><span class="cam-pin-s">${cam.no}</span><b>${esc(cam.label)}</b></div>`;
+    if (!m) {
+      row.appendChild(smallBtn("Place on map", `Put ${cam.label} in the middle of the map`, () => { const d = camDefaults(cam); MAPS.sel = cam.id; saveCamMap(cam, d); drawMap(); }, "primary"));
+    } else {
+      const lenses = LENSES[m.model] || [];
+      row.insertAdjacentHTML("beforeend", `<div class="mc-grid">
+        <label>Camera <select data-k="model">${Object.keys(LENSES).map((k) => `<option ${k === m.model ? "selected" : ""}>${k}</option>`).join("")}</select></label>
+        <label>Lens <select data-k="lens">${lenses.map((a) => `<option value="${a}" ${String(a) === m.lens ? "selected" : ""}>${a}°</option>`).join("")}<option value="custom" ${m.lens === "custom" ? "selected" : ""}>Other…</option></select></label>
+        <label ${m.lens === "custom" ? "" : "hidden"}>Angle ° <input data-k="fov" type="number" min="1" max="180" step="1" value="${m.fov}"></label>
+        <label>Facing ° <input data-k="bearing" type="number" min="0" max="359" step="1" value="${Math.round(m.bearing)}"></label>
+        <label>Range m <input data-k="range" type="number" min="1" max="2000" step="1" value="${Math.round(m.range)}"></label>
+      </div><div class="mc-stats small muted">${camStats(m)}</div>`);
+      row.querySelectorAll("[data-k]").forEach((i) => (i.onchange = () => {
+        const k = i.dataset.k;
+        if (k === "model") { m.model = i.value; const l = LENSES[m.model]; m.fov = l.includes(m.fov) ? m.fov : (l.includes(95) ? 95 : l[l.length - 1]); m.lens = String(m.fov); }
+        else if (k === "lens") { m.lens = i.value; if (i.value !== "custom") m.fov = +i.value; }
+        else m[k] = Math.max(+i.min || 0, Math.min(+i.max, +i.value || 0));
+        saveCamMap(cam, m); drawMap();
+      }));
+      const acts = el("div", "row wrap");
+      acts.append(smallBtn("Show", `Centre the map on ${cam.label}`, () => { MAPS.sel = cam.id; MAPS.map.setView([m.lat, m.lon], Math.max(MAPS.map.getZoom(), 18)); drawMap(); }),
+                  smallBtn("Remove from map", `Take ${cam.label} off the map`, async () => { cam.map = null; try { await api("/api/org", { action: "set_camera_map", id: cam.id, map: null }); } catch (e) { err(e); } drawMap(); }));
+      row.appendChild(acts);
+    }
+    row.addEventListener("click", (e) => { if (e.target.closest("input, select, button")) return; if (MAPS.sel !== cam.id) { MAPS.sel = cam.id; drawMap(); } });
+    box.appendChild(row);
+  }
+}
+function camStats(m) {
+  return `IFOV ${ifovMm(m).toFixed(1)} mm at ${Math.round(m.range)} m · ${targetPx(m).toFixed(1)} px on a 0.1 m target · ${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}`;
+}
+async function setSite(ll) {
+  try {
+    const site = { lat: ll.lat, lon: ll.lng, zoom: MAPS.map.getZoom() };
+    await api("/api/org", { action: "set_site", id: MAPS.pj, site }); mapProject().site = site; drawMap();
+  } catch (e) { err(e); }
+}
+$("#map-site").onclick = () => setSite(MAPS.map.getCenter());
+$("#map-survey").onchange = () => { MAPS.sv = $("#map-survey").value; MAPS.sel = null; drawMap(); };
+$("#map-close").onclick = () => $("#dlg-map").close();
+$("#dlg-map").addEventListener("close", () => refreshFiles());
+$("#map-search").onsubmit = async (e) => {
+  e.preventDefault();
+  const q = $("#map-q").value.trim(); if (!q) return;
+  const ll = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (ll) { MAPS.map.setView([+ll[1], +ll[2]], 18); return; }
+  const box = $("#map-results"); box.hidden = false; box.textContent = "Searching…";
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&q=${encodeURIComponent(q)}`, { headers: { "Accept-Language": "en-GB" } });
+    const hits = await res.json();
+    if (!hits.length) { box.textContent = "Nothing found. Try a postcode, or type the latitude and longitude."; return; }
+    box.innerHTML = "";
+    for (const h of hits) {
+      const b = el("button", "map-hit", esc(h.display_name)); b.type = "button";
+      b.onclick = () => { MAPS.map.setView([+h.lat, +h.lon], 18); box.hidden = true; };
+      box.appendChild(b);
+    }
+  } catch (er) { box.textContent = "Couldn't search: the map needs an internet connection."; }
+};

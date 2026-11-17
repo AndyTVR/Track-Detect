@@ -54,7 +54,9 @@ class Recording:
     def __init__(self, path: str, fps: float | None = None):
         self.path = path
         self.state = self._load_state()
-        self.src = ATSFile(path, fps=fps or self.state.get("fps"))
+        # only a frame rate the user typed in overrides the file's own timing
+        # (older versions saved an assumed 16 fps here for every file)
+        self.src = ATSFile(path, fps=fps or (self.state.get("fps") if self.state.get("fps_set") else None))
         self.renderer = Renderer(self.src)
         self.renderer.filters = lambda: self.filters
         self.acts = self._load_activity()       # ROI id -> activity trace

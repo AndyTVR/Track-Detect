@@ -49,7 +49,9 @@ clicking **Quit** in the top bar, closes it.
    from the list with its **×**. Each file shows its times and status.
 
    **Cameras**: the list groups recordings by camera. Files from the same
-   folder start in the same camera ("Camera 1", "Camera 2" …).
+   folder with the same name start in the same camera: "front 1", "front 2"
+   become **Front**, and "rear 1", "rear 2" become **Rear**. Files with
+   numbered names such as "Rec-0003" group by folder ("Camera 1", "Camera 2" …).
    - Click a camera's name to rename it, for example "Front elevation".
    - The **⤢** button beside a file moves it to another camera, or to a new
      one.
@@ -307,6 +309,12 @@ reads that camera's files correctly.
 - The `.ats` reader was worked out from real files and doesn't use FLIR's
   SDK. It's tested on an RS8481 (1280×1024) recording. **Check A70 and A700
   files with "Check a file" before relying on them.**
+- Frame times come from the time stamp the camera puts on every frame, so
+  they're exact even if frames were dropped. A file without them gets its
+  frame rate from when it finished recording (its "last modified" time).
+  The **fps** box at the top shows the frame rate and where it came from:
+  *from file*, *estimated* or *assumed*. Type a value to override it, and
+  click **Auto** to go back to the file's own timing.
 - Times are shown in UK time: BST in summer and GMT in winter, changing on
   the official dates. Dates are shown as dd/mm/yyyy. This applies everywhere: the app, the picture overlay,
   exports and CSVs. The camera stores its start time in UTC, and the app

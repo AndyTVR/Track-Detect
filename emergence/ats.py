@@ -93,7 +93,6 @@ class ATSFile:
         self.width, self.height = self.layout.width, self.layout.height
         self.n_frames = self.layout.n_frames
         self.start_time = self._parse_start_time(head)
-        self.fps = float(fps) if fps else 16.0
         if self.n_frames < 1:
             raise ATSError("The file contains no complete frames")
         self._frames = np.ndarray(
@@ -105,6 +104,23 @@ class ATSFile:
         )
         # needs the frames, so it comes after them
         self.units, self._to_celsius = self._calibration()
+        # Frame timing. FLIR cameras stamp every frame with a clock in 100 ns
+        # ticks, which gives the true time of each frame (and copes with
+        # dropped frames). Without one, the frame rate is estimated from when
+        # the file was last written (the end of the recording). A rate the
+        # user types in always wins.
+        self._clock = self._choose_clock(self._find_frame_clocks())
+        if fps:
+            self.fps, self.fps_source = float(fps), "set by you"
+        elif self._clock:
+            self.fps, self.fps_source = self._clock["fps"], "frame clock"
+        else:
+            est = self._fps_from_file_time()
+            if est:
+                self.fps, self.fps_source = est, "estimated from the file's end time"
+            else:
+                self.fps, self.fps_source = 30.0, "assumed"
+        self.fps_user = bool(fps)
 
     # ------------------------------------------------------------------ header
     @staticmethod
@@ -221,10 +237,128 @@ class ATSFile:
             a = a[y0:y1, x0:x1]
         return self._to_celsius(a) if self._to_celsius else a.astype(np.float32)
 
+    # ------------------------------------------------------------------ timing
+    def _header_u64(self, i: int, k: int) -> int:
+        """8 bytes at offset k of frame i's own header (just before its pixels)."""
+        return struct.unpack_from("<Q", self._mm, self.layout.first + i * self.layout.stride - self._hl + k)[0]
+
+    @property
+    def _hl(self) -> int:
+        return self.layout.stride - self.width * self.height * 2
+
+    def _find_frame_clocks(self):
+        """Counters in the per-frame headers that go up by a steady amount
+        each frame (candidate clocks): a list of (cv, offset, t0, step per
+        frame over the whole recording)."""
+        hl, n = self._hl, self.n_frames
+        if hl < 8 or n < 3:
+            return []
+        m = min(n, 40)
+        try:
+            H = np.array([np.frombuffer(self._mm, np.uint8, hl, self.layout.first + i * self.layout.stride - hl)
+                          for i in range(m)])
+        except (ValueError, TypeError):
+            return []
+        found = []
+        for k in range(0, hl - 7):
+            v = np.ascontiguousarray(H[:, k:k + 8]).view("<u8").ravel().astype(np.float64)
+            d = np.diff(v)
+            if not (d > 0).all():
+                continue
+            med = float(np.median(d))
+            if not (1e1 <= med <= 1e8):      # any plausible tick size; the unit is settled below
+                continue
+            if v[0] < 1e6:
+                continue   # a clock in 100 ns ticks is large; small values are counters or flags
+            if (d == d[0]).all() and (int(d[0]) & (int(d[0]) - 1)) == 0:
+                continue   # a frame counter sitting in the upper bytes: a power-of-two step every frame
+            near = np.abs(d - med) <= 0.25 * med
+            if near.mean() < 0.9 or (d > 3.5 * med).any():
+                continue
+            # the whole recording must agree (no reset or wrap part-way)
+            try:
+                t0, tl = self._header_u64(0, k), self._header_u64(n - 1, k)
+                tm = self._header_u64(n // 2, k)
+            except struct.error:
+                continue
+            if not (t0 < tm < tl):
+                continue
+            per = (tl - t0) / (n - 1)
+            if not (0.8 * med <= per <= 2.5 * med):   # dropped frames make it a little longer, never shorter
+                continue
+            cv = float(np.std(d[near]) / med)
+            found.append((cv, k, t0, per))
+        return found
+
+    def _choose_clock(self, found):
+        """Pick the frame clock and its unit. FLIR clocks count 100 ns ticks;
+        when the file's last-written time gives the recording's length, it
+        settles the unit (and rules out counters that aren't clocks)."""
+        if not found:
+            return None
+        n = self.n_frames
+        span = None
+        if self.start_time is not None:
+            try:
+                end = _dt.datetime.fromtimestamp(os.path.getmtime(self.path), _dt.timezone.utc)
+                s = (end - self.start_time).total_seconds()
+                span = s if 0 < s < 48 * 3600 else None
+            except OSError:
+                pass
+        best = None
+        for cv, k, t0, per in sorted(found):
+            for unit in ((1e-7,) if span is None else (1e-7, 1e-6, 1e-8, 1e-9, 1e-3)):
+                fps = 1 / (per * unit)
+                if not (1 <= fps <= 500):
+                    continue
+                if span is not None:
+                    dur = (n - 1) / fps
+                    if not (0.9 * span - 10 <= dur <= span + 10):   # must end when the file did
+                        continue
+                cand = (unit != 1e-7, cv, k, t0, unit, fps)
+                if best is None or cand < best:
+                    best = cand
+        if best is None and span is not None:
+            # nothing ends when the file was last written: it was probably copied
+            # later, so trust a 100 ns clock without that check
+            for cv, k, t0, per in sorted(found):
+                fps = 1 / (per * 1e-7)
+                if 1 <= fps <= 500:
+                    best = (False, cv, k, t0, 1e-7, fps)
+                    break
+        if best is None:
+            return None
+        return {"offset": best[2], "t0": best[3], "unit": best[4], "fps": round(best[5], 4)}
+
+    def _fps_from_file_time(self):
+        """Frame rate from the start time and the time the file was last
+        written (when the recording stopped). Only used if it's plausible."""
+        if self.start_time is None or self.n_frames < 2:
+            return None
+        try:
+            end = _dt.datetime.fromtimestamp(os.path.getmtime(self.path), _dt.timezone.utc)
+        except OSError:
+            return None
+        span = (end - self.start_time).total_seconds()
+        if span <= 0 or span > 48 * 3600:
+            return None
+        fps = (self.n_frames - 1) / span
+        return round(fps, 3) if 1 <= fps <= 240 else None
+
+    def seconds_at(self, i: int) -> float:
+        """Seconds from the first frame to frame i."""
+        i = int(max(0, min(self.n_frames - 1, i)))
+        if self._clock and not self.fps_user:
+            try:
+                return (self._header_u64(i, self._clock["offset"]) - self._clock["t0"]) * self._clock["unit"]
+            except struct.error:
+                pass
+        return i / self.fps
+
     def time_utc(self, i: int):
         if self.start_time is None:
             return None
-        return self.start_time + _dt.timedelta(seconds=i / self.fps + TIME["offset_s"])
+        return self.start_time + _dt.timedelta(seconds=self.seconds_at(i) + TIME["offset_s"])
 
     def time_of(self, i: int):
         """Clock time of frame i: UK time (BST in summer, GMT in winter), or
@@ -248,7 +382,7 @@ class ATSFile:
     def time_label(self, i: int) -> str:
         t = self.time_of(i)
         if t is None:
-            s = i / self.fps
+            s = self.seconds_at(i)
             return f"+{int(s // 60):02d}:{s % 60:06.3f}"
         return t.strftime("%H:%M:%S.") + f"{t.microsecond // 1000:03d}"
 
@@ -261,7 +395,8 @@ class ATSFile:
             "height": self.height,
             "frames": self.n_frames,
             "fps": self.fps,
-            "duration_s": self.n_frames / self.fps,
+            "fps_source": self.fps_source,
+            "duration_s": self.seconds_at(self.n_frames - 1) + 1 / self.fps,
             "start": self.time_utc(0).isoformat() if self.start_time else None,   # includes clock correction
             "zone": self.zone_of(0),
             "units": self.units,

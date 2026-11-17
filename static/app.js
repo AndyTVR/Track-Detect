@@ -141,7 +141,7 @@ async function openRec(path) {
     $("#crumb-folder").textContent = parentName(S.rec.path);
     $("#crumb-file").textContent = "› " + S.rec.name;
     setCrumbMeta();
-    $("#fps-wrap").hidden = false; $("#fps").value = S.rec.fps;
+    $("#fps-wrap").hidden = false; showFps();
     ["#btn-roi-clear", "#btn-scan", "#btn-scan-menu", "#btn-roi-pick"].forEach((s) => ($(s).disabled = false));
     document.querySelectorAll(".shape-btn").forEach((b) => (b.disabled = false));
     S.roiHidden = new Set(); S.roiActive = (S.rec.rois[0] || {}).id; renderRois();
@@ -149,7 +149,22 @@ async function openRec(path) {
     renderFiles(); updateRoiStatus(); await loadActivity(); renderEvents(); renderComments(); renderFilters(); showFrame();
   } catch (e) { setEmpty("Could not open this file.", true); err(e); }
 }
-$("#fps").onchange = async () => { try { S.rec = await api("/api/fps", { fps: +$("#fps").value }); renderEvents(); showFrame(); } catch (e) { err(e); } };
+// Frame rate: read from the file's own frame clock where it has one. Typing
+// a value overrides it; "Auto" goes back to the file's timing.
+function showFps() {
+  const src = S.rec.fps_source || "";
+  $("#fps").value = Math.round(S.rec.fps * 100) / 100;
+  $("#fps-src").textContent = src === "frame clock" ? "from file" : src === "set by you" ? "set by you" : src.startsWith("estimated") ? "estimated" : "assumed";
+  $("#fps-src").className = "small " + (src === "frame clock" ? "muted" : "warn");
+  $("#fps-auto").hidden = src !== "set by you";
+  $("#fps-wrap").title = src === "frame clock" ? "Frame rate read from the time stamp the camera put on every frame. Times are exact."
+    : src === "set by you" ? "You set this frame rate. Click Auto to use the file's own timing again."
+    : src.startsWith("estimated") ? "This file has no per-frame time stamps, so the frame rate is estimated from when the file finished recording. Type the camera's frame rate if you know it."
+    : "This file has no per-frame time stamps and the frame rate couldn't be estimated. Type the camera's frame rate.";
+}
+async function setFps(v) { try { S.rec = await api("/api/fps", { fps: v }); showFps(); refreshFiles(); setCrumbMeta(); renderEvents(); await loadActivity(true); showFrame(); } catch (e) { err(e); } }
+$("#fps").onchange = () => setFps(+$("#fps").value);
+$("#fps-auto").onclick = () => setFps(0);
 
 // ------------------------------------------------------------ frames
 const img = $("#view");
@@ -458,7 +473,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.16-cameras";
+const APP_VERSION = "2026.11.17-timing";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

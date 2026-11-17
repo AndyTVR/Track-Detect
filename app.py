@@ -114,16 +114,29 @@ def _file_row(p):
                     st = "In review" if any(e["status"] == "todo" for e in d.get("events", [])) else "Reviewed"
             except (OSError, ValueError):
                 pass
-    t0, t1 = _file_times(p)
-    return {"path": p, "name": os.path.basename(p), "status": st,
+    t0, t1, timing = _file_times(p)
+    return {"path": p, "name": os.path.basename(p), "status": st, "timing": timing,
             "size_gb": round(os.path.getsize(p) / 1e9, 2), "camera": _camera_of(p), "start": t0, "end": t1}
 
 
 # ------------------------------------------------------------------ camera groups
-# Recordings are grouped by camera ("Camera 1", "Camera 2", ...). A new file
-# joins the camera of other files from its folder, or starts a new one. The
-# groups are remembered in cameras.json in the settings folder.
-_CAMS = {"of": {}, "loaded": False}
+# Recordings are grouped by camera. A new file joins other files from its
+# folder with the same name stem ("front 1", "front 2" -> "Front"), or, for
+# names without a word stem ("Rec-0003"), other files from its folder
+# ("Camera 1", "Camera 2" ...). Moving or renaming makes the choice the
+# user's. The groups are remembered in cameras.json in the settings folder.
+_CAMS = {"of": {}, "manual": set(), "loaded": False}
+_GENERIC_STEMS = {"rec", "record", "recording", "video", "file", "ats", "seq", "sequence", "clip", "capture"}
+
+
+def _name_stem(p):
+    """'front 2.ats' -> 'front'; '' when the name has no word stem worth using."""
+    import re
+    st = os.path.splitext(os.path.basename(p))[0].strip()
+    st = re.sub(r"[\s_\-]*\(?\d+\)?$", "", st).strip(" _-").lower()
+    if not st or len(st) > 24 or re.search(r"\d", st) or st in _GENERIC_STEMS or not re.search(r"[a-z]", st):
+        return ""
+    return st
 _TIMES = {}
 
 
@@ -136,7 +149,10 @@ def _cams():
         import json
         try:
             with open(_cams_path(), encoding="utf-8") as fh:
-                _CAMS["of"] = {k: str(v) for k, v in (json.load(fh).get("of") or {}).items()}
+                d = json.load(fh)
+            if d.get("v") == 2:   # older files held only automatic choices, made by an older rule
+                _CAMS["of"] = {k: str(v) for k, v in (d.get("of") or {}).items()}
+                _CAMS["manual"] = set(d.get("manual") or [])
         except (OSError, ValueError, AttributeError):
             _CAMS["of"] = {}
         _CAMS["loaded"] = True
@@ -149,7 +165,7 @@ def _save_cams():
         os.makedirs(DATA, exist_ok=True)
         tmp = _cams_path() + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"of": _cams()}, fh, indent=1)
+            json.dump({"v": 2, "of": _cams(), "manual": sorted(_CAMS["manual"])}, fh, indent=1)
         os.replace(tmp, _cams_path())
     except OSError:
         pass
@@ -164,8 +180,14 @@ def _camera_names():
     return names
 
 
-def _new_camera_name():
+def _new_camera_name(base=""):
     used = {n.lower() for n in _camera_names()}
+    base = base.replace("_", " ").strip()
+    if base:
+        name, k = base[:1].upper() + base[1:], 2
+        while name.lower() in used:
+            name, k = f"{base[:1].upper() + base[1:]} {k}", k + 1
+        return name
     k = 1
     while f"camera {k}" in used:
         k += 1
@@ -175,19 +197,21 @@ def _new_camera_name():
 def _camera_of(p):
     cams = _cams()
     if p not in cams:
-        here = os.path.dirname(p)
-        mate = next((f for f in state["files"] if f != p and f in cams and os.path.dirname(f) == here), None)
-        cams[p] = cams[mate] if mate else _new_camera_name()
+        here, stem = os.path.dirname(p), _name_stem(p)
+        mate = next((f for f in state["files"] if f != p and f in cams and os.path.dirname(f) == here
+                     and _name_stem(f) == stem), None)
+        cams[p] = cams[mate] if mate else _new_camera_name(stem)
         _save_cams()
     return cams[p]
 
 
 def _file_times(p):
-    """A recording's start and end (UTC ISO times), cached; None if not stored."""
+    """A recording's start and end (UTC ISO times; None if not stored) and
+    where its frame timing came from, cached."""
     try:
         key = (p, os.path.getmtime(p))
     except OSError:
-        return None, None
+        return None, None, None
     if key not in _TIMES:
         src, close = (recs[p].src, False) if p in recs else (None, True)
         try:
@@ -196,9 +220,9 @@ def _file_times(p):
                 src = ATSFile(p)
             t0 = src.time_utc(0) if src.start_time else None
             t1 = src.time_utc(src.n_frames - 1) if src.start_time else None
-            _TIMES[key] = (t0.isoformat() if t0 else None, t1.isoformat() if t1 else None)
+            _TIMES[key] = (t0.isoformat() if t0 else None, t1.isoformat() if t1 else None, src.fps_source)
         except Exception:
-            _TIMES[key] = (None, None)
+            _TIMES[key] = (None, None, None)
         finally:
             if close and src is not None:
                 try:
@@ -210,14 +234,20 @@ def _file_times(p):
 
 def camera_groups(rows):
     """Each camera's files in time order, with any that overlap in time (files
-    from one camera on one night shouldn't)."""
+    from one camera on one night shouldn't). Files whose frame rate had to be
+    assumed are left out of the check (their end times aren't known), and a
+    couple of seconds of overlap is allowed for when timing is estimated."""
+    import datetime as _d
     out = []
     for name in dict.fromkeys(r["camera"] for r in rows):
         files = sorted([r for r in rows if r["camera"] == name], key=lambda r: (r["start"] or "", r["name"]))
         overlaps = []
         for i, a in enumerate(files):
             for b in files[i + 1:]:
-                if a["start"] and a["end"] and b["start"] and b["end"] and b["start"] < a["end"] and a["start"] < b["end"]:
+                if not (a["start"] and a["end"] and b["start"] and b["end"]) or "assumed" in (a["timing"], b["timing"]):
+                    continue
+                lo, hi = max(a["start"], b["start"]), min(a["end"], b["end"])
+                if (_d.datetime.fromisoformat(hi) - _d.datetime.fromisoformat(lo)).total_seconds() > 2:
                     overlaps.append({"a": a["name"], "b": b["name"], "from": max(a["start"], b["start"]),
                                      "to": min(a["end"], b["end"])})
         out.append({"name": name, "paths": [r["path"] for r in files], "overlaps": overlaps})
@@ -398,11 +428,13 @@ def cameras():
         for k, v in list(cams.items()):
             if v == old:
                 cams[k] = new
+                _CAMS["manual"].add(k)
     elif b.get("action") == "move":
         p = b.get("path")
         if p not in state["files"]:
             raise UserError("That recording isn't in the list")
         cams[p] = (b.get("camera") or "").strip()[:40] or _new_camera_name()
+        _CAMS["manual"].add(p)
     else:
         raise UserError("Unknown camera action")
     _save_cams()
@@ -424,9 +456,21 @@ def recording():
 
 @app.post("/api/fps")
 def set_fps():
+    """Set the frame rate by hand (body: fps), or fps 0 to go back to the
+    file's own timing."""
     r = rec()
-    r.src.fps = float(request.json["fps"])
-    r.save()
+    v = float((request.json or {}).get("fps") or 0)
+    if v > 0:
+        r.src.fps, r.src.fps_source, r.src.fps_user = v, "set by you", True
+        r.state["fps_set"] = True
+        r.save()
+    else:
+        r.state.pop("fps_set", None)
+        r.save()
+        recs.pop(r.path, None)   # reopen: the file's own timing again
+        r = rec(r.path)
+    for k in [k for k in _TIMES if k[0] == r.path]:
+        _TIMES.pop(k)
     return jsonify(r.summary())
 
 
@@ -463,7 +507,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.16-cameras"   # must match static/app.js
+APP_VERSION = "2026.11.17-timing"   # must match static/app.js
 
 
 @app.get("/api/version")

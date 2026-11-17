@@ -29,3 +29,55 @@ def safe_replace(tmp: str, dst: str, wait_s: float = 4.0) -> None:
         os.remove(tmp)
     except OSError:
         pass
+
+
+import json as _json
+import threading as _threading
+import time as _time
+
+_LOCKS: dict = {}
+_LOCKS_GUARD = _threading.Lock()
+
+
+def _lock_for(path):
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(os.path.abspath(path), _threading.Lock())
+
+
+def write_json(path: str, data, indent=1) -> None:
+    """Save data as JSON safely: through a temporary file of its own (so two
+    saves at once can't mix), one save of a file at a time, then swapped in."""
+    with _lock_for(path):
+        tmp = f"{path}.{os.getpid()}-{_threading.get_ident()}.tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                _json.dump(data, fh, indent=indent)
+            safe_replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+
+
+DAMAGED = []   # (file, kept copy) noted this session, for the error log
+
+
+def read_json(path: str):
+    """The JSON in path; None if there's no file. A file that's there but
+    can't be read as JSON (half-written, or half-synced by Dropbox) is kept as
+    <name>.damaged-<date-time> before anything replaces it, and None returned."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return _json.load(fh)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, UnicodeDecodeError):
+        keep = f"{path}.damaged-{_time.strftime('%Y%m%d-%H%M%S')}"
+        try:
+            shutil.copyfile(path, keep)
+            DAMAGED.append((path, keep))
+        except OSError:
+            pass
+        return None

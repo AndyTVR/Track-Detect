@@ -14,11 +14,25 @@ from __future__ import annotations
 import os
 
 from .errors import UserError
-from .fsutil import safe_replace
+from .fsutil import read_json, write_json
+
+import threading
 
 _CTX = {"data": lambda: ".", "listed": lambda: []}
+LOCK = threading.RLock()   # changes to projects, surveys and cameras happen one at a time
 JOIN_CAM = {}   # joined recording's path -> camera id
 CAM_JOIN = {}   # camera id -> joined recording's path
+
+
+def one_at_a_time(fn):
+    """For request handlers that change the organisation."""
+    import functools
+
+    @functools.wraps(fn)
+    def run(*a, **k):
+        with LOCK:
+            return fn(*a, **k)
+    return run
 
 
 def configure(data, listed):
@@ -58,10 +72,8 @@ def _org():
     if not _ORG["loaded"]:
         import json, re
         _ORG["loaded"] = True
-        try:
-            with open(_cams_path(), encoding="utf-8") as fh:
-                d = json.load(fh)
-        except (OSError, ValueError):
+        d = read_json(_cams_path())   # a damaged file is kept as a copy, not overwritten
+        if not isinstance(d, dict):
             d = {}
         if d.get("v") == 4:
             _ORG["projects"] = d.get("projects") or []
@@ -93,10 +105,7 @@ def _save_org():
     _org()   # never write before the saved file has been read
     try:
         os.makedirs(_CTX["data"](), exist_ok=True)
-        tmp = _cams_path() + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"v": 4, "projects": _ORG["projects"], "of": _ORG["of"], "n": _ORG["n"]}, fh, indent=1)
-        safe_replace(tmp, _cams_path())
+        write_json(_cams_path(), {"v": 4, "projects": _ORG["projects"], "of": _ORG["of"], "n": _ORG["n"]})
     except OSError:
         pass
 

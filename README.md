@@ -459,6 +459,24 @@ don't affect the thermal picture.
 Delete these to start a recording from scratch. The `.ats` file itself is
 never changed.
 
+## If a save file is damaged
+
+Decisions, ROIs and scans are saved beside each recording
+(`<name>.ats.analysis.json` and `.activity.npz`); projects, cameras and site
+plans in `cameras.json`; settings in `settings.json`. If one of these can't be
+read (for example it was half-written, or half-synced by Dropbox), the
+program doesn't overwrite it: it keeps it as `<file>.damaged-<date-time>`,
+notes it in `error_log.txt`, tells you, and starts that information again.
+The kept copy can usually be repaired.
+
+## Automated tests
+
+`tests/` holds automated checks of the whole program (organising
+recordings, scanning, reviewing, joining, temperatures, site plans, project
+files, saving, reports). Run `tests/run_all.sh`, or `python -m pytest tests`
+for the server checks alone; see `tests/README.md`. The beta build runs them
+before compiling.
+
 ## Check a file decodes correctly
 
 Drag an `.ats` file onto **Check a file.bat**. It prints the camera, size,

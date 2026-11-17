@@ -9,7 +9,7 @@ import copy
 import json
 import os
 
-from .fsutil import safe_replace
+from .fsutil import read_json, write_json
 
 DEFAULT_CLASSES = ["Emergence", "Re-entry", "Flight through / commuting", "Passes behind structure",
                    "Foraging", "Bird", "Insect / noise", "Other"]
@@ -113,10 +113,8 @@ def _custom_list(v, clean_custom):
 
 
 def load(path: str) -> dict:
-    try:
-        with open(path, encoding="utf-8") as fh:
-            raw = json.load(fh)
-    except (OSError, ValueError):
+    raw = read_json(path)   # a damaged file is kept as a copy, not overwritten
+    if not isinstance(raw, dict):
         raw = {}
     # settings files from before the Settings tab kept a few keys at the top level
     if "palette" in raw and not isinstance(raw.get("view"), dict):
@@ -136,10 +134,7 @@ def save(path: str, d: dict | None = None) -> dict:
     if d is not None:
         CURRENT.clear()
         CURRENT.update(clean(d))
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(CURRENT, fh, indent=1)
-    safe_replace(tmp, path)
+    write_json(path, CURRENT)
     return CURRENT
 
 

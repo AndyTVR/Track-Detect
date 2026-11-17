@@ -55,6 +55,13 @@ jobs:
           npm install --no-save terser@5 csso@5 html-minifier-terser@7
           choco install innosetup -y --no-progress
 
+      - name: Check the code (names, tests)
+        shell: pwsh
+        run: |
+          python tests/check_names.py app.py check_file.py (Get-ChildItem emergence/*.py).FullName
+          python -m pip install pytest
+          python -m pytest tests -q -rs
+
       - name: Stamp version, date and feedback address
         run: python tools/stamp_beta.py --version "${{ steps.ver.outputs.version }}" --email "${{ vars.FEEDBACK_EMAIL }}"
 

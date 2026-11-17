@@ -288,6 +288,7 @@ def _expand(entry: str, deep=False):
 
 
 @app.post("/api/add")
+@org_mod.one_at_a_time
 def add():
     """Add recordings (files and/or folders) to the list."""
     body = request.json or {}
@@ -322,6 +323,7 @@ def add():
 
 
 @app.post("/api/remove")
+@org_mod.one_at_a_time
 def remove():
     p = (request.json or {}).get("path")
     state["files"] = [f for f in state["files"] if f != p]
@@ -407,16 +409,28 @@ def _scan_paths(node):
     return out
 
 
+def _damaged():
+    """Save files found damaged since last asked: noted in the error log and shown to the user."""
+    from emergence import fsutil
+    out = []
+    while fsutil.DAMAGED:
+        f, keep = fsutil.DAMAGED.pop(0)
+        _note(f"damaged file kept as {keep} (it couldn't be read, so it was set aside instead of being overwritten)")
+        out.append(os.path.basename(f))
+    return out
+
+
 def _files_payload(**extra):
     rows = _refresh_joins()
     tree, unassigned = org_tree(rows)
     rows = rows + [_joined_row(vp, rows) for vp in JOINS]
     if state["current"] and state["current"] not in {r["path"] for r in rows}:
         state["current"] = None   # a joined recording that no longer exists
-    return {"files": rows, "tree": tree, "unassigned": unassigned, "current": state["current"], **extra}
+    return {"files": rows, "tree": tree, "unassigned": unassigned, "current": state["current"], "damaged": _damaged(), **extra}
 
 
 @app.get("/api/files")
+@org_mod.one_at_a_time
 def files():
     return jsonify(_files_payload())
 
@@ -821,6 +835,7 @@ _ORG_ACTIONS = {
 
 
 @app.post("/api/org")
+@org_mod.one_at_a_time
 def organise():
     """Organise recordings into projects, surveys and cameras.
     body.action:
@@ -898,7 +913,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-det"   # must match static/app.js
+APP_VERSION = "2026.11.18-clean"   # must match static/app.js
 
 
 @app.get("/api/version")

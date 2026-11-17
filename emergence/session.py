@@ -15,7 +15,7 @@ from .analysis import SCAN_ID, clean_filters, end_spike, detect_events, roi_mask
 from .ats import ATSFile
 from .render import Renderer, export_event
 from . import settings as cfg
-from .fsutil import safe_replace
+from .fsutil import read_json, safe_replace, write_json
 
 
 # Filter persistence is one setting for the whole app (saved by app.py), so
@@ -168,10 +168,8 @@ class Recording:
 
     # ---------------------------------------------------------- persistence
     def _load_state(self) -> dict:
-        try:
-            with open(_sidecar(self.path, ".analysis.json")) as f:
-                st = json.load(f)
-        except (OSError, ValueError):
+        st = read_json(_sidecar(self.path, ".analysis.json"))   # a damaged file is kept as a copy, not overwritten
+        if not isinstance(st, dict):
             st = {"events": [], "scanned": False}
         if not isinstance(st.get("rois"), list):   # files from before multiple ROIs
             pts = st.pop("roi", None) or []
@@ -189,10 +187,7 @@ class Recording:
     def save(self):
         self.state["fps"] = self.src.fps
         self.state["roi"] = self.roi        # kept for older versions of the program
-        tmp = _sidecar(self.path, ".analysis.json.tmp")
-        with open(tmp, "w") as f:
-            json.dump(self.state, f, indent=1)
-        safe_replace(tmp, _sidecar(self.path, ".analysis.json"))
+        write_json(_sidecar(self.path, ".analysis.json"), self.state)
 
     # ---------------------------------------------------------- ROIs
     @property

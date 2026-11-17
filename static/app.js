@@ -226,7 +226,10 @@ $("#dlg-folder").addEventListener("close", async () => {
     if (r.first) openRec(r.first);   // show the first recording added
   } catch (e) { err(e); }
 });
-function setFiles(r) { S.files = r.files || []; S.tree = r.tree || []; S.unassigned = r.unassigned || []; renderFiles(); }
+function setFiles(r) {
+  S.files = r.files || []; S.tree = r.tree || []; S.unassigned = r.unassigned || []; renderFiles();
+  if (r.damaged && r.damaged.length) toast(`Couldn't read ${r.damaged.join(", ")}: it may have been damaged (for example while syncing). It's been kept as a copy ending ".damaged-…" beside it, and that information starts again. Details are in error_log.txt.`, 12000);
+}
 function hhmm(iso) { return iso ? ukTime(Date.parse(iso)).d.toISOString().substr(11, 5) : ""; }
 function nameBox(cls, value, label, onSave, placeholder) {
   const i = document.createElement("input"); i.type = "text"; i.maxLength = 40; i.className = cls; i.value = value;
@@ -804,7 +807,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-det";
+const APP_VERSION = "2026.11.18-clean";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

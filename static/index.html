@@ -303,8 +303,17 @@
       <textarea id="folder-input" rows="5" placeholder="C:\Users\...\St Fagans 10.8.26\front 2.ats&#10;C:\Users\...\BCT\19.10.26"></textarea>
     </label>
     <fieldset class="add-cam">
+      <legend>Save to project</legend>
+      <p class="small muted">A project holds the cameras for one job, for example a site and survey night.</p>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-proj" value="new"> New project</label>
+        <input id="add-proj-new" type="text" maxlength="40" placeholder="Project name, e.g. St Fagans 10.8.26" aria-label="New project name"></div>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-proj" value="existing"> Add to an existing project</label>
+        <select id="add-proj-existing" aria-label="Existing project"></select></div>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-proj" value="auto"> Use each recording's folder name</label></div>
+    </fieldset>
+    <fieldset class="add-cam">
       <legend>Save to camera</legend>
-      <p class="small muted">Recordings are grouped by the camera that made them. Pick the camera these come from.</p>
+      <p class="small muted">Within the project, recordings are grouped by the camera that made them.</p>
       <div class="add-cam-row"><label class="check"><input type="radio" name="add-cam" value="new"> New camera</label>
         <input id="add-cam-new" type="text" maxlength="40" placeholder="Camera name, e.g. Front elevation" aria-label="New camera name"></div>
       <div class="add-cam-row"><label class="check"><input type="radio" name="add-cam" value="existing"> Add to an existing camera</label>

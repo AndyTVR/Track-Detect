@@ -57,25 +57,52 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp
 function parentName(p) { const parts = p.split(/[\\/]/); return parts.slice(-3, -1).join(" › "); }
 // Adding recordings asks which camera they belong to: a new camera, an
 // existing one, or sorted automatically by file name and folder.
+// Adding recordings asks which project and camera they belong to: new,
+// existing, or sorted automatically (project = folder name, camera = file
+// name, e.g. front 1, front 2 -> Front).
+function projNames() { return (S.projects || []).map((p) => p.name); }
+function camNames(project) { const p = (S.projects || []).find((x) => x.name === project); return p ? p.cameras.map((c) => c.name) : []; }
+function radio(name, value) { return document.querySelector(`[name=${name}][value=${value}]`); }
+function curPlace() { const f = S.rec && S.files.find((x) => x.path === S.rec.path); return f ? { project: f.project, camera: f.camera } : {}; }
 function openAdd() {
   $("#folder-input").value = ""; $("#pick-msg").hidden = true; $("#add-cam-msg").hidden = true;
-  const names = (S.cameras || []).map((c) => c.name);
-  $("#add-cam-existing").innerHTML = names.map((n) => `<option>${esc(n)}</option>`).join("");
-  const cur = S.rec && (S.files.find((f) => f.path === S.rec.path) || {}).camera;
-  if (cur) $("#add-cam-existing").value = cur;
-  const hasCams = names.length > 0;
-  document.querySelector('[name=add-cam][value=existing]').disabled = !hasCams;
-  $("#add-cam-existing").disabled = !hasCams;
-  let k = 1; while (names.some((n) => n.toLowerCase() === `camera ${k}`)) k++;
-  $("#add-cam-new").value = ""; $("#add-cam-new").placeholder = `e.g. Front elevation (or leave as Camera ${k})`;
-  document.querySelector(`[name=add-cam][value=${hasCams ? "existing" : "new"}]`).checked = true;
+  const pn = projNames(), cur = curPlace();
+  $("#add-proj-existing").innerHTML = pn.map((n) => `<option>${esc(n)}</option>`).join("");
+  if (cur.project) $("#add-proj-existing").value = cur.project;
+  radio("add-proj", "existing").disabled = $("#add-proj-existing").disabled = !pn.length;
+  let k = 1; while (pn.some((n) => n.toLowerCase() === `project ${k}`)) k++;
+  $("#add-proj-new").value = ""; $("#add-proj-new").placeholder = `e.g. St Fagans 10.8.26 (or leave as Project ${k})`;
+  radio("add-proj", pn.length ? "existing" : "new").checked = true;
+  syncAddCams(cur.camera);
   $("#dlg-folder").showModal();
 }
-$("#add-cam-new").addEventListener("focus", () => (document.querySelector("[name=add-cam][value=new]").checked = true));
-$("#add-cam-existing").addEventListener("change", () => (document.querySelector("[name=add-cam][value=existing]").checked = true));
-function addCamChoice() {
+// the camera choices follow the project chosen
+function syncAddCams(prefer) {
+  const pmode = (document.querySelector("[name=add-proj]:checked") || {}).value;
+  const names = pmode === "existing" ? camNames($("#add-proj-existing").value) : [];
+  $("#add-cam-existing").innerHTML = names.map((n) => `<option>${esc(n)}</option>`).join("");
+  if (prefer && names.includes(prefer)) $("#add-cam-existing").value = prefer;
+  radio("add-cam", "existing").disabled = $("#add-cam-existing").disabled = !names.length;
+  const auto = pmode === "auto";
+  for (const v of ["new", "existing"]) { radio("add-cam", v).disabled = auto || (v === "existing" && !names.length); }
+  $("#add-cam-new").disabled = auto;
+  if (auto) radio("add-cam", "auto").checked = true;
+  else radio("add-cam", names.length ? "existing" : "new").checked = true;
+  let k = 1; while (names.some((n) => n.toLowerCase() === `camera ${k}`)) k++;
+  $("#add-cam-new").placeholder = `e.g. Front elevation (or leave as Camera ${k})`;
+}
+document.querySelectorAll("[name=add-proj]").forEach((r) => (r.onchange = () => syncAddCams()));
+$("#add-proj-existing").addEventListener("change", () => { radio("add-proj", "existing").checked = true; syncAddCams(); });
+$("#add-proj-new").addEventListener("focus", () => { radio("add-proj", "new").checked = true; syncAddCams(); });
+$("#add-cam-new").addEventListener("focus", () => (radio("add-cam", "new").checked = true));
+$("#add-cam-existing").addEventListener("change", () => (radio("add-cam", "existing").checked = true));
+function addChoice() {
+  const pmode = (document.querySelector("[name=add-proj]:checked") || {}).value || "auto";
   const mode = (document.querySelector("[name=add-cam]:checked") || {}).value || "auto";
-  return { mode, name: mode === "new" ? $("#add-cam-new").value.trim() : mode === "existing" ? $("#add-cam-existing").value : "" };
+  return {
+    project: { mode: pmode, name: pmode === "new" ? $("#add-proj-new").value.trim() : pmode === "existing" ? $("#add-proj-existing").value : "" },
+    camera: { mode, name: mode === "new" ? $("#add-cam-new").value.trim() : mode === "existing" ? $("#add-cam-existing").value : "" },
+  };
 }
 $("#btn-open").onclick = openAdd;
 $("#btn-empty-add").onclick = openAdd;
@@ -101,74 +128,104 @@ $("#dlg-folder").addEventListener("close", async () => {
   const paths = $("#folder-input").value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   if (!paths.length) return;
   try {
-    const cam = addCamChoice();
-    if (cam.mode === "new" && cam.name && (S.cameras || []).some((c) => c.name.toLowerCase() === cam.name.toLowerCase()) && !$("#add-replace").checked) {
-      toast(`There's already a camera called ${cam.name}. The recordings were not added: choose "Add to an existing camera", or give the new camera another name.`, 8000);
-      return;
+    const ch = addChoice();
+    if (!$("#add-replace").checked) {
+      if (ch.project.mode === "new" && ch.project.name && projNames().some((n) => n.toLowerCase() === ch.project.name.toLowerCase()))
+        return toast(`There's already a project called ${ch.project.name}. Nothing was added: choose it under "Add to an existing project", or give the new project another name.`, 8000);
+      if (ch.project.mode === "existing" && ch.camera.mode === "new" && ch.camera.name && camNames(ch.project.name).some((n) => n.toLowerCase() === ch.camera.name.toLowerCase()))
+        return toast(`${ch.project.name} already has a camera called ${ch.camera.name}. Nothing was added: choose it under "Add to an existing camera", or give the new camera another name.`, 8000);
     }
-    const r = await api("/api/add", { paths, replace: $("#add-replace").checked, camera: cam });
+    const r = await api("/api/add", { paths, replace: $("#add-replace").checked, project: ch.project, camera: ch.camera });
     setFiles(r);
     if (r.problems && r.problems.length) toast(r.problems.join("; "), 7000);
     if (!S.rec && S.files.length === 1) openRec(S.files[0].path);
   } catch (e) { err(e); }
 });
-function setFiles(r) { S.files = r.files || []; S.cameras = r.cameras || []; renderFiles(); }
+function setFiles(r) { S.files = r.files || []; S.projects = r.projects || []; renderFiles(); }
 function hhmm(iso) { return iso ? ukTime(Date.parse(iso)).d.toISOString().substr(11, 5) : ""; }
-// Recordings, grouped by camera. Files from one camera on one night
-// shouldn't overlap in time, so an overlap is flagged on the camera.
+// Recordings, grouped by project, then by camera. Files from one camera on
+// one night shouldn't overlap in time, so an overlap is flagged on the camera.
+const ICON_PROJ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const ICON_CAM = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+function nameBox(cls, value, label, onSave) {
+  const i = document.createElement("input"); i.type = "text"; i.maxLength = 40; i.className = cls; i.value = value;
+  i.setAttribute("aria-label", label); i.title = "Click to rename";
+  i.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } if (e.key === "Escape") { i.value = value; i.blur(); } };
+  i.onchange = async () => { const v = i.value.trim(); if (!v || v === value) { i.value = value; return; } try { setFiles(await onSave(v)); } catch (e) { i.value = value; err(e); } };
+  return i;
+}
 function renderFiles() {
   const box = $("#files"); box.innerHTML = "";
   $("#btn-scan-all").disabled = !S.files.length;
   if (!S.files.length) { box.innerHTML = '<p class="muted small">Add .ats files, or a whole folder of them.</p>'; return; }
   const byPath = Object.fromEntries(S.files.map((f) => [f.path, f]));
-  const names = (S.cameras || []).map((c) => c.name);
-  for (const cam of S.cameras || []) {
-    const g = document.createElement("div"); g.className = "cam-group";
-    const n = cam.paths.length;
-    g.innerHTML = `<div class="cam-head"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-        <input class="cam-name" type="text" maxlength="40" value="${esc(cam.name)}" aria-label="Camera name" title="Click to rename this camera"></div>
-        <div class="cam-sub"><span class="small muted">${n} recording${n === 1 ? "" : "s"}</span>
-        <button class="btn xs cam-scan" type="button" title="Scan every recording from ${esc(cam.name)}">Scan camera</button></div>`;
-    const nm = g.querySelector(".cam-name");
-    nm.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); nm.blur(); } if (e.key === "Escape") { nm.value = cam.name; nm.blur(); } };
-    nm.onchange = async () => {
-      const v = nm.value.trim(); if (!v || v === cam.name) { nm.value = cam.name; return; }
-      try { setFiles(await api("/api/cameras", { action: "rename", old: cam.name, new: v })); } catch (e) { nm.value = cam.name; err(e); }
-    };
-    g.querySelector(".cam-scan").onclick = () => scanCamera(cam.name);
-    for (const o of cam.overlaps || []) {
-      const w = document.createElement("div"); w.className = "cam-warn small"; w.setAttribute("role", "alert");
-      w.innerHTML = `<b>⚠ Times overlap:</b> ${esc(o.a)} and ${esc(o.b)} both cover ${hhmm(o.from)}–${hhmm(o.to)}. Recordings from one camera on one night shouldn't overlap, so check each is under the right camera.`;
-      g.appendChild(w);
+  const projects = S.projects || [];
+  for (const pj of projects) {
+    const pg = document.createElement("div"); pg.className = "proj-group";
+    const ph = document.createElement("div"); ph.className = "proj-head"; ph.innerHTML = ICON_PROJ;
+    ph.appendChild(nameBox("proj-name", pj.name, "Project name", (v) => api("/api/cameras", { action: "rename_project", old: pj.name, new: v })));
+    const psub = document.createElement("div"); psub.className = "cam-sub proj-sub";
+    const nf = pj.paths.length, nc = pj.cameras.length;
+    psub.innerHTML = `<span class="small muted">${nc} camera${nc === 1 ? "" : "s"} · ${nf} recording${nf === 1 ? "" : "s"}</span>`;
+    const ps = document.createElement("button"); ps.className = "btn xs"; ps.type = "button"; ps.textContent = "Scan project";
+    ps.title = `Scan every recording in ${pj.name}`; ps.onclick = () => scanGroup(pj.name);
+    psub.appendChild(ps); pg.append(ph, psub);
+    for (const cam of pj.cameras) {
+      const g = document.createElement("div"); g.className = "cam-group";
+      const head = document.createElement("div"); head.className = "cam-head"; head.innerHTML = ICON_CAM;
+      head.appendChild(nameBox("cam-name", cam.name, "Camera name", (v) => api("/api/cameras", { action: "rename", project: pj.name, old: cam.name, new: v })));
+      {   // move a whole camera to another project
+        const mc = document.createElement("select"); mc.className = "cam-move"; mc.title = "Move this camera to another project";
+        mc.setAttribute("aria-label", `Move ${cam.name} to another project`);
+        mc.innerHTML = `<option value="" selected disabled>Move camera to project…</option>${projects.filter((x) => x.name !== pj.name).map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join("")}<option value="__new">New project</option>`;
+        mc.onchange = async () => { try { setFiles(await api("/api/cameras", { action: "move_camera", project: pj.name, camera: cam.name, to: mc.value === "__new" ? "" : mc.value })); } catch (e) { err(e); mc.value = ""; } };
+        head.appendChild(mc);
+      }
+      const sub = document.createElement("div"); sub.className = "cam-sub";
+      const n = cam.paths.length;
+      sub.innerHTML = `<span class="small muted">${n} recording${n === 1 ? "" : "s"}</span>`;
+      const cs = document.createElement("button"); cs.className = "btn xs cam-scan"; cs.type = "button"; cs.textContent = "Scan camera";
+      cs.title = `Scan every recording from ${cam.name}`; cs.onclick = () => scanGroup(pj.name, cam.name);
+      sub.appendChild(cs); g.append(head, sub);
+      for (const o of cam.overlaps || []) {
+        const w = document.createElement("div"); w.className = "cam-warn small"; w.setAttribute("role", "alert");
+        w.innerHTML = `<b>⚠ Times overlap:</b> ${esc(o.a)} and ${esc(o.b)} both cover ${hhmm(o.from)}–${hhmm(o.to)}. Recordings from one camera on one night shouldn't overlap, so check each is under the right camera.`;
+        g.appendChild(w);
+      }
+      for (const path of cam.paths) {
+        const f = byPath[path]; if (!f) continue;
+        const w = document.createElement("div"); w.className = "file-wrap";
+        const b = document.createElement("button");
+        b.className = "file" + (S.rec && S.rec.path === f.path ? " cur" : "");
+        b.title = f.path;
+        const k = f.status === "Reviewed" ? "ok" : f.status === "In review" ? "todo" : "";
+        const times = f.start ? `${hhmm(f.start)}–${hhmm(f.end)} · ` : "";
+        b.innerHTML = `<span class="file-name">${esc(f.name)}<br><span class="small muted">${times}${f.size_gb} GB</span></span><span class="chip ${k}">${esc(f.status)}</span>`;
+        b.onclick = () => openRec(f.path);
+        const mv = document.createElement("select"); mv.className = "cam-move"; mv.setAttribute("aria-label", `Move ${f.name} to another camera`); mv.title = "Move to another camera";
+        mv.innerHTML = `<option value="" selected disabled>Move recording to…</option>` + projects.map((x) =>
+          `<optgroup label="${esc(x.name)}">${x.cameras.filter((c) => !(x.name === pj.name && c.name === cam.name)).map((c) =>
+            `<option value="${esc(JSON.stringify([x.name, c.name]))}">${esc(c.name)}</option>`).join("")}<option value="${esc(JSON.stringify([x.name, ""]))}">New camera</option></optgroup>`).join("");
+        mv.onchange = async () => {
+          const [project, camera] = JSON.parse(mv.value);
+          try { setFiles(await api("/api/cameras", { action: "move", path: f.path, project, camera })); } catch (e) { err(e); }
+        };
+        const x = document.createElement("button"); x.className = "rm"; x.textContent = "×";
+        x.setAttribute("aria-label", `Remove ${f.name} from the list`);
+        x.onclick = async () => { try { const r = await api("/api/remove", { path: f.path }); if (S.rec && S.rec.path === f.path) location.reload(); setFiles(r); } catch (e) { err(e); } };
+        w.append(b, mv, x); g.appendChild(w);
+      }
+      pg.appendChild(g);
     }
-    for (const path of cam.paths) {
-      const f = byPath[path]; if (!f) continue;
-      const w = document.createElement("div"); w.className = "file-wrap";
-      const b = document.createElement("button");
-      b.className = "file" + (S.rec && S.rec.path === f.path ? " cur" : "");
-      b.title = f.path;
-      const k = f.status === "Reviewed" ? "ok" : f.status === "In review" ? "todo" : "";
-      const times = f.start ? `${hhmm(f.start)}–${hhmm(f.end)} · ` : "";
-      b.innerHTML = `<span class="file-name">${esc(f.name)}<br><span class="small muted">${times}${esc(parentName(f.path))} · ${f.size_gb} GB</span></span><span class="chip ${k}">${esc(f.status)}</span>`;
-      b.onclick = () => openRec(f.path);
-      const mv = document.createElement("select"); mv.className = "cam-move"; mv.setAttribute("aria-label", `Move ${f.name} to another camera`); mv.title = "Move to another camera";
-      mv.innerHTML = `<option value="" selected disabled>Move to camera…</option>${names.filter((x) => x !== cam.name).map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("")}<option value="__new">New camera</option>`;
-      mv.onchange = async () => {
-        try { setFiles(await api("/api/cameras", { action: "move", path: f.path, camera: mv.value === "__new" ? "" : mv.value })); } catch (e) { err(e); }
-      };
-      const x = document.createElement("button"); x.className = "rm"; x.textContent = "×";
-      x.setAttribute("aria-label", `Remove ${f.name} from the list`);
-      x.onclick = async () => { try { const r = await api("/api/remove", { path: f.path }); if (S.rec && S.rec.path === f.path) location.reload(); setFiles(r); } catch (e) { err(e); } };
-      w.append(b, mv, x); g.appendChild(w);
-    }
-    box.appendChild(g);
+    box.appendChild(pg);
   }
 }
-async function scanCamera(name) {
+async function scanGroup(project, camera) {
+  const what = camera ? camera : project;
   try {
-    const r = await api("/api/scan", { camera: name });
-    if (!r.jobs.length) return toast(`No recording from ${name} has an ROI drawn yet. Draw one, and tick "Use for every file from this camera" to share it.`, 7000);
-    toast(`Scanning ${r.jobs.length} recording${r.jobs.length === 1 ? "" : "s"} from ${name}…` + (r.skipped ? ` ${r.skipped} skipped: no ROI drawn.` : ""), 6000); pollJobs();
+    const r = await api("/api/scan", { project, camera: camera || "" });
+    if (!r.jobs.length) return toast(`No recording in ${what} has an ROI drawn yet. Draw one, and tick "Use for every file from this camera" to share it.`, 7000);
+    toast(`Scanning ${r.jobs.length} recording${r.jobs.length === 1 ? "" : "s"} from ${what}…` + (r.skipped ? ` ${r.skipped} skipped: no ROI drawn.` : ""), 6000); pollJobs();
   } catch (e) { err(e); }
 }
 async function refreshFiles() { try { setFiles(await api("/api/files")); } catch (e) {} }
@@ -517,7 +574,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-addcamera";
+const APP_VERSION = "2026.11.17-projects";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

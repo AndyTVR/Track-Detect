@@ -74,7 +74,7 @@ h3{margin:0;font-size:13px;font-weight:600}
 .icon{width:44px;height:44px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .layout{display:flex;flex-wrap:wrap;gap:16px;padding:16px 24px 24px;align-items:flex-start}
-.col-left{flex:1 1 260px;max-width:300px;min-width:240px;display:flex;flex-direction:column;gap:16px}
+.col-left{flex:1 1 260px;max-width:330px;min-width:240px;display:flex;flex-direction:column;gap:16px}
 .col-main{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:16px}
 .col-right{flex:1 1 320px;max-width:380px;min-width:280px;display:flex;flex-direction:column;gap:12px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px}
@@ -412,3 +412,17 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .add-cam-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
 .add-cam-row .check{min-width:220px}
 .add-cam-row input[type=text],.add-cam-row select{flex:1;min-width:200px;height:36px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+/* Recordings grouped by project, then camera */
+.proj-group{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--line-strong);border-radius:12px;background:var(--panel2)}
+.proj-head{display:flex;align-items:center;gap:6px;color:var(--accent)}
+.proj-name{flex:1;min-width:0;height:30px;padding:0 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-weight:800;font-size:14px}
+.proj-name:hover,.proj-name:focus{border-color:var(--line);background:var(--panel)}
+.proj-sub{padding-left:22px}
+.cam-head .cam-move{margin-left:auto}
+.add-cam input:disabled,.add-cam select:disabled{opacity:.45}
+/* inside a project the camera boxes sit flush, so the file cards keep their width */
+.proj-group{padding:6px 4px}
+.proj-group .cam-group{padding:6px 4px;border-radius:8px}
+.proj-group .file{padding:8px}
+.proj-group .file-name{word-break:normal;overflow-wrap:anywhere}
+.proj-sub button,.cam-sub button{white-space:nowrap}

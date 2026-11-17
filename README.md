@@ -48,21 +48,28 @@ clicking **Quit** in the top bar, closes it.
    files, a whole survey folder, or paste paths, one per line. Remove a file
    from the list with its **×**. Each file shows its times and status.
 
-   **Cameras**: the list groups recordings by camera. When you add
-   recordings, choose which camera they belong to under **Save to camera**:
-   - a **New camera**, with a name you choose, such as "Front elevation";
-   - an **existing camera**;
-   - or **Sort automatically**, where files from the same folder with the
-     same name go in the same camera: "front 1", "front 2" become
-     **Front**, and "rear 1", "rear 2" become **Rear**. Files with numbered
-     names such as "Rec-0003" group by folder ("Camera 1", "Camera 2" …).
+   **Projects and cameras**: the list groups recordings by project (a site
+   or survey night, for example "St Fagans 10.8.26"), and within each
+   project by camera. When you add recordings, the dialog asks:
+   - **Save to project**: a **New project** with a name you choose, an
+     **existing project**, or **Use each recording's folder name**, where the folder the
+     files are in becomes the project.
+   - **Save to camera**: a **New camera**, such as "Front elevation", an
+     **existing camera** in the chosen project, or **Sort automatically**,
+     where files from the same folder with the same name go in the same
+     camera: "front 1", "front 2" become **Front**, and "rear 1", "rear 2"
+     become **Rear**. Files with numbered names such as "Rec-0003" group by
+     folder ("Camera 1", "Camera 2" …). Choosing **Use each recording's folder name** for
+     the project always sorts cameras automatically.
 
    Afterwards:
-   - Click a camera's name to rename it, for example "Front elevation".
-   - The **⤢** button beside a file moves it to another camera, or to a new
-     one.
-   - **Scan camera** scans every recording from that camera, each with its
-     own ROIs.
+   - Click a project's or camera's name to rename it.
+   - The **⤢** button beside a camera moves the whole camera to another
+     project, or to a new one. The **⤢** beside a file moves it to another
+     camera in any project, or to a new camera.
+   - **Scan project** scans every recording in the project; **Scan camera**
+     scans every recording from that camera. Each uses its own ROIs.
+   - The report's *Location* starts as the project name.
    - Recordings from one camera on one night shouldn't overlap in time. If
      two do, the camera shows an amber warning naming them, so you can check
      each is under the right camera.

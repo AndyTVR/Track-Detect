@@ -116,16 +116,18 @@ def _file_row(p):
                 pass
     t0, t1, timing = _file_times(p)
     return {"path": p, "name": os.path.basename(p), "status": st, "timing": timing,
-            "size_gb": round(os.path.getsize(p) / 1e9, 2), "camera": _camera_of(p), "start": t0, "end": t1}
+            "size_gb": round(os.path.getsize(p) / 1e9, 2), "project": _project_of(p), "camera": _camera_of(p),
+            "start": t0, "end": t1}
 
 
-# ------------------------------------------------------------------ camera groups
-# Recordings are grouped by camera. A new file joins other files from its
-# folder with the same name stem ("front 1", "front 2" -> "Front"), or, for
-# names without a word stem ("Rec-0003"), other files from its folder
-# ("Camera 1", "Camera 2" ...). Moving or renaming makes the choice the
-# user's. The groups are remembered in cameras.json in the settings folder.
-_CAMS = {"of": {}, "manual": set(), "loaded": False}
+# ------------------------------------------------------------------ projects and cameras
+# Recordings sit in a camera, and cameras sit in a project (for example a
+# site and survey night). When adding recordings the user picks both, or
+# lets the program sort them: the project is then the recording's folder
+# name, and the camera groups files from that folder with the same name
+# stem ("front 1", "front 2" -> "Front"; "Rec-0003" -> "Camera 1").
+# Choices are remembered in cameras.json in the settings folder.
+_CAMS = {"of": {}, "proj": {}, "manual": set(), "loaded": False}
 _GENERIC_STEMS = {"rec", "record", "recording", "video", "file", "ats", "seq", "sequence", "clip", "capture"}
 
 
@@ -137,7 +139,6 @@ def _name_stem(p):
     if not st or len(st) > 24 or re.search(r"\d", st) or st in _GENERIC_STEMS or not re.search(r"[a-z]", st):
         return ""
     return st
-_TIMES = {}
 
 
 def _cams_path():
@@ -150,13 +151,19 @@ def _cams():
         try:
             with open(_cams_path(), encoding="utf-8") as fh:
                 d = json.load(fh)
-            if d.get("v") == 2:   # older files held only automatic choices, made by an older rule
+            if d.get("v") in (2, 3):   # v1 held only automatic choices, made by an older rule
                 _CAMS["of"] = {k: str(v) for k, v in (d.get("of") or {}).items()}
+                _CAMS["proj"] = {k: str(v) for k, v in (d.get("proj") or {}).items()}
                 _CAMS["manual"] = set(d.get("manual") or [])
         except (OSError, ValueError, AttributeError):
-            _CAMS["of"] = {}
+            pass
         _CAMS["loaded"] = True
     return _CAMS["of"]
+
+
+def _projs():
+    _cams()
+    return _CAMS["proj"]
 
 
 def _save_cams():
@@ -165,23 +172,54 @@ def _save_cams():
         os.makedirs(DATA, exist_ok=True)
         tmp = _cams_path() + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"v": 2, "of": _cams(), "manual": sorted(_CAMS["manual"])}, fh, indent=1)
+            json.dump({"v": 3, "of": _cams(), "proj": _projs(), "manual": sorted(_CAMS["manual"])}, fh, indent=1)
         os.replace(tmp, _cams_path())
     except OSError:
         pass
 
 
-def _camera_names():
+def _project_names():
     names = []
     for f in state["files"]:
-        n = _cams().get(f)
+        n = _projs().get(f)
         if n and n not in names:
             names.append(n)
     return names
 
 
-def _new_camera_name(base=""):
-    used = {n.lower() for n in _camera_names()}
+def _new_project_name(base=""):
+    used = {n.lower() for n in _project_names()}
+    base = base.strip()[:40]
+    if base:
+        name, k = base, 2
+        while name.lower() in used:
+            name, k = f"{base} {k}", k + 1
+        return name
+    k = 1
+    while f"project {k}" in used:
+        k += 1
+    return f"Project {k}"
+
+
+def _project_of(p):
+    pr = _projs()
+    if p not in pr:
+        pr[p] = os.path.basename(os.path.dirname(p)) or _new_project_name()
+        _save_cams()
+    return pr[p]
+
+
+def _camera_names(project=None):
+    names = []
+    for f in state["files"]:
+        n = _cams().get(f)
+        if n and n not in names and (project is None or _projs().get(f) == project):
+            names.append(n)
+    return names
+
+
+def _new_camera_name(base="", project=None):
+    used = {n.lower() for n in _camera_names(project)}
     base = base.replace("_", " ").strip()
     if base:
         name, k = base[:1].upper() + base[1:], 2
@@ -197,12 +235,16 @@ def _new_camera_name(base=""):
 def _camera_of(p):
     cams = _cams()
     if p not in cams:
+        proj = _project_of(p)
         here, stem = os.path.dirname(p), _name_stem(p)
-        mate = next((f for f in state["files"] if f != p and f in cams and os.path.dirname(f) == here
-                     and _name_stem(f) == stem), None)
-        cams[p] = cams[mate] if mate else _new_camera_name(stem)
+        mate = next((f for f in state["files"] if f != p and f in cams and _projs().get(f) == proj
+                     and os.path.dirname(f) == here and _name_stem(f) == stem), None)
+        cams[p] = cams[mate] if mate else _new_camera_name(stem, proj)
         _save_cams()
     return cams[p]
+
+
+_TIMES = {}
 
 
 def _file_times(p):
@@ -233,24 +275,27 @@ def _file_times(p):
 
 
 def camera_groups(rows):
-    """Each camera's files in time order, with any that overlap in time (files
-    from one camera on one night shouldn't). Files whose frame rate had to be
-    assumed are left out of the check (their end times aren't known), and a
-    couple of seconds of overlap is allowed for when timing is estimated."""
+    """Projects, each with its cameras, each camera's files in time order and
+    any that overlap in time (files from one camera on one night shouldn't).
+    Files whose frame rate had to be assumed are left out of the check (their
+    end times aren't known), and 2 s of overlap is allowed for."""
     import datetime as _d
     out = []
-    for name in dict.fromkeys(r["camera"] for r in rows):
-        files = sorted([r for r in rows if r["camera"] == name], key=lambda r: (r["start"] or "", r["name"]))
-        overlaps = []
-        for i, a in enumerate(files):
-            for b in files[i + 1:]:
-                if not (a["start"] and a["end"] and b["start"] and b["end"]) or "assumed" in (a["timing"], b["timing"]):
-                    continue
-                lo, hi = max(a["start"], b["start"]), min(a["end"], b["end"])
-                if (_d.datetime.fromisoformat(hi) - _d.datetime.fromisoformat(lo)).total_seconds() > 2:
-                    overlaps.append({"a": a["name"], "b": b["name"], "from": max(a["start"], b["start"]),
-                                     "to": min(a["end"], b["end"])})
-        out.append({"name": name, "paths": [r["path"] for r in files], "overlaps": overlaps})
+    for pname in dict.fromkeys(r["project"] for r in rows):
+        prow = [r for r in rows if r["project"] == pname]
+        cams = []
+        for name in dict.fromkeys(r["camera"] for r in prow):
+            files = sorted([r for r in prow if r["camera"] == name], key=lambda r: (r["start"] or "", r["name"]))
+            overlaps = []
+            for i, a in enumerate(files):
+                for b in files[i + 1:]:
+                    if not (a["start"] and a["end"] and b["start"] and b["end"]) or "assumed" in (a["timing"], b["timing"]):
+                        continue
+                    lo, hi = max(a["start"], b["start"]), min(a["end"], b["end"])
+                    if (_d.datetime.fromisoformat(hi) - _d.datetime.fromisoformat(lo)).total_seconds() > 2:
+                        overlaps.append({"a": a["name"], "b": b["name"], "from": lo, "to": hi})
+            cams.append({"name": name, "paths": [r["path"] for r in files], "overlaps": overlaps})
+        out.append({"name": pname, "cameras": cams, "paths": [r["path"] for r in prow]})
     return out
 
 
@@ -388,20 +433,38 @@ def add():
             added.append(f)
     if not state["files"] and problems:
         return jsonify(error="; ".join(problems)), 404
-    # the camera they belong to: a new one, an existing one, or automatic
-    cam = body.get("camera") or {}
+    # the project and camera they belong to: new, existing, or automatic
+    pj, cam = body.get("project") or {}, body.get("camera") or {}
+    pmode, pname = pj.get("mode"), (pj.get("name") or "").strip()[:40]
     mode, name = cam.get("mode"), (cam.get("name") or "").strip()[:40]
+    if added and pmode in ("new", "existing"):
+        others = {n.lower() for n in _project_names() if n not in {_projs().get(f) for f in added}}
+        if pmode == "new":
+            if pname and pname.lower() in others:
+                raise UserError(f"There's already a project called {pname}")
+            pname = pname or _new_project_name()
+        elif not pname:
+            raise UserError("Choose a project")
+        for f in added:
+            if _projs().get(f) != pname:
+                _cams().pop(f, None)   # a different project: its camera is chosen again below
+            _projs()[f] = pname
+            _CAMS["manual"].add(f)
     if added and mode in ("new", "existing"):
         if mode == "new":
-            if name and name.lower() in {n.lower() for n in _camera_names() if n not in {_cams().get(f) for f in added}}:
-                raise UserError(f"There's already a camera called {name}")
-            name = name or _new_camera_name()
+            projs_added = {_project_of(f) for f in added}
+            for pr in projs_added:
+                taken = {n.lower() for n in _camera_names(pr) if n not in {_cams().get(f) for f in added}}
+                if name and name.lower() in taken:
+                    raise UserError(f"{pr} already has a camera called {name}")
+            name = name or _new_camera_name("", next(iter(projs_added)))
         elif not name:
             raise UserError("Choose a camera")
         for f in added:
+            _project_of(f)
             _cams()[f] = name
             _CAMS["manual"].add(f)
-        _save_cams()
+    _save_cams()
     return jsonify(_files_payload(problems=problems))
 
 
@@ -420,7 +483,7 @@ def list_files():
 
 def _files_payload(**extra):
     rows = list_files()
-    return {"files": rows, "cameras": camera_groups(rows), "current": state["current"], **extra}
+    return {"files": rows, "projects": camera_groups(rows), "current": state["current"], **extra}
 
 
 @app.get("/api/files")
@@ -430,28 +493,52 @@ def files():
 
 @app.post("/api/cameras")
 def cameras():
-    """Rename a camera, or move a recording to another (or a new) camera.
-    body: {action: rename, old, new} | {action: move, path, camera} (camera "" = new)"""
+    """Organise recordings into projects and cameras.
+    body.action:
+      rename_project {old, new} · rename {project, old, new} (a camera)
+      move {path, project, camera}: a recording to a camera ("" = a new camera)
+      move_camera {project, camera, to}: a whole camera to another project ("" = a new project)"""
     b = request.json or {}
-    cams = _cams()
-    if b.get("action") == "rename":
+    cams, projs = _cams(), _projs()
+    act = b.get("action")
+    if act == "rename_project":
         old, new = b.get("old", ""), (b.get("new") or "").strip()[:40]
         if not new:
-            raise UserError("Give the camera a name")
-        if new.lower() != old.lower() and new.lower() in {n.lower() for n in _camera_names()}:
-            raise UserError(f"There's already a camera called {new}")
-        for k, v in list(cams.items()):
+            raise UserError("Give the project a name")
+        if new.lower() != old.lower() and new.lower() in {n.lower() for n in _project_names()}:
+            raise UserError(f"There's already a project called {new}")
+        for k, v in list(projs.items()):
             if v == old:
+                projs[k] = new
+                _CAMS["manual"].add(k)
+    elif act == "rename":
+        proj, old, new = b.get("project", ""), b.get("old", ""), (b.get("new") or "").strip()[:40]
+        if not new:
+            raise UserError("Give the camera a name")
+        if new.lower() != old.lower() and new.lower() in {n.lower() for n in _camera_names(proj)}:
+            raise UserError(f"{proj} already has a camera called {new}")
+        for k, v in list(cams.items()):
+            if v == old and projs.get(k) == proj:
                 cams[k] = new
                 _CAMS["manual"].add(k)
-    elif b.get("action") == "move":
+    elif act == "move":
         p = b.get("path")
         if p not in state["files"]:
             raise UserError("That recording isn't in the list")
-        cams[p] = (b.get("camera") or "").strip()[:40] or _new_camera_name()
+        proj = (b.get("project") or "").strip()[:40] or _project_of(p)
+        projs[p] = proj
+        cams[p] = (b.get("camera") or "").strip()[:40] or _new_camera_name("", proj)
         _CAMS["manual"].add(p)
+    elif act == "move_camera":
+        proj, cam = b.get("project", ""), b.get("camera", "")
+        to = (b.get("to") or "").strip()[:40] or _new_project_name()
+        if cam.lower() in {n.lower() for n in _camera_names(to)} and to != proj:
+            raise UserError(f"{to} already has a camera called {cam}. Rename one of them first.")
+        for k in [k for k in state["files"] if projs.get(k) == proj and cams.get(k) == cam]:
+            projs[k] = to
+            _CAMS["manual"].add(k)
     else:
-        raise UserError("Unknown camera action")
+        raise UserError("Unknown action")
     _save_cams()
     return jsonify(_files_payload())
 
@@ -536,7 +623,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-addcamera"   # must match static/app.js
+APP_VERSION = "2026.11.17-projects"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -565,9 +652,9 @@ def set_palette():
 def _share_rois(r):
     """Same camera = same view: give the other listed recordings from this
     recording's camera these ROIs."""
-    cam = _camera_of(r.path)
+    cam, proj = _camera_of(r.path), _project_of(r.path)
     for row in list_files():
-        if row["path"] != r.path and row["camera"] == cam:
+        if row["path"] != r.path and row["camera"] == cam and row["project"] == proj:
             rec(row["path"]).copy_rois_from(r)
 
 
@@ -608,12 +695,13 @@ def edit_rois():
 @app.post("/api/scan")
 def start_scan():
     body = request.json or {}
-    if body.get("camera"):   # every recording from one camera
-        targets = [row["path"] for row in list_files() if row["camera"] == body["camera"]]
+    if body.get("project"):   # every recording in a project, or in one of its cameras
+        targets = [row["path"] for row in list_files() if row["project"] == body["project"]
+                   and (not body.get("camera") or row["camera"] == body["camera"])]
     else:
         targets = [row["path"] for row in list_files()] if body.get("all") else [state["current"]]
     # "a" and "b": scan only those frames of the current recording (the play limits)
-    part = None if body.get("all") or body.get("camera") or body.get("a") is None else [[int(body["a"]), int(body["b"])]]
+    part = None if body.get("all") or body.get("project") or body.get("a") is None else [[int(body["a"]), int(body["b"])]]
     out = []
     for p in targets:
         r = rec(p)
@@ -732,7 +820,7 @@ def report_defaults():
     saved = cfg.CURRENT.get("report", {})
     out = {k: saved.get(k, "") for k in ("company", "contact", "analyst", "camera")}
     out["camera"] = out["camera"] or r.src.camera or ""
-    out["location"] = r.state.get("report_location") or os.path.basename(os.path.dirname(r.path))
+    out["location"] = r.state.get("report_location") or _project_of(r.path)   # the project name to start with
     out["folder"] = cfg.get("export", "folder") or os.path.join(os.path.dirname(r.path), "exports")
     out["reviewed"] = all(e["status"] != "todo" for e in r.state.get("events", []))
     return jsonify(out)

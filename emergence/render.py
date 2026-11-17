@@ -77,7 +77,7 @@ TNR_WEIGHT = {1: 0.5, 2: 0.3, 3: 0.15}       # noise reduction: weight given to 
 TNR_PREROLL = {1: 4, 2: 8, 3: 14}            # frames needed to settle after a jump
 
 
-CUSTOM_DEFAULT = {"name": "Custom", "wa": False, "mfi": 0, "ss": 5, "mc": False, "blend": "overlay", "opacity": 0.8}
+CUSTOM_DEFAULT = {"name": "Custom", "wa": False, "mfi": 0, "ss": 5, "mc": False, "blend": "overlay", "opacity": 0.8}  # wa is always off
 
 
 def clean_custom(c=None) -> dict:
@@ -86,7 +86,8 @@ def clean_custom(c=None) -> dict:
     c = c if isinstance(c, dict) else {}
     num = lambda v, d: int(min(60, max(0, round(float(v))))) if _isnum(v) else d
     return {"name": (str(c.get("name") or "Custom").strip()[:40] or "Custom"),
-            "wa": bool(c.get("wa")), "mfi": num(c.get("mfi"), 0), "ss": num(c.get("ss"), 0), "mc": bool(c.get("mc")),
+            "wa": False,   # Window Average is for scanning only: it blurs the picture when viewing
+            "mfi": num(c.get("mfi"), 0), "ss": num(c.get("ss"), 0), "mc": bool(c.get("mc")),
             "blend": c.get("blend") if c.get("blend") in ("none", "overlay", "crossfade") else "none",
             "opacity": round(float(min(1, max(0, float(c.get("opacity", 0.8)) if _isnum(c.get("opacity", 0.8)) else 0.8))), 2)}
 

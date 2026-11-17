@@ -27,9 +27,7 @@ DEFAULTS = {
     "review": {"auto_advance": True, "auto_play": False},
     "report": {"company": "", "contact": "", "analyst": "", "camera": ""},
     # the Custom viewing mode's saved filters (Settings > Custom filters)
-    "custom_filters": [
-        {"name": "Trails only", "wa": False, "mfi": 5, "ss": 5, "mc": False, "blend": "none", "opacity": 0.8},
-    ],
+    "custom_filters": [],   # none to start with: users build their own
 }
 
 # how far above the background noise the suggested detection level sits (x noise)

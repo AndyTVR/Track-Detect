@@ -197,8 +197,9 @@ The **Viewing Mode** bar has four modes (keys `1`–`4`):
 - **Custom**: your own mix of filters. Pick a saved filter from the
   **Filter** dropdown. **Edit filters…** opens Settings > Custom filters,
   where you can:
-  - tick any of Window Average, Max Frame Interval, Sliding Subtraction and
-    Max Continuous, and set their frames;
+  - start from scratch: tick any of Max Frame Interval, Sliding Subtraction
+    and Max Continuous, and set their frames (Window Average is used only
+    for scanning, as it blurs the picture);
   - show the result on its own, or overlaid or crossfaded with the thermal
     picture, at an opacity you choose;
   - name and save it.

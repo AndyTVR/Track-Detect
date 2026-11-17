@@ -1424,12 +1424,12 @@ $("#btn-quit").onclick = async () => {
 // filters). "Edit filters…" is a shortcut to that part of Settings.
 S.customIdx = 0;
 function customList() { return (S.cfg && S.cfg.custom_filters) || []; }
-function customSpec() { return customList()[S.customIdx] || { name: "Custom", wa: false, mfi: 0, ss: 0, mc: false, blend: "none", opacity: 0.8 }; }
+function customSpec() { return customList()[S.customIdx] || { name: "Custom", mfi: 0, ss: 0, mc: false, blend: "none", opacity: 0.8 }; }
 function renderCustomPick() {
   const l = customList(), sel = $("#custom-pick");
   if (S.customIdx >= l.length) S.customIdx = 0;
   sel.innerHTML = l.length ? l.map((c, k) => `<option value="${k}" ${k === S.customIdx ? "selected" : ""}>${esc(c.name)}</option>`).join("")
-    : '<option value="">No saved filters yet</option>';
+    : '<option value="">No filters yet: click Edit filters…</option>';
   sel.disabled = !l.length;
 }
 $("#custom-pick").onchange = () => { S.customIdx = +$("#custom-pick").value || 0; S.rng.custom = null; showFrame(); };
@@ -1437,10 +1437,10 @@ $("#btn-custom-edit").onclick = () => openSettings("custom", S.customIdx);
 
 // Settings > Custom filters: the editor
 const CF = { list: [], idx: 0 };
-const CF_BLANK = { name: "New filter", wa: false, mfi: 0, ss: 5, mc: false, blend: "overlay", opacity: 0.8 };
+const CF_BLANK = { name: "New filter", mfi: 0, ss: 0, mc: false, blend: "none", opacity: 0.8 };   // a blank start: nothing ticked
 $("#cf-opacity").innerHTML = Array.from({ length: 11 }, (_, k) => `<option value="${k / 10}">${k * 10}%</option>`).join("");
 function cfWarnings(c) {
-  const w = [], any = c.wa || c.mfi || c.ss || c.mc;
+  const w = [], any = c.mfi || c.ss || c.mc;
   if (!any) w.push(c.blend === "none" ? "No filters are ticked, so this looks the same as Default." : "No filters are ticked: blending the thermal picture with itself changes nothing.");
   if (c.mc && c.ss) w.push("Max Continuous with Sliding Subtraction: the subtraction removes most of the built-up route, so the picture may be almost blank.");
   if (c.mc && c.mfi) w.push("Max Continuous already keeps the brightest value of every frame, so Max Frame Interval adds nothing.");
@@ -1451,7 +1451,7 @@ function cfWarnings(c) {
   return w;
 }
 function cfRead() {
-  return { name: $("#cf-name").value.trim() || "Custom", wa: $("#cf-wa").checked,
+  return { name: $("#cf-name").value.trim() || "Custom",
            mfi: $("#cf-mfi-on").checked ? Math.max(2, Math.min(60, +$("#cf-mfi").value || 5)) : 0,
            ss: $("#cf-ss-on").checked ? Math.max(1, Math.min(60, +$("#cf-ss").value || 5)) : 0,
            mc: $("#cf-mc").checked, blend: $("#cf-blend").value, opacity: +$("#cf-opacity").value };
@@ -1471,14 +1471,14 @@ function cfRender(idx) {
   if (!has) { $("#cf-msg").hidden = false; $("#cf-msg").textContent = "No custom filters yet. Click New to make one."; return; }
   l.value = String(CF.idx);
   const c = CF.list[CF.idx];
-  $("#cf-name").value = c.name; $("#cf-wa").checked = c.wa;
+  $("#cf-name").value = c.name;
   $("#cf-mfi-on").checked = c.mfi > 0; $("#cf-mfi").value = c.mfi || 5;
   $("#cf-ss-on").checked = c.ss > 0; $("#cf-ss").value = c.ss || 5;
   $("#cf-mc").checked = c.mc; $("#cf-blend").value = c.blend; $("#cf-opacity").value = String(c.opacity);
   $("#cf-msg").hidden = true; cfShowWarnings();
 }
 // edits update the filter being edited straight away (saved with Save filter or Save settings)
-for (const id of ["#cf-name", "#cf-wa", "#cf-mfi-on", "#cf-mfi", "#cf-ss-on", "#cf-ss", "#cf-mc", "#cf-blend", "#cf-opacity"]) {
+for (const id of ["#cf-name", "#cf-mfi-on", "#cf-mfi", "#cf-ss-on", "#cf-ss", "#cf-mc", "#cf-blend", "#cf-opacity"]) {
   $(id).addEventListener("input", () => { if (!CF.list.length) return; CF.list[CF.idx] = cfRead(); cfShowWarnings();
     if (id === "#cf-name") $("#cf-list").options[CF.idx].textContent = CF.list[CF.idx].name; });
   $(id).addEventListener("change", () => { if (!CF.list.length) return; CF.list[CF.idx] = cfRead(); cfShowWarnings(); });

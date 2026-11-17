@@ -416,7 +416,7 @@
         <section data-pane="custom" hidden>
           <h3>Custom filters <span class="adv-tag">Advanced</span></h3>
           <div class="adv-note" role="note"><b>This is an advanced option.</b> Please read the Track &amp; Detect manual first: it explains what each filter does and when it helps. The Default, Tracking and Detection modes are the recommended way to review footage.</div>
-          <p class="small muted">Build your own filter for the <b>Custom</b> viewing mode: tick any of the filters, set their frames, and choose how the result is shown with the thermal picture. Saved filters appear in the Custom mode's dropdown. They change only what you see, never the scan.</p>
+          <p class="small muted">Build your own filter for the <b>Custom</b> viewing mode: start from scratch: tick the filters you want, set their frames, and choose how the result is shown with the thermal picture. Saved filters appear in the Custom mode's dropdown. They change only what you see, never the scan.</p>
           <div class="cf-layout">
             <div class="cf-side">
               <select id="cf-list" size="9" aria-label="Saved custom filters"></select>
@@ -429,7 +429,6 @@
             <div class="cf-edit" id="cf-edit">
               <label>Name <input id="cf-name" type="text" maxlength="40"></label>
               <fieldset class="cf-filters"><legend>Filters, applied in this order</legend>
-                <label class="check"><input id="cf-wa" type="checkbox"> Window Average 3×3 <span class="small muted">· smooths pixel noise</span></label>
                 <span class="cf-n"><label class="check"><input id="cf-mfi-on" type="checkbox"> Max Frame Interval</label>
                   <input id="cf-mfi" type="number" min="2" max="60" step="1" class="num sm" aria-label="Max Frame Interval frames"> <span class="small muted">frames · keeps the brightest value of recent frames, leaving trails</span></span>
                 <span class="cf-n"><label class="check"><input id="cf-ss-on" type="checkbox"> Sliding Subtraction</label>

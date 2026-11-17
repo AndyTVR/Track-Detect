@@ -375,7 +375,7 @@ def add():
     body = request.json or {}
     if body.get("replace"):
         state["files"] = []
-    problems = []
+    problems, added = [], []
     for entry in body.get("paths", []):
         if not entry.strip():
             continue
@@ -385,8 +385,23 @@ def add():
         for f in found:
             if f not in state["files"]:
                 state["files"].append(f)
+            added.append(f)
     if not state["files"] and problems:
         return jsonify(error="; ".join(problems)), 404
+    # the camera they belong to: a new one, an existing one, or automatic
+    cam = body.get("camera") or {}
+    mode, name = cam.get("mode"), (cam.get("name") or "").strip()[:40]
+    if added and mode in ("new", "existing"):
+        if mode == "new":
+            if name and name.lower() in {n.lower() for n in _camera_names() if n not in {_cams().get(f) for f in added}}:
+                raise UserError(f"There's already a camera called {name}")
+            name = name or _new_camera_name()
+        elif not name:
+            raise UserError("Choose a camera")
+        for f in added:
+            _cams()[f] = name
+            _CAMS["manual"].add(f)
+        _save_cams()
     return jsonify(_files_payload(problems=problems))
 
 
@@ -521,7 +536,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-frametimes"   # must match static/app.js
+APP_VERSION = "2026.11.17-addcamera"   # must match static/app.js
 
 
 @app.get("/api/version")

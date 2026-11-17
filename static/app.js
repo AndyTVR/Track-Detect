@@ -55,7 +55,28 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp
 
 // ------------------------------------------------------------ recordings list
 function parentName(p) { const parts = p.split(/[\\/]/); return parts.slice(-3, -1).join(" › "); }
-function openAdd() { $("#folder-input").value = ""; $("#pick-msg").hidden = true; $("#dlg-folder").showModal(); }
+// Adding recordings asks which camera they belong to: a new camera, an
+// existing one, or sorted automatically by file name and folder.
+function openAdd() {
+  $("#folder-input").value = ""; $("#pick-msg").hidden = true; $("#add-cam-msg").hidden = true;
+  const names = (S.cameras || []).map((c) => c.name);
+  $("#add-cam-existing").innerHTML = names.map((n) => `<option>${esc(n)}</option>`).join("");
+  const cur = S.rec && (S.files.find((f) => f.path === S.rec.path) || {}).camera;
+  if (cur) $("#add-cam-existing").value = cur;
+  const hasCams = names.length > 0;
+  document.querySelector('[name=add-cam][value=existing]').disabled = !hasCams;
+  $("#add-cam-existing").disabled = !hasCams;
+  let k = 1; while (names.some((n) => n.toLowerCase() === `camera ${k}`)) k++;
+  $("#add-cam-new").value = ""; $("#add-cam-new").placeholder = `e.g. Front elevation (or leave as Camera ${k})`;
+  document.querySelector(`[name=add-cam][value=${hasCams ? "existing" : "new"}]`).checked = true;
+  $("#dlg-folder").showModal();
+}
+$("#add-cam-new").addEventListener("focus", () => (document.querySelector("[name=add-cam][value=new]").checked = true));
+$("#add-cam-existing").addEventListener("change", () => (document.querySelector("[name=add-cam][value=existing]").checked = true));
+function addCamChoice() {
+  const mode = (document.querySelector("[name=add-cam]:checked") || {}).value || "auto";
+  return { mode, name: mode === "new" ? $("#add-cam-new").value.trim() : mode === "existing" ? $("#add-cam-existing").value : "" };
+}
 $("#btn-open").onclick = openAdd;
 $("#btn-empty-add").onclick = openAdd;
 function setEmpty(msg, button) { $("#empty-msg").textContent = msg; $("#btn-empty-add").hidden = !button; }
@@ -80,7 +101,12 @@ $("#dlg-folder").addEventListener("close", async () => {
   const paths = $("#folder-input").value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   if (!paths.length) return;
   try {
-    const r = await api("/api/add", { paths, replace: $("#add-replace").checked });
+    const cam = addCamChoice();
+    if (cam.mode === "new" && cam.name && (S.cameras || []).some((c) => c.name.toLowerCase() === cam.name.toLowerCase()) && !$("#add-replace").checked) {
+      toast(`There's already a camera called ${cam.name}. The recordings were not added: choose "Add to an existing camera", or give the new camera another name.`, 8000);
+      return;
+    }
+    const r = await api("/api/add", { paths, replace: $("#add-replace").checked, camera: cam });
     setFiles(r);
     if (r.problems && r.problems.length) toast(r.problems.join("; "), 7000);
     if (!S.rec && S.files.length === 1) openRec(S.files[0].path);
@@ -491,7 +517,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-frametimes";
+const APP_VERSION = "2026.11.17-addcamera";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

@@ -405,3 +405,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .cam-move option{color:var(--text);background:var(--panel)}
 .fps{display:inline-flex;align-items:center;gap:6px}
 .fps input{width:76px}
+/* Add recordings: which camera */
+.add-cam{border:1px solid var(--line);border-radius:10px;padding:10px 14px 12px;margin:0;display:flex;flex-direction:column;gap:8px}
+.add-cam legend{font-weight:700;padding:0 6px}
+.add-cam p{margin:0}
+.add-cam-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+.add-cam-row .check{min-width:220px}
+.add-cam-row input[type=text],.add-cam-row select{flex:1;min-width:200px;height:36px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)}

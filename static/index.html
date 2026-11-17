@@ -302,6 +302,17 @@
     <label class="small">Or paste paths, one per line (a .ats file or a folder of them)
       <textarea id="folder-input" rows="5" placeholder="C:\Users\...\St Fagans 10.8.26\front 2.ats&#10;C:\Users\...\BCT\19.10.26"></textarea>
     </label>
+    <fieldset class="add-cam">
+      <legend>Save to camera</legend>
+      <p class="small muted">Recordings are grouped by the camera that made them. Pick the camera these come from.</p>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-cam" value="new"> New camera</label>
+        <input id="add-cam-new" type="text" maxlength="40" placeholder="Camera name, e.g. Front elevation" aria-label="New camera name"></div>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-cam" value="existing"> Add to an existing camera</label>
+        <select id="add-cam-existing" aria-label="Existing camera"></select></div>
+      <div class="add-cam-row"><label class="check"><input type="radio" name="add-cam" value="auto"> Sort automatically by file name and folder</label>
+        <span class="small muted">e.g. front 1, front 2 → Front; rear 1 → Rear</span></div>
+      <p id="add-cam-msg" class="small err" hidden></p>
+    </fieldset>
     <label class="check"><input id="add-replace" type="checkbox"> Clear the current list first</label>
     <div class="row wrap end">
       <button value="cancel" class="btn">Cancel</button>

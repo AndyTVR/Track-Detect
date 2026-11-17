@@ -48,8 +48,12 @@ clicking **Quit** in the top bar, closes it.
    files, a whole survey folder, or paste paths, one per line. Remove a file
    from the list with its **×**. Each file shows its times and status.
 
-   **Cameras**: the list groups recordings by camera. Files from the same
-   folder with the same name start in the same camera: "front 1", "front 2"
+   **Cameras**: the list groups recordings by camera. When you add
+   recordings, choose which camera they belong to under **Save to camera**:
+   - a **New camera**, with a name you choose, such as "Front elevation";
+   - an **existing camera**;
+   - or **Sort automatically**, where files from the same folder with the
+     same name start in the same camera: "front 1", "front 2"
    become **Front**, and "rear 1", "rear 2" become **Rear**. Files with
    numbered names such as "Rec-0003" group by folder ("Camera 1", "Camera 2" …).
    - Click a camera's name to rename it, for example "Front elevation".

@@ -57,7 +57,7 @@ def _last_sunday(year: int, month: int) -> _dt.date:
 # correction in seconds, and what pixel values are shown as: "C" or "F"
 # (temperature, when the file has calibration) or "counts" (the raw values).
 TIME = {"zone": "uk", "offset_s": 0.0}
-TEMP = {"unit": "C", "offsets": {"FLIR A700": -20.0}}   # offsets: Settings > Time & units
+TEMP = {"unit": "C"}
 
 
 def uk_time(t_utc: _dt.datetime):
@@ -73,6 +73,16 @@ def uk_time(t_utc: _dt.datetime):
     return t_utc.astimezone(_dt.timezone(_dt.timedelta(0), "GMT")), "GMT"
 
 
+
+# Calibration for files that store raw sensor values (some A70/A700 recordings).
+# The scale, 0.01649 °C per value, comes from the SWT A70 recording 0010.ats,
+# where Research Studio's temperatures are known to be accurate: its first
+# frame runs from 21369 (-28.31 °C) to 25001 (31.59 °C). The A700 stores raw
+# values on a different base, so it keeps the same scale with its own zero
+# point, from St Fagans front 1: 6738 = 0.20 °C in Research Studio.
+RAW_SLOPE = (31.59369468688965 - -28.308080673217773) / (25001 - 21369)
+RAW_CAL = {"FLIR A70": (21369.0, -28.308080673217773),
+           "FLIR A700": (6738.0, 0.1954682618379593)}
 
 class ATSFile:
     """Random access to the frames of an .ats recording."""
@@ -210,23 +220,20 @@ class ATSFile:
                 self.count_slope = 0.01
                 to_c = lambda a: a.astype(np.float32) / 100.0 - 273.15
         self.temp_approx = False
-        self.temp_offset = 0.0
-        if to_c is None and "Temperature" in src and span:
-            # Raw sensor values from a radiometric camera (A700 files saved this way):
-            # Research Studio's automatic colour range for the first frame runs from
-            # its coldest to its hottest pixel, so those two pixels give a straight-line
-            # conversion. Good for temperature differences; absolute values are approximate.
-            c0, c1 = self.xml["span"]["TemperatureC"]
-            self.temp_offset = float((TEMP.get("offsets") or {}).get(self.camera, 0.0))   # Settings: correction for this camera
-            c0, c1 = c0 + self.temp_offset, c1 + self.temp_offset
-            first = self.raw(0)
-            k0, k1 = float(first.min()), float(first.max())
-            if k1 > k0 and c1 > c0:
-                slope = (c1 - c0) / (k1 - k0)
-                if 0.001 < slope < 0.5:
-                    self.count_slope = float(slope)
-                    self.temp_approx = True
-                    to_c = lambda a, k0=k0, c0=c0, slope=slope: (a.astype(np.float32) - k0) * slope + c0
+        if to_c is None and "Temperature" in src and (self.camera in RAW_CAL or span):
+            # Raw sensor values from a radiometric camera. One fixed straight-line
+            # calibration per camera model, so every recording from that camera
+            # uses the same scale. Good for temperature differences; absolute
+            # values are approximate.
+            if self.camera in RAW_CAL:
+                k0, c0 = RAW_CAL[self.camera]
+                slope = RAW_SLOPE
+            else:   # an unknown model: the SWT scale, anchored on Research Studio's range for this file
+                c0 = span[0]
+                k0, slope = float(self.raw(0).min()), RAW_SLOPE
+            self.count_slope = float(slope)
+            self.temp_approx = True
+            to_c = lambda a, k0=k0, c0=c0, slope=slope: (a.astype(np.float32) - k0) * slope + c0
         if to_c is None or TEMP["unit"] == "counts":   # Settings > Time & units: show raw counts
             return "counts", None
         return self._temp_unit(to_c)
@@ -475,7 +482,6 @@ class ATSFile:
             "fps": self.fps,
             "fps_source": self.fps_source,
             "temp_approx": bool(getattr(self, "temp_approx", False)),
-            "temp_offset": float(getattr(self, "temp_offset", 0.0)),
             "duration_s": self.seconds_at(self.n_frames - 1) + 1 / self.fps,
             "start": self.time_utc(0).isoformat() if self.start_time else None,   # includes clock correction
             "zone": self.zone_of(0),

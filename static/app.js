@@ -750,7 +750,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-temp2";
+const APP_VERSION = "2026.11.17-cal";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2010,29 +2010,13 @@ function stFill(c) {
   $("#st-naming").value = c.export.naming; $("#st-quality").value = c.export.quality; $("#st-slowmo").value = String(c.export.slowmo);
   $("#st-scale").value = c.units.scale || "temperature"; $("#st-temp").disabled = $("#st-scale").value === "counts";
   $("#st-temp").value = c.units.temp; $("#st-zone").value = c.units.zone; $("#st-offset").value = c.units.clock_offset_s;
-  S.toffs = { ...(c.units.temp_offsets || {}) };
-  if (S.rec && S.rec.temp_approx && S.rec.camera && !(S.rec.camera in S.toffs)) S.toffs[S.rec.camera] = 0;
-  renderToffs();
+
   $("#st-classes").value = c.classes.join("\n");
   $("#st-autoadv").checked = c.review.auto_advance; $("#st-autoplay").checked = c.review.auto_play;
   for (const k of ["company", "contact", "analyst", "camera"]) $("#st-" + k).value = c.report[k] || "";
   CF.list = JSON.parse(JSON.stringify(c.custom_filters || [])); cfRender(Math.min(CF.idx, CF.list.length - 1));
   stExamples();
 }
-function renderToffs() {
-  const box = $("#st-toffs"); box.innerHTML = "";
-  const names = Object.keys(S.toffs || {});
-  if (!names.length) { box.innerHTML = '<p class="small muted">No corrections.</p>'; return; }
-  for (const k of names) {
-    const row = el("div", "row st-toff");
-    row.innerHTML = `<span class="st-toff-name">${esc(k)}${S.rec && S.rec.camera === k ? ' <span class="small muted">(this recording)</span>' : ""}</span>`;
-    const i = el("input"); i.type = "number"; i.step = "0.5"; i.value = S.toffs[k]; i.className = "num sm"; i.setAttribute("aria-label", `Correction for ${k}, °C`);
-    i.oninput = () => { S.toffs[k] = +i.value || 0; stDirty(); };
-    const x = el("button", "rm", "×"); x.type = "button"; x.title = `Remove ${k}`; x.onclick = () => { delete S.toffs[k]; renderToffs(); stDirty(); };
-    row.append(i, el("span", "small muted", "°C"), x); box.appendChild(row);
-  }
-}
-$("#st-toff-add").onclick = () => { const k = $("#st-toff-new").value.trim(); if (!k) return; S.toffs = S.toffs || {}; if (!(k in S.toffs)) S.toffs[k] = 0; $("#st-toff-new").value = ""; renderToffs(); stDirty(); };
 function stRead() {
   const v = (id) => $(id).value;
   return {
@@ -2043,7 +2027,7 @@ function stRead() {
     detect: { sensitivity: v("#st-sens"), merge_s: +v("#st-merge"), min_frames: +v("#st-minf"), window_s: +v("#st-window") },
     export: { folder: v("#st-folder").trim(), items: [...document.querySelectorAll("[name=st-items]:checked")].map((i) => i.value),
               overlays: v("#st-overlays"), text_size: v("#st-textsize"), naming: v("#st-naming"), quality: +v("#st-quality"), slowmo: +v("#st-slowmo") },
-    units: { scale: v("#st-scale"), temp: v("#st-temp"), zone: v("#st-zone"), clock_offset_s: +v("#st-offset") || 0, temp_offsets: { ...(S.toffs || {}) } },
+    units: { scale: v("#st-scale"), temp: v("#st-temp"), zone: v("#st-zone"), clock_offset_s: +v("#st-offset") || 0 },
     classes: v("#st-classes").split("\n").map((x) => x.trim()).filter(Boolean),
     review: { auto_advance: $("#st-autoadv").checked, auto_play: $("#st-autoplay").checked },
     report: Object.fromEntries(["company", "contact", "analyst", "camera"].map((k) => [k, v("#st-" + k).trim()])),

@@ -878,7 +878,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-temp2"   # must match static/app.js
+APP_VERSION = "2026.11.17-cal"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -1021,9 +1021,8 @@ def _apply_settings(old=None):
     render.LABEL["scale"] = cfg.TEXT_SCALE[c["export"]["text_size"]]
     ats.TIME["zone"], ats.TIME["offset_s"] = c["units"]["zone"], c["units"]["clock_offset_s"]
     unit = "counts" if c["units"]["scale"] == "counts" else c["units"]["temp"]
-    offs = dict(c["units"].get("temp_offsets") or {})
-    unit_changed = ats.TEMP["unit"] != unit or ats.TEMP.get("offsets") != offs
-    ats.TEMP["unit"], ats.TEMP["offsets"] = unit, offs
+    unit_changed = ats.TEMP["unit"] != unit
+    ats.TEMP["unit"] = unit
     if unit_changed:
         with _lock:
             recs.clear()   # reopen recordings so their values convert to the new unit

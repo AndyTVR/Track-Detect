@@ -421,18 +421,18 @@ reads that camera's files correctly.
   saved in the file:
   - temperature stored directly, 0.01 K per value (read exactly);
   - raw sensor values (for example the St Fagans A700 and SWT A70
-    recordings). These are converted to °C from the automatic range Research
-    Studio showed when recording started, which runs from the first frame's
-    coldest pixel to its hottest. That is right for temperature
-    differences, which is what detection uses, but absolute values are
-    approximate, so the level shows "°C, approx.".
+    recordings). These use one fixed calibration per camera model, so every
+    recording from a camera is on the same scale: 0.01649 °C per value,
+    taken from the SWT A70 recording 0010.ats, whose Research Studio
+    temperatures are accurate. For the A70 that file also sets the zero
+    point. The A700 stores raw values on a different base, so it uses the
+    same scale with its zero point from St Fagans front 1 (Research Studio's
+    reading, no correction). Temperature differences, which detection uses,
+    are right; absolute values are approximate, so the level shows
+    "°C, approx.".
 
-  **Settings > Time & units > Temperature correction by camera** adds a
-  correction in °C to those converted recordings, per camera model. It
-  starts at −20 °C for the FLIR A700, whose St Fagans readings ran about
-  20 °C high; the A70 needs none. Scans already made are kept, as detection
-  works on differences. Files with no temperature information at all
-  (RS8481 recordings saved as Counts) still show counts. Files saved in counts show as counts, which still works for
+  Files with no temperature information at all (RS8481 recordings saved as
+  Counts) still show counts. Files saved in counts show as counts, which still works for
   detection.
 - Bat tracking finds compact warm objects that move. Very slow or very
   distant bats, rain, and swaying vegetation can still need your eye. That's

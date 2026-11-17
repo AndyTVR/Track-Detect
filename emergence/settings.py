@@ -24,8 +24,7 @@ DEFAULTS = {
     "detect": {"sensitivity": "normal", "merge_s": 2.0, "min_frames": 1, "window_s": 3.0},
     "export": {"folder": "", "items": list(EXPORT_ITEMS), "overlays": "roi+time", "text_size": "medium",
                "naming": "site_recording", "quality": 75, "slowmo": 1.0},
-    "units": {"scale": "temperature", "temp": "C", "zone": "uk", "clock_offset_s": 0.0,
-              "temp_offsets": {"FLIR A700": -20.0}},
+    "units": {"scale": "temperature", "temp": "C", "zone": "uk", "clock_offset_s": 0.0},
     "classes": DEFAULT_CLASSES,
     "review": {"auto_advance": True, "auto_play": False},
     "report": {"company": "", "contact": "", "analyst": "", "camera": ""},
@@ -91,25 +90,12 @@ def clean(d: dict | None) -> dict:
                    "slowmo": _pick(_num(ex.get("slowmo"), 0.25, 1, 1.0), (0.25, 0.5, 1.0), 1.0)},
         "units": {"scale": _pick(u.get("scale"), ("temperature", "counts"), "temperature"),
                   "temp": _pick(u.get("temp"), ("C", "F"), "C"), "zone": _pick(u.get("zone"), ("uk", "utc"), "uk"),
-                  "clock_offset_s": round(_num(u.get("clock_offset_s"), -86400 * 7, 86400 * 7, 0.0), 3),
-                  "temp_offsets": _offsets(u.get("temp_offsets"))},
+                  "clock_offset_s": round(_num(u.get("clock_offset_s"), -86400 * 7, 86400 * 7, 0.0), 3)},
         "classes": classes or list(DEFAULT_CLASSES),
         "review": {"auto_advance": bool(rv.get("auto_advance", True)), "auto_play": bool(rv.get("auto_play", False))},
         "report": {k: str(rp.get(k) or "").strip()[:200] for k in D["report"]},
         "custom_filters": _custom_list(d.get("custom_filters"), clean_custom),
     }
-
-
-def _offsets(v):
-    """Temperature corrections by camera model, in °C (for files converted from raw sensor values)."""
-    if not isinstance(v, dict):
-        return dict(DEFAULTS["units"]["temp_offsets"])
-    out = {}
-    for k, x in list(v.items())[:20]:
-        k = str(k).strip()[:60]
-        if k:
-            out[k] = round(_num(x, -100, 100, 0.0), 2)
-    return out
 
 
 def _custom_list(v, clean_custom):

@@ -21,17 +21,34 @@ function ukTime(ms) {
   const y = new Date(ms).getUTCFullYear(), bst = ms >= lastSundayUTC(y, 2) && ms < lastSundayUTC(y, 9);
   return { d: new Date(ms + (bst ? 3600e3 : 0)), zone: bst ? "BST" : "GMT" };
 }
-function fmtZone(frame) { const r = S.rec; return r && r.start ? ukTime(new Date(r.start).getTime() + frame / r.fps * 1000).zone : ""; }
+// Seconds from the first frame to a frame: from the camera's time stamp on
+// each frame once the time table has loaded, otherwise frames / frame rate.
+function secAt(frame) {
+  const r = S.rec; if (!r) return 0;
+  const t = S.times, f = Math.max(0, Math.min(r.frames - 1, Math.round(frame)));
+  return t && t.length === r.frames ? t[f] : f / r.fps;
+}
+function spanS(f0, f1) { return Math.max(0, secAt(f1) - secAt(f0)) + 1 / S.rec.fps; }   // length of frames f0..f1
+async function loadTimes(path) {
+  S.times = null;
+  try {
+    const res = await fetch("/api/times?path=" + encodeURIComponent(path), { cache: "no-store" });
+    if (res.status !== 200 || !S.rec || S.rec.path !== path) return;
+    S.times = new Float64Array(await res.arrayBuffer());
+    renderEvents(); drawPlot(); showFrame();   // relabel with exact times
+  } catch (e) { S.times = null; }
+}
+function fmtZone(frame) { const r = S.rec; return r && r.start ? ukTime(new Date(r.start).getTime() + secAt(frame) * 1000).zone : ""; }
 function fmtDate(frame) {   // dd/mm/yyyy, UK date
   const r = S.rec; if (!r || !r.start) return "";
-  const d = ukTime(new Date(r.start).getTime() + frame / r.fps * 1000).d;
+  const d = ukTime(new Date(r.start).getTime() + secAt(frame) * 1000).d;
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
 }
 function fmtStamp(frame) { return [fmtDate(frame), fmtTime(frame), fmtZone(frame)].filter(Boolean).join(" "); }
 function fmtTime(frame) {
   const r = S.rec; if (!r) return "";
-  if (r.start) return ukTime(new Date(r.start).getTime() + frame / r.fps * 1000).d.toISOString().substr(11, 8);
-  const s = frame / r.fps; return `+${String(Math.floor(s / 60)).padStart(2, "0")}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+  if (r.start) return ukTime(new Date(r.start).getTime() + secAt(frame) * 1000).d.toISOString().substr(11, 8);
+  const s = secAt(frame); return `+${String(Math.floor(s / 60)).padStart(2, "0")}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 }
 function fmtDur(s) { const m = Math.floor(s / 60); return `${m}:${String(Math.round(s % 60)).padStart(2, "0")}`; }
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -136,7 +153,7 @@ async function openRec(path) {
   try {
     S.rec = await api("/api/open", { path });
     S.rng = { raw: null, review: null, path: null, blend: null, custom: null }; S.track = {}; S.info = null;   // each recording starts on Auto
-    S.frame = 0; S.sel = null; S.ws = 0; S.we = S.rec.frames - 1; S.pts = S.rec.roi || []; S.lim = null;
+    S.frame = 0; S.sel = null; S.ws = 0; S.we = S.rec.frames - 1; S.pts = S.rec.roi || []; S.lim = null; S.times = null;
     $("#scrub").max = S.rec.frames - 1;
     $("#crumb-folder").textContent = parentName(S.rec.path);
     $("#crumb-file").textContent = "› " + S.rec.name;
@@ -147,6 +164,7 @@ async function openRec(path) {
     S.roiHidden = new Set(); S.roiActive = (S.rec.rois[0] || {}).id; renderRois();
     $("#empty").hidden = true;
     renderFiles(); updateRoiStatus(); await loadActivity(); renderEvents(); renderComments(); renderFilters(); showFrame();
+    loadTimes(S.rec.path);   // exact frame times, in the background
   } catch (e) { setEmpty("Could not open this file.", true); err(e); }
 }
 // Frame rate: read from the file's own frame clock where it has one. Typing
@@ -162,7 +180,7 @@ function showFps() {
     : src.startsWith("estimated") ? "This file has no per-frame time stamps, so the frame rate is estimated from when the file finished recording. Type the camera's frame rate if you know it."
     : "This file has no per-frame time stamps and the frame rate couldn't be estimated. Type the camera's frame rate.";
 }
-async function setFps(v) { try { S.rec = await api("/api/fps", { fps: v }); showFps(); refreshFiles(); setCrumbMeta(); renderEvents(); await loadActivity(true); showFrame(); } catch (e) { err(e); } }
+async function setFps(v) { try { S.rec = await api("/api/fps", { fps: v }); S.times = null; loadTimes(S.rec.path); showFps(); refreshFiles(); setCrumbMeta(); renderEvents(); await loadActivity(true); showFrame(); } catch (e) { err(e); } }
 $("#fps").onchange = () => setFps(+$("#fps").value);
 $("#fps-auto").onclick = () => setFps(0);
 
@@ -268,7 +286,7 @@ function drawLimits() {
   $("#lim-fill").style.left = limPos(a); $("#lim-fill").style.width = `calc((100% - 16px) * ${(b - a) / n})`;
   const whole = isWhole([a, b]);
   $("#lim-label").textContent = whole ? "Play limits: whole recording. Drag the blue markers to set your own."
-    : `Play limits: ${fmtTime(a)} → ${fmtTime(b)} (${fmtDur((b - a + 1) / S.rec.fps)})${locked() ? " · locked to event " + S.sel : ""}`;
+    : `Play limits: ${fmtTime(a)} → ${fmtTime(b)} (${fmtDur(spanS(a, b))})${locked() ? " · locked to event " + S.sel : ""}`;
   $("#btn-lim-reset").hidden = whole || locked();
   $("#scan-lim-only").disabled = whole; if (whole) $("#scan-lim-only").checked = false;
   $("#scan-lim-wrap").classList.toggle("dim", whole);
@@ -473,7 +491,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-timing";
+const APP_VERSION = "2026.11.17-frametimes";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1097,7 +1115,7 @@ function syncPlotSliders(g, nClipped) {
   ta.value = P.a; tb.value = P.b;
   const fill = $("#t-fill"), fa = P.a / Math.max(1, n - 1), fb = P.b / Math.max(1, n - 1);  // thumbs are 16px wide
   fill.style.left = `calc(8px + (100% - 16px) * ${fa})`; fill.style.width = `calc((100% - 16px) * ${fb - fa})`;
-  $("#t-label").textContent = `${fmtTime(P.a)} → ${fmtTime(P.b)} (${fmtDur((P.b - P.a) / S.rec.fps)})`;
+  $("#t-label").textContent = `${fmtTime(P.a)} → ${fmtTime(P.b)} (${fmtDur(spanS(P.a, P.b))})`;
   const nTall = P.capped && P.stats ? P.stats.peaks.filter((p) => p > P.capTop).length : 0;
   $("#cap-label").textContent =
     P.yMode === "auto" ? (P.capped ? `Automatic: ${nTall} very tall spike${nTall === 1 ? "" : "s"} cut off (▲) so the rest are clear. Drag the bar's handle to change it.` : "Automatic: no spike dwarfs the others here, so nothing is cut off. Drag the bar's handle to cut off tall spikes.")
@@ -1203,7 +1221,7 @@ function renderEvents() {
     const roiTag = rois().length > 1 ? `<span class="roi-tag"><i class="roi-dot" style="background:${roiColour(e.roi)}"></i>${esc(roiName(e.roi))}</span>` : "";
     d.innerHTML = `<div class="ev-row"><button class="ev-play${playingThis ? " on" : ""}" data-evplay="${e.n}" aria-label="${playingThis ? "Pause" : "Play"} event ${e.n}" title="${playingThis ? "Pause" : "Play this event"}">${playingThis ? PAUSE_ICON : PLAY_ICON}</button><button class="ev-head"><span class="ev-top"><b>Event ${e.n}</b>${roiTag}</span>
       <span class="mono ev-when">${when}</span>
-      <span class="mono small muted">frames ${e.f0.toLocaleString()}–${e.f1.toLocaleString()} · ${fmtDur((e.f1 - e.f0 + 1) / S.rec.fps)}</span>
+      <span class="mono small muted">frames ${e.f0.toLocaleString()}–${e.f1.toLocaleString()} · ${fmtDur(spanS(e.f0, e.f1))}</span>
       <span class="row wrap"><span class="chip ${chipK}">${esc(chipT)}</span></span></button></div>`;
     d.querySelector(".ev-head").onclick = () => selectEvent(e.n);
     d.querySelector(".ev-play").onclick = () => playEvent(e.n);

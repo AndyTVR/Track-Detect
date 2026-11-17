@@ -310,7 +310,12 @@ reads that camera's files correctly.
   SDK. It's tested on an RS8481 (1280×1024) recording. **Check A70 and A700
   files with "Check a file" before relying on them.**
 - Frame times come from the time stamp the camera puts on every frame, so
-  they're exact even if frames were dropped. A file without them gets its
+  they're exact even if frames were dropped or the frame rate changed. The
+  first time a recording is opened, the program reads every frame's stamp
+  in the background (a few seconds for a long recording) and keeps them in
+  `<name>.ats.times.npz` beside it, so later openings are instant. Every
+  clock time and duration (on screen, in exports, CSVs and reports) uses
+  them. A file without them gets its
   frame rate from when it finished recording (its "last modified" time).
   The **fps** box at the top shows the frame rate and where it came from:
   *from file*, *estimated* or *assumed*. Type a value to override it, and

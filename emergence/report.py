@@ -222,7 +222,7 @@ def _content(rec, opts, out_path, progress=None):
         ["Camera and lens", opts.get("camera") or src.camera or "unknown"],
         ["Date", t0.strftime("%A %d/%m/%Y") if t0 else "not stored in file"],
         [f"Start – end ({zone})", f"{src.time_label(0)[:8]} – {src.time_label(src.n_frames - 1)[:8]}" if t0 else "–"],
-        ["Duration", _fmt_dur(src.n_frames / src.fps)],
+        ["Duration", _fmt_dur(src.span_s(0, src.n_frames - 1))],
         ["Image size", f"{src.width} × {src.height} pixels"],
         ["Analyst", opts.get("analyst") or "–"],
         ["Report created", _dt.datetime.now().strftime("%d/%m/%Y, %H:%M")],
@@ -301,7 +301,7 @@ def _content(rec, opts, out_path, progress=None):
         lab, col = STATUS.get(e["status"], STATUS["todo"])
         cm = "; ".join(c["text"] for c in ev_comments(e))
         rows.append([str(e["n"]), src.time_label(e["f0"])[:8], src.time_label(e["f1"])[:8],
-                     f"{(e['f1'] - e['f0'] + 1) / src.fps:.1f} s", rec.roi_name(e.get("roi")) if multi else f"{e['peak']:.1f}",
+                     f"{src.span_s(e['f0'], e['f1']):.1f} s", rec.roi_name(e.get("roi")) if multi else f"{e['peak']:.1f}",
                      f'<font color="{_hex(col)}"><b>{lab}</b></font>', _esc(e.get("cls") or "–"), _esc(cm) or "–"])
     if not rows:
         rows.append(["No events were detected at this level."] + [""] * 7)
@@ -319,7 +319,7 @@ def _content(rec, opts, out_path, progress=None):
         block = [("h2", f'Event {e["n"]} <font color="{_hex(col)}">· {lab}</font>')]
         details = [
             ["Time", f"{src.time_label(e['f0'])} – {src.time_label(e['f1'])} {src.zone_of(e['f0'])}"],
-            ["Frames", f"{e['f0']:,} – {e['f1']:,} ({(e['f1'] - e['f0'] + 1) / src.fps:.1f} s)"],
+            ["Frames", f"{e['f0']:,} – {e['f1']:,} ({src.span_s(e['f0'], e['f1']):.1f} s)"],
             ["ROI", rec.roi_name(e.get("roi"))],
             ["Peak activity", f"{e['peak']:.2f} {_unit(src.units)} at frame {e['peak_frame']:,}"],
             ["Decision", lab],

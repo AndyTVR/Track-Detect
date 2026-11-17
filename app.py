@@ -454,6 +454,20 @@ def recording():
     return jsonify(rec().summary())
 
 
+@app.get("/api/times")
+def frame_times():
+    """Every frame's time (seconds from the first frame) as little-endian
+    float64s, from the per-frame time stamps; 204 when there aren't any."""
+    import numpy as np
+    r = rec(request.args.get("path") or None)
+    t = r.src.frame_times()
+    if t is None:
+        return ("", 204)
+    from flask import Response
+    return Response(np.ascontiguousarray(t, dtype="<f8").tobytes(), mimetype="application/octet-stream",
+                    headers={"Cache-Control": "no-store"})
+
+
 @app.post("/api/fps")
 def set_fps():
     """Set the frame rate by hand (body: fps), or fps 0 to go back to the
@@ -507,7 +521,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-timing"   # must match static/app.js
+APP_VERSION = "2026.11.17-frametimes"   # must match static/app.js
 
 
 @app.get("/api/version")

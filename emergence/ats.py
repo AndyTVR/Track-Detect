@@ -345,9 +345,52 @@ class ATSFile:
         fps = (self.n_frames - 1) / span
         return round(fps, 3) if 1 <= fps <= 240 else None
 
+    def frame_times(self):
+        """Seconds from the first frame to every frame, from the per-frame
+        time stamps (None without them, or when a frame rate was typed in).
+        Built once, by reading one stamp per frame, then kept beside the
+        recording in <name>.ats.times.npz so later openings are instant."""
+        if not self._clock or self.fps_user:
+            return None
+        if getattr(self, "_times", None) is not None:
+            return self._times
+        side = self.path + ".times.npz"
+        key = np.array([self.size, self._clock["offset"], self._clock["t0"]], dtype=np.float64)
+        try:
+            with np.load(side) as z:
+                if len(z["t"]) == self.n_frames and np.array_equal(z["key"], key):
+                    self._times = z["t"]
+                    return self._times
+        except (OSError, ValueError, KeyError):
+            pass
+        L, k = self.layout, self._clock["offset"]
+        # one 8-byte stamp per frame, read straight from the file
+        stamps = np.ndarray((self.n_frames,), dtype="<u8", buffer=self._mm,
+                            offset=L.first - self._hl + k, strides=(L.stride,))
+        t = (stamps.astype(np.float64) - float(self._clock["t0"])) * self._clock["unit"]
+        if not (np.diff(t) >= 0).all():   # a clock that jumps back can't be trusted: keep the average rate
+            self._clock = None
+            self.fps, self.fps_source = (self._fps_from_file_time() or 30.0), "estimated (the frame clock jumped)"
+            return None
+        self._times = t
+        try:
+            tmp = side + ".tmp.npz"
+            np.savez(tmp, t=t, key=key)
+            os.replace(tmp, side)
+        except OSError:
+            pass   # read-only folder: build it again next time
+        return t
+
+    def span_s(self, f0: int, f1: int) -> float:
+        """Length in seconds of frames f0 to f1 inclusive."""
+        return max(0.0, self.seconds_at(f1) - self.seconds_at(f0)) + 1 / self.fps
+
     def seconds_at(self, i: int) -> float:
         """Seconds from the first frame to frame i."""
         i = int(max(0, min(self.n_frames - 1, i)))
+        t = getattr(self, "_times", None)
+        if t is not None and not self.fps_user:
+            return float(t[i])
         if self._clock and not self.fps_user:
             try:
                 return (self._header_u64(i, self._clock["offset"]) - self._clock["t0"]) * self._clock["unit"]

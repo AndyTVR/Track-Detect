@@ -503,6 +503,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 /* which camera the Event Log is showing */
 .log-cam{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);max-width:420px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .log-cam svg{flex:none;color:var(--accent)}
+.log-cam-wrap{position:relative;display:inline-flex;cursor:pointer}
+.log-cam-wrap .log-cam::after{content:"▾";margin-left:2px;color:var(--muted)}
+.log-cam-wrap:hover .log-cam,.log-cam-wrap:focus-within .log-cam{border-color:var(--accent)}
+#log-cam-pick{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:14px}
 .rec-head .row-btns{flex-wrap:nowrap}
 .rec-head h2{margin:0;white-space:nowrap}
 .btn.icon-xs{padding:0 6px}

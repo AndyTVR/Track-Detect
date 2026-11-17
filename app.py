@@ -913,7 +913,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-clean"   # must match static/app.js
+APP_VERSION = "2026.11.18-joins"   # must match static/app.js
 
 
 @app.get("/api/version")

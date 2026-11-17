@@ -22,6 +22,10 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   check("cameras made from file names", cams.length >= 3, cams.join(","));
   check("first recording opened", !!(await p.evaluate(() => S.rec && S.rec.name)));
   check("Event Log names the camera", /Camera/.test(await p.textContent("#log-cam")));
+  const opts = await p.$$eval("#log-cam-pick option", (o) => o.map((x) => x.value));
+  const before = await p.evaluate(() => S.rec.path);
+  await p.selectOption("#log-cam-pick", opts.find((v) => v && v !== opts[0]) || opts[1]); await p.waitForTimeout(1500);
+  check("camera chosen from the Event Log chip", (await p.evaluate(() => S.rec.path)) !== before, opts.join(","));
   // open synthetic, draw a rectangle, set it with a click
   await p.locator(".file", { hasText: "synthetic" }).click(); await p.waitForTimeout(1200);
   await p.click("[data-shape=rect]"); await p.waitForTimeout(200);

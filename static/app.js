@@ -807,7 +807,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-clean";
+const APP_VERSION = "2026.11.18-joins";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1608,9 +1608,9 @@ function surveyCams() {
 function syncCamCycle() {
   const sc = surveyCams(), n = sc ? sc.cams.length : 0;
   const lc = $("#log-cam");
-  if (!S.rec) lc.hidden = true;
-  else {
-    lc.hidden = false;
+  $("#log-cam-wrap").hidden = !S.rec;
+  if (S.rec) {
+    fillCamPick(sc);
     lc.innerHTML = sc ? `${ICON_CAM}<b>${esc(sc.at.camera.label)}</b><span class="muted"> · ${esc(sc.at.survey.label)} · ${esc(sc.at.project.name)}</span>`
       : `${ICON_CAM}<b>Unassigned</b><span class="muted"> · ${esc(S.rec.name)}</span>`;
     lc.title = sc ? `This Event Log is for ${sc.at.project.name} › ${sc.at.survey.label} › ${sc.at.camera.label}: ${S.rec.name}` : S.rec.name;
@@ -1622,28 +1622,56 @@ function syncCamCycle() {
   $("#btn-cam-prev").title = t || "The same moment on the previous camera of this survey";
   $("#btn-cam-next").title = t || "The same moment on the next camera of this survey";
 }
+// the moment showing now (clock ms) and the play limits, to match on another camera
+function nowMoment() {
+  const f = S.rec && fileRow(S.rec.path);
+  if (!f || !f.start) return null;
+  const s0 = Date.parse(f.start);
+  return { t: s0 + secAt(S.frame) * 1000, lim: S.lim ? S.lim.map((x) => s0 + secAt(x) * 1000) : null };
+}
+function camHit(c, t) {   // this camera's recording that covers clock time t
+  return (c.joined ? [c.joined] : c.paths).map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t && Date.parse(r.end) >= t);
+}
+async function openAtMoment(hit, m) {   // open a recording at the same moment (and play limits)
+  try { await openRec(hit.path); } catch (e) { err(e); return false; }
+  if (!S.rec || S.rec.path !== hit.path) return false;
+  await loadTimes(hit.path);
+  const h0 = Date.parse(hit.start);
+  if (m.lim) { S.lim = [frameAtSec((m.lim[0] - h0) / 1000), frameAtSec((m.lim[1] - h0) / 1000)]; $("#in-window").checked = false; }
+  S.frame = frameAtSec((m.t - h0) / 1000); drawLimits(); showFrame(); drawPlot();
+  return true;
+}
 async function cycleCamera(dir) {
   const sc = surveyCams(); if (!sc || sc.cams.length < 2) return;
-  const f = fileRow(S.rec.path);
-  if (!f || !f.start) return toast("This recording has no start time, so it can't be matched to another camera.", 6000);
-  const s0 = Date.parse(f.start), t = s0 + secAt(S.frame) * 1000;
-  const lim = S.lim ? S.lim.map((x) => s0 + secAt(x) * 1000) : null;
+  const m = nowMoment();
+  if (!m) return toast("This recording has no start time, so it can't be matched to another camera.", 6000);
   const n = sc.cams.length, i = sc.cams.findIndex((c) => c.id === sc.at.camera.id);
   for (let k = 1; k < n; k++) {
-    const c = sc.cams[(((i + dir * k) % n) + n) % n];
-    const hit = (c.joined ? [c.joined] : c.paths).map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t && Date.parse(r.end) >= t);
+    const hit = camHit(sc.cams[(((i + dir * k) % n) + n) % n], m.t);
     if (!hit) continue;
-    try { await openRec(hit.path); } catch (e) { return err(e); }
-    if (!S.rec || S.rec.path !== hit.path) return;
-    await loadTimes(hit.path);
-    const h0 = Date.parse(hit.start);
-    if (lim) { S.lim = [frameAtSec((lim[0] - h0) / 1000), frameAtSec((lim[1] - h0) / 1000)]; $("#in-window").checked = false; }
-    S.frame = frameAtSec((t - h0) / 1000); drawLimits(); showFrame(); drawPlot();
-    if (k > 1) toast(`Skipped ${plural(k - 1, "camera")} with no recording at ${clockAt(t)}.`, 5000);
+    if (await openAtMoment(hit, m) && k > 1) toast(`Skipped ${plural(k - 1, "camera")} with no recording at ${clockAt(m.t)}.`, 5000);
     return;
   }
-  toast(`No other camera in ${sc.at.survey.label} was recording at ${clockAt(t)}.`, 6000);
+  toast(`No other camera in ${sc.at.survey.label} was recording at ${clockAt(m.t)}.`, 6000);
 }
+// ---- the camera chip at the top of the Event Log: choose any camera to show
+function fillCamPick(sc) {
+  const sel = $("#log-cam-pick"), here = sc ? sc.at.camera.id : "";
+  let h = sc ? "" : `<option value="" selected>Unassigned · ${esc(S.rec.name)}</option>`;
+  for (const pj of S.tree || []) for (const sv of pj.surveys) {
+    const cams = sv.cameras.filter((c) => c.paths.length);
+    if (cams.length) h += `<optgroup label="${esc(pj.name)} › ${esc(sv.label)}">${cams.map((c) => `<option value="${c.id}"${c.id === here ? " selected" : ""}>${esc(c.label)}</option>`).join("")}</optgroup>`;
+  }
+  sel.innerHTML = h;
+}
+$("#log-cam-pick").onchange = async (e) => {
+  const at = findCam(e.target.value); if (!at) return;
+  const sc = surveyCams(); if (sc && sc.at.camera.id === at.camera.id) return;
+  const c = at.camera, m = nowMoment(), hit = m && camHit(c, m.t);
+  if (hit && await openAtMoment(hit, m)) return;
+  try { await openRec(c.joined || c.paths[0]); } catch (er) { err(er); }
+  if (m && S.rec) toast(`${c.label} wasn't recording at ${clockAt(m.t)}, so it opens at the start.`, 5000);
+};
 $("#btn-cam-prev").onclick = () => cycleCamera(-1);
 $("#btn-cam-next").onclick = () => cycleCamera(1);
 // ---- background noise between spikes, for each ROI

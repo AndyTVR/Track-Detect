@@ -382,14 +382,28 @@ class Recording:
         s = end_spike(act, self.src.fps, self.src.units)
         return s if s is not None else max(1, len(act) - 1)
 
+    def _ignored(self, act):
+        """Frames left out of events and statistics: the end cut, gaps in a
+        joined recording, and the end of each joined file (cameras often write
+        a few very hot frames as they stop), plus each file's final frame."""
+        n = len(act)
+        ign = np.zeros(n, bool)
+        ign[self._cut(act):] = True
+        if hasattr(self.src, "gap_mask"):
+            ign |= self.src.gap_mask[:n]
+            for a, b in self.src.part_ranges:
+                if b >= n:
+                    continue
+                s = end_spike(act[a:b + 1], self.src.fps, self.src.units)
+                ign[(a + s) if s is not None else b:b + 1] = True
+        return ign
+
     def _suggest_scanned(self):
         """Suggested level from every ROI's scanned frames, before its end cut."""
         vals = []
         for rid, act in self.acts.items():
             real = _range_mask(self.scanned_ranges_of(rid), len(act))
-            real[self._cut(act):] = False
-            if hasattr(self.src, "gap_mask"):
-                real &= ~self.src.gap_mask
+            real &= ~self._ignored(act)
             vals.append(act[real])
         allv = np.concatenate(vals) if vals else np.zeros(0, np.float32)
         return self._suggest(allv if len(allv) else (self.activity if self.activity is not None else allv))
@@ -409,7 +423,8 @@ class Recording:
             act = self.acts.get(r["id"])
             if act is None:
                 continue
-            for ev in detect_events(act[:self._cut(act)], self.src.fps, level=level, units=self.src.units,
+            ign = self._ignored(act)
+            for ev in detect_events(np.where(ign, -np.inf, act).astype(np.float32), self.src.fps, level=level, units=self.src.units,
                                     merge_s=cfg.get("detect", "merge_s"), min_frames=cfg.get("detect", "min_frames")):
                 e = asdict(ev)
                 e["roi"] = r["id"]
@@ -605,9 +620,7 @@ class Recording:
             if act is None or not len(act):
                 continue
             quiet = _range_mask(self.scanned_ranges_of(r["id"]), len(act))
-            quiet[self._cut(act):] = False
-            if hasattr(self.src, "gap_mask"):
-                quiet &= ~self.src.gap_mask
+            quiet &= ~self._ignored(act)
             for e in evs:
                 if e.get("roi", "r1") == r["id"]:
                     quiet[max(0, e["f0"] - pad):e["f1"] + pad + 1] = False

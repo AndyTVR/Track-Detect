@@ -116,3 +116,29 @@ def test_safe_replace_falls_back(tmp_path, monkeypatch):
     monkeypatch.setattr(fsutil.os, "replace", locked)
     fsutil.safe_replace(str(a), str(b), wait_s=0.1)
     assert b.read_text() == "new" and not a.exists()
+
+
+def test_spike_at_each_join_is_left_out():
+    """The hot frames a camera writes as it stops are left out at every join,
+    not just at the very end, so they don't become events."""
+    import types
+    import numpy as np
+    from emergence import session
+    from emergence.analysis import detect_events
+    fps, rng = 19.0, np.random.default_rng(1)
+    x = (0.12 + 0.03 * rng.standard_normal(30000)).astype(np.float32)
+    x[5000:5010] = 1.5                       # a bat
+    x[9997:10000] = 370.0                    # end of file 1
+    x[10000:10040] = 0.0                     # gap
+    x[19996:20000] = 380.0                   # end of file 2
+    x[29998:] = 375.0                        # end of file 3
+    src = types.SimpleNamespace(fps=fps, units="°C", gap_mask=np.zeros(len(x), bool),
+                                part_ranges=[[0, 9999], [10040, 19999], [20000, 29999]])
+    src.gap_mask[10000:10040] = True
+    rec = object.__new__(session.Recording)
+    rec.src = src
+    ign = rec._ignored(x)
+    assert ign[9997:10000].all() and ign[19996:20000].all() and ign[29998:].all()
+    assert not ign[5000:5010].any()
+    evs = detect_events(np.where(ign, -np.inf, x).astype(np.float32), fps, level=0.4)
+    assert [(e.f0, e.f1) for e in evs] == [(5000, 5009)]

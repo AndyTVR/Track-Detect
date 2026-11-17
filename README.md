@@ -43,45 +43,54 @@ Double-click the **Track and Detect** desktop shortcut, or **Run Track and
 Detect.bat**. The app opens in its own window. Closing that window, or
 clicking **Quit** in the top bar, closes it.
 
-1. **Add recordings.** Click **Add recordings** in the top bar, or **Add
+1. **Add recordings.** Click the folder button in the top bar, or **Add
    Recording** in the middle of the empty picture. Choose individual `.ats`
-   files, a whole survey folder, or paste paths, one per line. Remove a file
-   from the list with its **×**. Each file shows its times and status.
+   files, a whole survey folder, or paste paths, one per line. The first
+   recording added opens straight away. Remove a file from the list with
+   its **×** (the file itself isn't deleted). Each file shows its times and
+   status.
 
-   **Projects and cameras**: the list groups recordings by project (a site
-   or survey night, for example "St Fagans 10.8.26"), and within each
-   project by camera. When you add recordings, the dialog asks:
-   - **Save to project**: a **New project** with a name you choose, an
-     **existing project**, or **Use each recording's folder name**, where the folder the
-     files are in becomes the project.
-   - **Save to camera**: a **New camera**, such as "Front elevation", an
-     **existing camera** in the chosen project, or **Sort automatically**,
-     where files from the same folder with the same name go in the same
-     camera: "front 1", "front 2" become **Front**, and "rear 1", "rear 2"
-     become **Rear**. Files with numbered names such as "Rec-0003" group by
-     folder ("Camera 1", "Camera 2" …). Choosing **Use each recording's folder name** for
-     the project always sorts cameras automatically.
-
-   Afterwards:
-   - Click a project's or camera's name to rename it.
-   - The **⤢** button beside a camera moves the whole camera to another
-     project, or to a new one. The **⤢** beside a file moves it to another
-     camera in any project, or to a new camera.
-   - **Scan project** scans every recording in the project; **Scan camera**
-     scans every recording from that camera. Each uses its own ROIs.
+   **Projects, surveys and cameras**: the list is organised
+   **Project › Survey › Camera**. A project is a site, a survey is one visit
+   or night there (Survey 1, Survey 2 …, each with an optional date), and
+   each survey has numbered cameras (Camera 1, Camera 2 …), each with an
+   optional name such as "Front elevation".
+   - Recordings added from the top bar go in the **Unassigned** box at the
+     top of the list, unless you choose **Put them in a project, survey and
+     camera** in the Add dialog. There you pick an existing project, survey
+     and camera or make new ones (a new survey can be given its date), or
+     choose **Sort automatically by file name**: files from one folder with
+     the same name share a camera ("front 1", "front 2" → Camera: Front).
+   - **+ Project** (at the top of the list) starts a project with Survey 1
+     and Camera 1. **+ Survey** and **+ Camera** add more.
+   - **Drag** a recording onto a camera to move it there, or onto
+     Unassigned to take it out. The **⤢** beside a recording does the same
+     from a list. **+ Add files** on a camera adds recordings straight into
+     it.
+   - Click a project's or camera's name to rename it. Set or change a
+     survey's date with its date box; it can be left blank.
+   - The **⤢** on a camera moves the camera, with its recordings, to another
+     survey. The bin deletes a project, survey or camera; its recordings go
+     back to Unassigned (no files are deleted).
+   - **Scan project**, **Scan survey** and **Scan camera** scan every
+     recording in it; **Scan unassigned** scans the unassigned ones. Each
+     uses its own ROIs.
+   - **Tree** shows everything as Project › Survey › Camera › recording.
+     Click a recording there to open it.
    - The report's *Location* starts as the project name.
-   - Recordings from one camera on one night shouldn't overlap in time. If
-     two do, the camera shows an amber warning naming them, so you can check
-     each is under the right camera.
+   - One camera records one file at a time, so its recordings shouldn't
+     overlap in time. If two do, the camera shows an amber warning naming
+     them, so you can check each is under the right camera.
 2. **Draw the region of interest (ROI).** The ROI toolbar sits just under
    the Viewing Mode buttons. Click the picture of the shape you want:
    - **Polygon**: click round the roost features. A line follows your cursor
      from the last point, with a dashed line back to the start. Backspace
      removes the last point.
    - **Rectangle** or **Circle**: drag on the picture to draw it, drag the
-     middle to move it, or drag an edge or corner handle to resize it. It's
-     saved as soon as you let go, with no need to finish it. To adjust it
-     later, pick the shape again.
+     middle to move it, or drag an edge or corner handle to resize it, as
+     many times as you like. Each change is saved as you let go. Click
+     **Done** (or press Enter, or right-click) when it's right; **Cancel**
+     puts back the outline it had before.
 
    For a polygon, **right-click** on the picture to finish (or press Enter,
    or click **Finish**). An open polygon is joined back to its first point
@@ -101,10 +110,10 @@ clicking **Quit** in the top bar, closes it.
    the picture.
 3. **Scan.** The scan buttons sit beside the **Event Log** heading:
    - The **▾** on the Scan button lists your ROIs. Tick the ones to scan
-     (Scan Footage, Scan camera and Analyse all listed use this). All the
+     (Scan Footage and the project, survey and camera scans use this). All the
      ticked ROIs are scanned in one pass, so extra ROIs barely add time.
-   - **Scan Footage** scans the whole recording. **Analyse all listed** in
-     the top bar scans every listed file.
+   - **Scan Footage** scans the whole recording. To scan several, use the
+     scan buttons in the recordings list (step 1).
    - Tick **Play limits only** before Scan Footage to scan only between the
      two blue play-limit markers on the progress bar (see step 5). Use it to scan just the
      emergence period of a long recording. Parts not scanned are hatched
@@ -164,6 +173,15 @@ clicking **Quit** in the top bar, closes it.
    ticked and an event is selected, the markers follow that event. Dragging
    a marker unticks it.
 
+   **The same moment on another camera**: an event opens on the camera that
+   recorded it. If the recording is in a survey with other cameras, the
+   selected event has a **View this time on** list. Pick another camera and
+   the program opens that camera's recording covering the same time, puts
+   the picture at the event's start and sets the play limits round it. A
+   bar above the picture says what you're looking at, with **Back to
+   Event N** to return. If that camera has no recording covering the time,
+   it says so.
+
    Then choose a classification and **Confirm** or **Reject** the event.
    **Undo** clears your decision.
 
@@ -215,8 +233,9 @@ The **Viewing Mode** bar has four modes (keys `1`–`4`):
   - start from scratch: tick any of Max Frame Interval, Sliding Subtraction
     and Max Continuous, and set their frames (Window Average is used only
     for scanning, as it blurs the picture);
-  - show the result on its own, or overlaid or crossfaded with the thermal
-    picture, at an opacity you choose;
+  - tick **Blend Filter With Thermal** to lay the result over the thermal
+    picture, at the opacity you choose (untick it to see the filter on
+    its own);
   - name and save it.
 
   Some filters conflict, for example Max Continuous with Sliding
@@ -224,9 +243,9 @@ The **Viewing Mode** bar has four modes (keys `1`–`4`):
   you about these. Custom filters change only what you see, never the
   scan.
 
-**Trail persistence** (the ▾ on the Detection button) sets how many frames
-the Max Frame Interval and Sliding Subtraction filters use for the trails
-(1–60; the default is 5 / 5). Longer persistence gives longer, brighter
+**Detection settings** (the ▾ joined to the Detection button) has one
+setting, **Frames**: how many frames each trail lasts. It sets Max Frame
+Interval and Sliding Subtraction together (1–60; the default is 5). Longer persistence gives longer, brighter
 trails. It changes the view straight away, and exports use it too. It
 doesn't change the scan, which always uses Window Average + Sliding
 Subtraction 5. It applies to every recording. To keep a change for next
@@ -272,7 +291,7 @@ Each view sets its own colour scale. Other shortcuts: `n`/`p` move to the next o
 
 ## Settings
 
-Click **Settings** in the top bar. Change what you need, then click **Save
+Click the **Settings** (cog) button in the top bar. Change what you need, then click **Save
 settings** to keep it for next time. **Cancel** leaves everything as it was.
 Settings are saved in `settings.json` in the program folder.
 
@@ -330,16 +349,11 @@ reads that camera's files correctly.
   clock time and duration (on screen, in exports, CSVs and reports) uses
   them. A file without them gets its
   frame rate from when it finished recording (its "last modified" time).
-  The **fps** box at the top shows the frame rate and where it came from:
-  *from file*, *estimated* or *assumed*. Type a value to override it, and
-  click **Auto** to go back to the file's own timing.
+
 - Times are shown in UK time: BST in summer and GMT in winter, changing on
   the official dates. Dates are shown as dd/mm/yyyy. This applies everywhere: the app, the picture overlay,
   exports and CSVs. The camera stores its start time in UTC, and the app
   converts it.
-- Frame rate isn't stored anywhere the program can find. It defaults to
-  16 Hz, as Research Studio shows. Change it in the top bar if a camera
-  recorded at a different rate, because timestamps depend on it.
 - Temperatures: A70/A700 "Temperature (Factory)" data is read as 0.01 K per
   count. Files saved in counts show as counts, which still works for
   detection.

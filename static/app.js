@@ -55,57 +55,69 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp
 
 // ------------------------------------------------------------ recordings list
 function parentName(p) { const parts = p.split(/[\\/]/); return parts.slice(-3, -1).join(" › "); }
-// Adding recordings asks which camera they belong to: a new camera, an
-// existing one, or sorted automatically by file name and folder.
-// Adding recordings asks which project and camera they belong to: new,
-// existing, or sorted automatically (project = folder name, camera = file
-// name, e.g. front 1, front 2 -> Front).
-function projNames() { return (S.projects || []).map((p) => p.name); }
-function camNames(project) { const p = (S.projects || []).find((x) => x.name === project); return p ? p.cameras.map((c) => c.name) : []; }
+// Recordings are organised Project > Survey > Camera. Added recordings go in
+// the Unassigned box unless the Add dialog puts them in a camera; they can be
+// dragged between cameras afterwards.
+const ICON_PROJ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const ICON_CAM = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+const ICON_SV = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const ICON_BIN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
 function radio(name, value) { return document.querySelector(`[name=${name}][value=${value}]`); }
-function curPlace() { const f = S.rec && S.files.find((x) => x.path === S.rec.path); return f ? { project: f.project, camera: f.camera } : {}; }
-function openAdd() {
+function findCam(id) {   // {project, survey, camera} for a camera id
+  for (const pj of S.tree || []) for (const sv of pj.surveys) for (const c of sv.cameras) if (c.id === id) return { project: pj, survey: sv, camera: c };
+  return null;
+}
+function fileRow(path) { return (S.files || []).find((f) => f.path === path); }
+async function org(body) { const r = await api("/api/org", body); setFiles(r); return r; }
+
+// ---- the Add dialog
+function fillAddPlace(want) {   // want: {project, survey, camera} ids to preselect
+  const tree = S.tree || [];
+  const ps = $("#add-proj"), pv = want.project ?? ps.value;
+  ps.innerHTML = tree.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("") + '<option value="__new">+ New project</option>';
+  ps.value = pv === "__new" || tree.some((p) => p.id === pv) ? pv : tree.length ? tree[0].id : "__new";
+  const pj = tree.find((p) => p.id === ps.value);
+  $("#add-proj-name").hidden = !!pj;
+  const ss = $("#add-sv"), sv0 = want.survey ?? ss.value;
+  ss.innerHTML = (pj ? pj.surveys.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("") : "") + `<option value="__new">+ New survey${pj ? ` (Survey ${Math.max(0, ...pj.surveys.map((s) => s.no)) + 1})` : " (Survey 1)"}</option>`;
+  ss.value = sv0 === "__new" || (pj && pj.surveys.some((s) => s.id === sv0)) ? (pj ? sv0 : "__new") : pj && pj.surveys.length ? pj.surveys[pj.surveys.length - 1].id : "__new";
+  const sv = pj && pj.surveys.find((s) => s.id === ss.value);
+  $("#add-sv-date-wrap").hidden = !!sv;
+  const cs = $("#add-cam"), c0 = want.camera ?? cs.value;
+  const nextNo = sv ? Math.max(0, ...sv.cameras.map((c) => c.no)) + 1 : 1;
+  cs.innerHTML = (sv ? sv.cameras.map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join("") : "")
+    + `<option value="__new">+ New camera (Camera ${nextNo})</option><option value="__auto">Sort automatically by file name</option>`;
+  cs.value = sv && sv.cameras.some((c) => c.id === c0) ? c0 : (c0 === "__auto" || c0 === "__new" ? c0 : sv && sv.cameras.length ? sv.cameras[0].id : "__new");
+  $("#add-cam-name").hidden = cs.value !== "__new";
+  $("#add-auto-note").hidden = cs.value !== "__auto";
+  const on = radio("add-where", "camera").checked;
+  $("#add-place").classList.toggle("off", !on);
+  $("#add-place").querySelectorAll("select, input").forEach((el) => (el.disabled = !on));
+}
+// opened from the top bar or the empty viewer: Unassigned; from a camera's "+ Add files": that camera
+function openAdd(cameraId) {
   $("#folder-input").value = ""; $("#pick-msg").hidden = true; $("#add-cam-msg").hidden = true;
-  const pn = projNames(), cur = curPlace();
-  $("#add-proj-existing").innerHTML = pn.map((n) => `<option>${esc(n)}</option>`).join("");
-  if (cur.project) $("#add-proj-existing").value = cur.project;
-  radio("add-proj", "existing").disabled = $("#add-proj-existing").disabled = !pn.length;
-  let k = 1; while (pn.some((n) => n.toLowerCase() === `project ${k}`)) k++;
-  $("#add-proj-new").value = ""; $("#add-proj-new").placeholder = `e.g. St Fagans 10.8.26 (or leave as Project ${k})`;
-  radio("add-proj", pn.length ? "existing" : "new").checked = true;
-  syncAddCams(cur.camera);
+  $("#add-proj-name").value = ""; $("#add-cam-name").value = ""; $("#add-sv-date").value = "";
+  const at = typeof cameraId === "string" ? findCam(cameraId) : null;
+  radio("add-where", at ? "camera" : "none").checked = true;
+  fillAddPlace(at ? { project: at.project.id, survey: at.survey.id, camera: at.camera.id } : {});
   $("#dlg-folder").showModal();
 }
-// the camera choices follow the project chosen
-function syncAddCams(prefer) {
-  const pmode = (document.querySelector("[name=add-proj]:checked") || {}).value;
-  const names = pmode === "existing" ? camNames($("#add-proj-existing").value) : [];
-  $("#add-cam-existing").innerHTML = names.map((n) => `<option>${esc(n)}</option>`).join("");
-  if (prefer && names.includes(prefer)) $("#add-cam-existing").value = prefer;
-  radio("add-cam", "existing").disabled = $("#add-cam-existing").disabled = !names.length;
-  const auto = pmode === "auto";
-  for (const v of ["new", "existing"]) { radio("add-cam", v).disabled = auto || (v === "existing" && !names.length); }
-  $("#add-cam-new").disabled = auto;
-  if (auto) radio("add-cam", "auto").checked = true;
-  else radio("add-cam", names.length ? "existing" : "new").checked = true;
-  let k = 1; while (names.some((n) => n.toLowerCase() === `camera ${k}`)) k++;
-  $("#add-cam-new").placeholder = `e.g. Front elevation (or leave as Camera ${k})`;
-}
-document.querySelectorAll("[name=add-proj]").forEach((r) => (r.onchange = () => syncAddCams()));
-$("#add-proj-existing").addEventListener("change", () => { radio("add-proj", "existing").checked = true; syncAddCams(); });
-$("#add-proj-new").addEventListener("focus", () => { radio("add-proj", "new").checked = true; syncAddCams(); });
-$("#add-cam-new").addEventListener("focus", () => (radio("add-cam", "new").checked = true));
-$("#add-cam-existing").addEventListener("change", () => (radio("add-cam", "existing").checked = true));
-function addChoice() {
-  const pmode = (document.querySelector("[name=add-proj]:checked") || {}).value || "auto";
-  const mode = (document.querySelector("[name=add-cam]:checked") || {}).value || "auto";
+document.querySelectorAll("[name=add-where]").forEach((r) => (r.onchange = () => fillAddPlace({})));
+$("#add-proj").onchange = () => fillAddPlace({ survey: "", camera: "" });
+$("#add-sv").onchange = () => fillAddPlace({ camera: "" });
+$("#add-cam").onchange = () => fillAddPlace({});
+function addTarget() {
+  if (!radio("add-where", "camera").checked) return null;
+  const p = $("#add-proj").value, sv = $("#add-sv").value, c = $("#add-cam").value;
   return {
-    project: { mode: pmode, name: pmode === "new" ? $("#add-proj-new").value.trim() : pmode === "existing" ? $("#add-proj-existing").value : "" },
-    camera: { mode, name: mode === "new" ? $("#add-cam-new").value.trim() : mode === "existing" ? $("#add-cam-existing").value : "" },
+    project: p === "__new" ? { name: $("#add-proj-name").value.trim() } : { id: p },
+    survey: p === "__new" || sv === "__new" ? { date: $("#add-sv-date").value } : { id: sv },
+    camera: c === "__auto" ? { auto: true } : c === "__new" || p === "__new" || sv === "__new" ? { name: $("#add-cam-name").value.trim() } : { id: c },
   };
 }
-$("#btn-open").onclick = openAdd;
-$("#btn-empty-add").onclick = openAdd;
+$("#btn-open").onclick = () => openAdd();
+$("#btn-empty-add").onclick = () => openAdd();
 function setEmpty(msg, button) { $("#empty-msg").textContent = msg; $("#btn-empty-add").hidden = !button; }
 async function browse(kind) {
   const btns = [$("#btn-browse-files"), $("#btn-browse-folder")], msg = $("#pick-msg");
@@ -128,106 +140,166 @@ $("#dlg-folder").addEventListener("close", async () => {
   const paths = $("#folder-input").value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   if (!paths.length) return;
   try {
-    const ch = addChoice();
-    if (!$("#add-replace").checked) {
-      if (ch.project.mode === "new" && ch.project.name && projNames().some((n) => n.toLowerCase() === ch.project.name.toLowerCase()))
-        return toast(`There's already a project called ${ch.project.name}. Nothing was added: choose it under "Add to an existing project", or give the new project another name.`, 8000);
-      if (ch.project.mode === "existing" && ch.camera.mode === "new" && ch.camera.name && camNames(ch.project.name).some((n) => n.toLowerCase() === ch.camera.name.toLowerCase()))
-        return toast(`${ch.project.name} already has a camera called ${ch.camera.name}. Nothing was added: choose it under "Add to an existing camera", or give the new camera another name.`, 8000);
-    }
-    const r = await api("/api/add", { paths, replace: $("#add-replace").checked, project: ch.project, camera: ch.camera });
+    const t = addTarget();
+    if (t && t.project.name && (S.tree || []).some((p) => p.name.toLowerCase() === t.project.name.toLowerCase()))
+      return toast(`There's already a project called ${t.project.name}. Nothing was added: choose it from the Project list, or give the new project another name.`, 8000);
+    const r = await api("/api/add", { paths, replace: $("#add-replace").checked, target: t });
     setFiles(r);
     if (r.problems && r.problems.length) toast(r.problems.join("; "), 7000);
-    if (!S.rec && S.files.length === 1) openRec(S.files[0].path);
+    if (r.first) openRec(r.first);   // show the first recording added
   } catch (e) { err(e); }
 });
-function setFiles(r) { S.files = r.files || []; S.projects = r.projects || []; renderFiles(); }
+function setFiles(r) { S.files = r.files || []; S.tree = r.tree || []; S.unassigned = r.unassigned || []; renderFiles(); }
 function hhmm(iso) { return iso ? ukTime(Date.parse(iso)).d.toISOString().substr(11, 5) : ""; }
-// Recordings, grouped by project, then by camera. Files from one camera on
-// one night shouldn't overlap in time, so an overlap is flagged on the camera.
-const ICON_PROJ = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
-const ICON_CAM = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
-function nameBox(cls, value, label, onSave) {
+function nameBox(cls, value, label, onSave, placeholder) {
   const i = document.createElement("input"); i.type = "text"; i.maxLength = 40; i.className = cls; i.value = value;
-  i.setAttribute("aria-label", label); i.title = "Click to rename";
+  i.setAttribute("aria-label", label); i.title = "Click to rename"; if (placeholder) i.placeholder = placeholder;
   i.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } if (e.key === "Escape") { i.value = value; i.blur(); } };
-  i.onchange = async () => { const v = i.value.trim(); if (!v || v === value) { i.value = value; return; } try { setFiles(await onSave(v)); } catch (e) { i.value = value; err(e); } };
+  i.onchange = async () => { const v = i.value.trim(); if (v === value || (!v && !placeholder)) { i.value = value; return; } try { await onSave(v); } catch (e) { i.value = value; err(e); } };
   return i;
+}
+function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+function smallBtn(text, title, onclick, cls = "") { const b = el("button", "btn xs " + cls, text); b.type = "button"; b.title = title; b.onclick = onclick; return b; }
+function binBtn(what, onYes) {
+  const b = el("button", "rm bin", ICON_BIN); b.type = "button"; b.title = `Delete ${what}`; b.setAttribute("aria-label", `Delete ${what}`);
+  b.onclick = () => { if (confirm(`Delete ${what}? Its recordings move to Unassigned; no files are deleted.`)) onYes(); };
+  return b;
+}
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+// drag a recording onto a camera box (or the Unassigned box) to move it there
+function dropZone(box, cameraId) {
+  box.addEventListener("dragover", (e) => { if (S.dragPath) { e.preventDefault(); e.stopPropagation(); box.classList.add("drop"); } });
+  box.addEventListener("dragleave", (e) => { if (!box.contains(e.relatedTarget)) box.classList.remove("drop"); });
+  box.addEventListener("drop", async (e) => {
+    e.preventDefault(); e.stopPropagation(); box.classList.remove("drop");
+    const p = S.dragPath; S.dragPath = null; if (!p) return;
+    const f = fileRow(p); if (f && f.camera_id === cameraId) return;
+    try { await org({ action: "move", paths: [p], camera: cameraId }); } catch (er) { err(er); }
+  });
+}
+function fileCard(f, cameraId) {
+  const w = el("div", "file-wrap");
+  const b = el("button", "file" + (S.rec && S.rec.path === f.path ? " cur" : ""));
+  b.title = f.path + "\nDrag onto a camera to move it there"; w.draggable = true;
+  const k = f.status === "Reviewed" ? "ok" : f.status === "In review" ? "todo" : "";
+  const times = f.start ? `${hhmm(f.start)}–${hhmm(f.end)} · ` : "";
+  b.innerHTML = `<span class="file-name">${esc(f.name)}<br><span class="small muted">${times}${f.size_gb} GB</span></span><span class="chip ${k}">${esc(f.status)}</span>`;
+  b.onclick = () => openRec(f.path);
+  w.addEventListener("dragstart", (e) => { S.dragPath = f.path; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", f.name); w.classList.add("dragging"); });
+  w.addEventListener("dragend", () => { S.dragPath = null; w.classList.remove("dragging"); document.querySelectorAll(".drop").forEach((x) => x.classList.remove("drop")); });
+  // the same move without dragging
+  const mv = el("select", "cam-move"); mv.setAttribute("aria-label", `Move ${f.name} to another camera`); mv.title = "Move to another camera";
+  mv.innerHTML = `<option value="" selected disabled>Move recording to…</option>` + (cameraId ? '<option value="__none">Unassigned</option>' : "")
+    + (S.tree || []).map((pj) => pj.surveys.map((sv) => `<optgroup label="${esc(pj.name)} › ${esc(sv.label)}">${sv.cameras.filter((c) => c.id !== cameraId).map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join("")}</optgroup>`).join("")).join("");
+  mv.onchange = async () => { try { await org({ action: "move", paths: [f.path], camera: mv.value === "__none" ? "" : mv.value }); } catch (e) { err(e); } };
+  const x = el("button", "rm", "×"); x.type = "button";
+  x.setAttribute("aria-label", `Remove ${f.name} from the list`); x.title = "Remove from the list (the file isn't deleted)";
+  x.onclick = async () => { try { const r = await api("/api/remove", { path: f.path }); if (S.rec && S.rec.path === f.path) location.reload(); setFiles(r); } catch (e) { err(e); } };
+  w.append(b, mv, x);
+  return w;
 }
 function renderFiles() {
   const box = $("#files"); box.innerHTML = "";
-  $("#btn-scan-all").disabled = !S.files.length;
-  if (!S.files.length) { box.innerHTML = '<p class="muted small">Add .ats files, or a whole folder of them.</p>'; return; }
-  const byPath = Object.fromEntries(S.files.map((f) => [f.path, f]));
-  const projects = S.projects || [];
-  for (const pj of projects) {
-    const pg = document.createElement("div"); pg.className = "proj-group";
-    const ph = document.createElement("div"); ph.className = "proj-head"; ph.innerHTML = ICON_PROJ;
-    ph.appendChild(nameBox("proj-name", pj.name, "Project name", (v) => api("/api/cameras", { action: "rename_project", old: pj.name, new: v })));
-    const psub = document.createElement("div"); psub.className = "cam-sub proj-sub";
-    const nf = pj.paths.length, nc = pj.cameras.length;
-    psub.innerHTML = `<span class="small muted">${nc} camera${nc === 1 ? "" : "s"} · ${nf} recording${nf === 1 ? "" : "s"}</span>`;
-    const ps = document.createElement("button"); ps.className = "btn xs"; ps.type = "button"; ps.textContent = "Scan project";
-    ps.title = `Scan every recording in ${pj.name}`; ps.onclick = () => scanGroup(pj.name);
-    psub.appendChild(ps); pg.append(ph, psub);
-    for (const cam of pj.cameras) {
-      const g = document.createElement("div"); g.className = "cam-group";
-      const head = document.createElement("div"); head.className = "cam-head"; head.innerHTML = ICON_CAM;
-      head.appendChild(nameBox("cam-name", cam.name, "Camera name", (v) => api("/api/cameras", { action: "rename", project: pj.name, old: cam.name, new: v })));
-      {   // move a whole camera to another project
-        const mc = document.createElement("select"); mc.className = "cam-move"; mc.title = "Move this camera to another project";
-        mc.setAttribute("aria-label", `Move ${cam.name} to another project`);
-        mc.innerHTML = `<option value="" selected disabled>Move camera to project…</option>${projects.filter((x) => x.name !== pj.name).map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join("")}<option value="__new">New project</option>`;
-        mc.onchange = async () => { try { setFiles(await api("/api/cameras", { action: "move_camera", project: pj.name, camera: cam.name, to: mc.value === "__new" ? "" : mc.value })); } catch (e) { err(e); mc.value = ""; } };
-        head.appendChild(mc);
+  const tree = S.tree || [], un = S.unassigned || [];
+  if (!S.files.length && !tree.length) { box.innerHTML = '<p class="muted small">Add .ats files, or a whole folder of them, with the folder button at the top.</p>'; return; }
+  // Unassigned, above the projects
+  if (un.length || S.files.length) {
+    const ug = el("div", "un-group");
+    const uh = el("div", "un-head", `<span class="lvl">Unassigned</span><span class="small muted">${plural(un.length, "recording")}</span>`);
+    ug.appendChild(uh);
+    if (!un.length) ug.appendChild(el("p", "small muted drop-hint", "Drag a recording here to take it out of its camera."));
+    for (const p of un) { const f = fileRow(p); if (f) ug.appendChild(fileCard(f, "")); }
+    if (un.length) { const us = smallBtn("Scan unassigned", "Scan every unassigned recording", () => scanGroup("unassigned", "the unassigned recordings")); uh.appendChild(us); }
+    dropZone(ug, ""); box.appendChild(ug);
+  }
+  for (const pj of tree) {
+    const pg = el("div", "proj-group");
+    pg.appendChild(el("span", "lvl", "Project"));
+    const ph = el("div", "proj-head", ICON_PROJ);
+    ph.appendChild(nameBox("proj-name", pj.name, "Project name", (v) => org({ action: "rename", id: pj.id, name: v })));
+    ph.appendChild(binBtn(`project ${pj.name}`, () => org({ action: "delete", id: pj.id }).catch(err)));
+    const psub = el("div", "cam-sub proj-sub", `<span class="small muted">${plural(pj.surveys.length, "survey")} · ${plural(pj.paths.length, "recording")}</span>`);
+    const pb = el("span", "row-btns");
+    pb.append(smallBtn("+ Survey", `Add a survey (a visit or night) to ${pj.name}`, () => org({ action: "new_survey", project: pj.id }).catch(err)),
+              smallBtn("Scan project", `Scan every recording in ${pj.name}`, () => scanGroup(pj.id, pj.name)));
+    psub.appendChild(pb); pg.append(ph, psub);
+    for (const sv of pj.surveys) {
+      const sg = el("div", "sv-group");
+      const sh = el("div", "sv-head", ICON_SV + `<span class="sv-title">Survey ${sv.no}</span>`);
+      const d = el("input", "sv-date"); d.type = "date"; d.value = sv.date || ""; d.title = "Survey date (optional)"; d.setAttribute("aria-label", `Survey ${sv.no} date`);
+      d.onchange = () => org({ action: "set_date", id: sv.id, date: d.value }).catch(err);
+      sh.append(d, binBtn(`Survey ${sv.no} of ${pj.name}`, () => org({ action: "delete", id: sv.id }).catch(err)));
+      const ssub = el("div", "cam-sub", `<span class="small muted">${plural(sv.cameras.length, "camera")} · ${plural(sv.paths.length, "recording")}</span>`);
+      const sb = el("span", "row-btns");
+      sb.append(smallBtn("+ Camera", `Add a camera to Survey ${sv.no}`, () => org({ action: "new_camera", survey: sv.id }).catch(err)),
+                smallBtn("Scan survey", `Scan every recording in Survey ${sv.no}`, () => scanGroup(sv.id, `Survey ${sv.no}`)));
+      ssub.appendChild(sb); sg.append(sh, ssub);
+      for (const cam of sv.cameras) {
+        const g = el("div", "cam-group"); g.dataset.cam = cam.id;
+        const head = el("div", "cam-head", ICON_CAM + `<span class="cam-no">Camera ${cam.no}</span>`);
+        head.appendChild(nameBox("cam-name", cam.name, `Camera ${cam.no} name`, (v) => org({ action: "rename", id: cam.id, name: v }), "Add a name"));
+        const others = tree.flatMap((p) => p.surveys.filter((s) => s.id !== sv.id).map((s) => [s.id, `${p.name} › ${s.label}`]));
+        head.appendChild(binBtn(`Camera ${cam.no}`, () => org({ action: "delete", id: cam.id }).catch(err)));
+        let moveCam = null;
+        if (others.length) {   // move the whole camera to another survey
+          const mc = el("select", "cam-move"); mc.title = "Move this camera to another survey"; mc.setAttribute("aria-label", `Move Camera ${cam.no} to another survey`);
+          mc.innerHTML = `<option value="" selected disabled>Move camera to survey…</option>` + others.map(([id, l]) => `<option value="${id}">${esc(l)}</option>`).join("");
+          mc.onchange = () => org({ action: "move_camera", id: cam.id, survey: mc.value }).catch((e) => { err(e); mc.value = ""; });
+          moveCam = mc;
+        }
+        const sub = el("div", "cam-sub", `<span class="small muted">${plural(cam.paths.length, "recording")}</span>`);
+        const cb = el("span", "row-btns");
+        cb.append(smallBtn("+ Add files", `Add recordings to Camera ${cam.no}`, () => openAdd(cam.id)));
+        if (cam.paths.length) cb.append(smallBtn("Scan camera", `Scan every recording from Camera ${cam.no}`, () => scanGroup(cam.id, `Camera ${cam.no}`), "cam-scan"));
+        if (moveCam) cb.append(moveCam);
+
+        sub.appendChild(cb); g.append(head, sub);
+        for (const o of cam.overlaps || []) {
+          const w = el("div", "cam-warn small", `<b>⚠ Times overlap:</b> ${esc(o.a)} and ${esc(o.b)} both cover ${hhmm(o.from)}–${hhmm(o.to)}. One camera records one file at a time, so check each is under the right camera.`);
+          w.setAttribute("role", "alert"); g.appendChild(w);
+        }
+        if (!cam.paths.length) g.appendChild(el("p", "small muted drop-hint", "Drag recordings here, or use + Add files."));
+        for (const path of cam.paths) { const f = fileRow(path); if (f) g.appendChild(fileCard(f, cam.id)); }
+        dropZone(g, cam.id);
+        sg.appendChild(g);
       }
-      const sub = document.createElement("div"); sub.className = "cam-sub";
-      const n = cam.paths.length;
-      sub.innerHTML = `<span class="small muted">${n} recording${n === 1 ? "" : "s"}</span>`;
-      const cs = document.createElement("button"); cs.className = "btn xs cam-scan"; cs.type = "button"; cs.textContent = "Scan camera";
-      cs.title = `Scan every recording from ${cam.name}`; cs.onclick = () => scanGroup(pj.name, cam.name);
-      sub.appendChild(cs); g.append(head, sub);
-      for (const o of cam.overlaps || []) {
-        const w = document.createElement("div"); w.className = "cam-warn small"; w.setAttribute("role", "alert");
-        w.innerHTML = `<b>⚠ Times overlap:</b> ${esc(o.a)} and ${esc(o.b)} both cover ${hhmm(o.from)}–${hhmm(o.to)}. Recordings from one camera on one night shouldn't overlap, so check each is under the right camera.`;
-        g.appendChild(w);
-      }
-      for (const path of cam.paths) {
-        const f = byPath[path]; if (!f) continue;
-        const w = document.createElement("div"); w.className = "file-wrap";
-        const b = document.createElement("button");
-        b.className = "file" + (S.rec && S.rec.path === f.path ? " cur" : "");
-        b.title = f.path;
-        const k = f.status === "Reviewed" ? "ok" : f.status === "In review" ? "todo" : "";
-        const times = f.start ? `${hhmm(f.start)}–${hhmm(f.end)} · ` : "";
-        b.innerHTML = `<span class="file-name">${esc(f.name)}<br><span class="small muted">${times}${f.size_gb} GB</span></span><span class="chip ${k}">${esc(f.status)}</span>`;
-        b.onclick = () => openRec(f.path);
-        const mv = document.createElement("select"); mv.className = "cam-move"; mv.setAttribute("aria-label", `Move ${f.name} to another camera`); mv.title = "Move to another camera";
-        mv.innerHTML = `<option value="" selected disabled>Move recording to…</option>` + projects.map((x) =>
-          `<optgroup label="${esc(x.name)}">${x.cameras.filter((c) => !(x.name === pj.name && c.name === cam.name)).map((c) =>
-            `<option value="${esc(JSON.stringify([x.name, c.name]))}">${esc(c.name)}</option>`).join("")}<option value="${esc(JSON.stringify([x.name, ""]))}">New camera</option></optgroup>`).join("");
-        mv.onchange = async () => {
-          const [project, camera] = JSON.parse(mv.value);
-          try { setFiles(await api("/api/cameras", { action: "move", path: f.path, project, camera })); } catch (e) { err(e); }
-        };
-        const x = document.createElement("button"); x.className = "rm"; x.textContent = "×";
-        x.setAttribute("aria-label", `Remove ${f.name} from the list`);
-        x.onclick = async () => { try { const r = await api("/api/remove", { path: f.path }); if (S.rec && S.rec.path === f.path) location.reload(); setFiles(r); } catch (e) { err(e); } };
-        w.append(b, mv, x); g.appendChild(w);
-      }
-      pg.appendChild(g);
+      pg.appendChild(sg);
     }
     box.appendChild(pg);
   }
 }
-async function scanGroup(project, camera) {
-  const what = camera ? camera : project;
+$("#btn-new-project").onclick = async () => {
+  try { const r = await org({ action: "new_project" }); const at = findCam(r.created);
+    const inp = at && [...document.querySelectorAll(".proj-name")].find((i) => i.value === at.project.name); if (inp) { inp.focus(); inp.select(); } } catch (e) { err(e); }
+};
+async function scanGroup(node, what) {
   try {
-    const r = await api("/api/scan", { project, camera: camera || "" });
+    const r = await api("/api/scan", { node });
     if (!r.jobs.length) return toast(`No recording in ${what} has an ROI drawn yet. Draw one, and tick "Use for every file from this camera" to share it.`, 7000);
     toast(`Scanning ${r.jobs.length} recording${r.jobs.length === 1 ? "" : "s"} from ${what}…` + (r.skipped ? ` ${r.skipped} skipped: no ROI drawn.` : ""), 6000); pollJobs();
   } catch (e) { err(e); }
 }
+// Tree: Project > Survey > Camera > recording, at a glance. Click a recording to open it.
+function renderTree() {
+  const t = $("#tree-body"), cur = S.rec && S.rec.path;
+  const leaf = (p) => { const f = fileRow(p); return f ? `<li><button type="button" class="tree-file${p === cur ? " cur" : ""}" data-path="${esc(p)}">${esc(f.name)}</button> <span class="small muted">${f.start ? hhmm(f.start) + "–" + hhmm(f.end) : ""}</span></li>` : ""; };
+  let h = "";
+  for (const pj of S.tree || []) {
+    h += `<li><details open><summary>${ICON_PROJ} <b>${esc(pj.name)}</b></summary><ul>`;
+    for (const sv of pj.surveys) {
+      h += `<li><details open><summary>${ICON_SV} ${esc(sv.label)}</summary><ul>`;
+      for (const c of sv.cameras) h += `<li><details open><summary>${ICON_CAM} ${esc(c.label)} <span class="small muted">(${c.paths.length})</span></summary><ul>${c.paths.map(leaf).join("") || '<li class="small muted">No recordings</li>'}</ul></details></li>`;
+      h += "</ul></details></li>";
+    }
+    h += "</ul></details></li>";
+  }
+  if ((S.unassigned || []).length) h += `<li><details open><summary><b>Unassigned</b></summary><ul>${S.unassigned.map(leaf).join("")}</ul></details></li>`;
+  t.innerHTML = h ? `<ul class="tree">${h}</ul>` : '<p class="small muted">Nothing listed yet.</p>';
+  t.querySelectorAll(".tree-file").forEach((b) => (b.onclick = () => { $("#dlg-tree").close(); openRec(b.dataset.path); }));
+}
+$("#btn-tree").onclick = () => { renderTree(); $("#dlg-tree").showModal(); };
+$("#tree-expand").onclick = () => $("#tree-body").querySelectorAll("details").forEach((d) => (d.open = true));
+$("#tree-collapse").onclick = () => $("#tree-body").querySelectorAll("details").forEach((d) => (d.open = false));
 async function refreshFiles() { try { setFiles(await api("/api/files")); } catch (e) {} }
 
 async function openRec(path) {
@@ -237,11 +309,8 @@ async function openRec(path) {
     S.rec = await api("/api/open", { path });
     S.rng = { raw: null, review: null, path: null, blend: null, custom: null }; S.track = {}; S.info = null;   // each recording starts on Auto
     S.frame = 0; S.sel = null; S.ws = 0; S.we = S.rec.frames - 1; S.pts = S.rec.roi || []; S.lim = null; S.times = null;
+    if (!S.linking) $("#linked-bar").hidden = true;
     $("#scrub").max = S.rec.frames - 1;
-    $("#crumb-folder").textContent = parentName(S.rec.path);
-    $("#crumb-file").textContent = "› " + S.rec.name;
-    setCrumbMeta();
-    $("#fps-wrap").hidden = false; showFps();
     ["#btn-roi-clear", "#btn-scan", "#btn-scan-menu", "#btn-roi-pick"].forEach((s) => ($(s).disabled = false));
     document.querySelectorAll(".shape-btn").forEach((b) => (b.disabled = false));
     S.roiHidden = new Set(); S.roiActive = (S.rec.rois[0] || {}).id; renderRois();
@@ -253,6 +322,7 @@ async function openRec(path) {
 // Frame rate: read from the file's own frame clock where it has one. Typing
 // a value overrides it; "Auto" goes back to the file's timing.
 function showFps() {
+  if (!$("#fps")) return;
   const src = S.rec.fps_source || "";
   $("#fps").value = Math.round(S.rec.fps * 100) / 100;
   $("#fps-src").textContent = src === "frame clock" ? "from file" : src === "set by you" ? "set by you" : src.startsWith("estimated") ? "estimated" : "assumed";
@@ -264,8 +334,7 @@ function showFps() {
     : "This file has no per-frame time stamps and the frame rate couldn't be estimated. Type the camera's frame rate.";
 }
 async function setFps(v) { try { S.rec = await api("/api/fps", { fps: v }); S.times = null; loadTimes(S.rec.path); showFps(); refreshFiles(); setCrumbMeta(); renderEvents(); await loadActivity(true); showFrame(); } catch (e) { err(e); } }
-$("#fps").onchange = () => setFps(+$("#fps").value);
-$("#fps-auto").onclick = () => setFps(0);
+if ($("#fps")) { $("#fps").onchange = () => setFps(+$("#fps").value); $("#fps-auto").onclick = () => setFps(0); }
 
 // ------------------------------------------------------------ frames
 const img = $("#view");
@@ -322,7 +391,7 @@ function toggleMenu(menu, btn, open, focus) {
   m.hidden = !want; $(btn).setAttribute("aria-expanded", String(want));
   if (want && focus) $(focus).focus();
 }
-const togglePersist = (open) => toggleMenu("#persist-menu", "#btn-persist", open, "#f-mfi");
+const togglePersist = (open) => toggleMenu("#persist-menu", "#btn-persist", open, "#f-frames");
 const toggleImage = (open) => toggleMenu("#image-menu", "#btn-image", open, "#palette");
 // only one dropdown open at a time
 function closeMenus(except) {
@@ -574,7 +643,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-projects";
+const APP_VERSION = "2026.11.17-surveys";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -666,7 +735,8 @@ svg.addEventListener("pointerup", () => {
   S.box = { x0: Math.min(b.x0, b.x1), y0: Math.min(b.y0, b.y1), x1: Math.max(b.x0, b.x1), y1: Math.max(b.y0, b.y1) };
   if (S.box.x1 - S.box.x0 < 8 || S.box.y1 - S.box.y0 < 8) S.box = S.drag.b0.x1 - S.drag.b0.x0 >= 8 ? S.drag.b0 : defaultBox();
   S.drag = null; drawRoi();
-  if (S.drawing && S.shape !== "poly") finishRoi();   // rectangles and circles save as soon as you let go
+  if (S.drawing && S.shape !== "poly") saveShape();   // saved each time you let go; keep adjusting until Done
+
 });
 svg.addEventListener("pointerleave", () => { if (S.shape === "poly") { S.hover = null; drawRoi(); } });
 svg.addEventListener("click", (e) => {
@@ -684,7 +754,8 @@ function setShape(sh) {
 function startRoi(sh) {
   if (!S.rec) return;
   if (!S.drawing) {
-    S.drawing = true; S.pts = []; S.box = null; S.hover = null;
+    S.drawing = true; S.pts = []; S.box = null; S.hover = null; S.roiSaved = false;
+    S.roiOrig = (activeRoi().points || []).map((q) => q.slice()); S.roiOrigChanged = !!activeRoi().changed;
     $("#stage").classList.add("drawing"); setMode("raw");
     const p = activeRoi().points || [];   // a rectangle or circle starts on the ROI's current outline
     if (sh !== "poly" && p.length >= 3) {
@@ -698,6 +769,12 @@ document.querySelectorAll("[data-shape]").forEach((b) => (b.onclick = () => star
 // right-click on the picture finishes the ROI; an open polygon is closed back to its first point
 $("#stage").addEventListener("contextmenu", (e) => { if (!S.drawing) return; e.preventDefault(); finishRoi(); });
 $("#btn-roi-undo").onclick = () => { S.pts.pop(); drawRoi(); };
+// a rectangle or circle is saved every time you let go, without leaving drawing,
+// so it can be moved and resized as often as needed. Cancel puts back the outline it had.
+async function saveShape() {
+  try { S.rec = await api("/api/roi", { id: S.roiActive, points: shapePoints(), all_files: $("#roi-all").checked }); S.roiSaved = true; renderRois(); }
+  catch (e) { err(e); }
+}
 async function finishRoi() {
   const pts = shapePoints();
   if (pts.length < 3) return toast("Add at least 3 points first, then right-click to finish.");
@@ -706,7 +783,11 @@ async function finishRoi() {
   catch (e) { err(e); }
 }
 $("#btn-roi-done").onclick = finishRoi;
-$("#btn-roi-cancel").onclick = () => { S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); setShape(S.shape); showFrame(); };
+$("#btn-roi-cancel").onclick = async () => {
+  S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); setShape(S.shape);
+  if (S.roiSaved) { S.roiSaved = false; try { S.rec = await api("/api/roi", { id: S.roiActive, points: S.roiOrig || [], all_files: $("#roi-all").checked, restore: true, was_changed: S.roiOrigChanged }); renderRois(); } catch (e) { err(e); } }
+  showFrame();
+};
 document.addEventListener("keydown", (e) => {
   if (!S.drawing || e.target.closest("input, select, textarea, dialog")) return;
   if (e.key === "Enter") { e.preventDefault(); finishRoi(); }
@@ -725,7 +806,7 @@ function updateRoiStatus() {
   if (S.drawing) {
     el.textContent = S.shape === "poly"
       ? "Click round the roost to add points. Right-click (or Enter) to finish: the last point joins back to the first. Backspace removes a point."
-      : "Drag on the picture to draw it, drag the middle to move it, or drag a handle to resize. It's saved as soon as you let go.";
+      : "Drag on the picture to draw it, drag the middle to move it, or drag a handle to resize, as often as you like. Each change is saved; click Done (or press Enter) when it's right.";
     return;
   }
   if (!S.rec) { el.textContent = "Open a recording, then pick a shape to draw round the roost."; return; }
@@ -826,7 +907,6 @@ $("#scan-menu").addEventListener("click", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------ scan, jobs
 $("#btn-scan").onclick = () => startScan(false, $("#scan-lim-only").checked ? playBounds() : null);
-$("#btn-scan-all").onclick = () => startScan(true);
 async function startScan(all, lim) {
   if (!S.rec && !all) return;
   try {
@@ -1285,6 +1365,39 @@ async function decide(n, body) {
     }
   } catch (e) { err(e); }
 }
+// ---- the same moment on another camera from the same survey (night)
+function sameSurveyCams() {
+  const f = S.rec && fileRow(S.rec.path), at = f && f.camera_id && findCam(f.camera_id);
+  if (!at) return [];
+  const out = at.survey.cameras.filter((c) => c.id !== at.camera.id && c.paths.length);
+  out.here = at.camera; return out;
+}
+function frameAtSec(sec) {   // the first frame at or after this many seconds into the recording
+  let lo = 0, hi = S.rec.frames - 1;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (secAt(m) < sec) lo = m + 1; else hi = m; }
+  return lo;
+}
+const clockAt = (ms) => ukTime(ms).d.toISOString().substr(11, 8);
+async function viewOnCamera(camId, n) {
+  const e = evById(n), f = fileRow(S.rec.path), at = findCam(camId), here = sameSurveyCams().here;
+  if (!f || !f.start) return toast("This recording has no start time, so it can't be matched to another camera.", 6000);
+  const t0 = Date.parse(f.start) + secAt(e.f0) * 1000, t1 = Date.parse(f.start) + secAt(e.f1) * 1000;
+  const hit = at.camera.paths.map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t1 && Date.parse(r.end) >= t0);
+  if (!hit) { renderEvents(); return toast(`${at.camera.label} wasn't recording at ${clockAt(t0)} (none of its recordings cover that time).`, 7000); }
+  const back = { path: S.rec.path, n, label: here.label };
+  S.linking = true;
+  try { await openRec(hit.path); } finally { S.linking = false; }
+  if (!S.rec || S.rec.path !== hit.path) return;
+  await loadTimes(hit.path);
+  const s0 = Date.parse(hit.start), a = frameAtSec((t0 - s0) / 1000), b = Math.max(a, frameAtSec((t1 - s0) / 1000)), pad = winPad();
+  S.lim = [Math.max(0, a - pad), Math.min(S.rec.frames - 1, b + pad)]; $("#in-window").checked = false;
+  S.frame = a; drawLimits(); showFrame(); drawPlot();
+  const bar = $("#linked-bar");
+  bar.innerHTML = `<span><b>${esc(at.camera.label)}</b> at ${clockAt(t0)}–${clockAt(t1)}: the same time as Event ${n} on ${esc(back.label)}. The play limits are set to it.</span>`;
+  const bb = document.createElement("button"); bb.type = "button"; bb.className = "btn sm"; bb.textContent = `Back to Event ${n}`;
+  bb.onclick = async () => { bar.hidden = true; await openRec(back.path); if (S.rec && S.rec.path === back.path && evById(back.n)) selectEvent(back.n); };
+  bar.appendChild(bb); bar.hidden = false;
+}
 function renderEvents() {
   const box = $("#events"), evs = (S.rec && S.rec.events) || [];
   $("#btn-export").disabled = !S.sel; $("#btn-csv").disabled = !evs.length; $("#btn-report").disabled = !(S.rec && S.rec.scanned);
@@ -1312,6 +1425,13 @@ function renderEvents() {
       const x = document.createElement("div");
       x.innerHTML = `<label class="small" style="display:block;margin-top:10px">Classification<select data-cls>${["", ...CLASSES, ...(e.cls && !CLASSES.includes(e.cls) ? [e.cls] : [])].map((c) => `<option ${c === (e.cls || "") ? "selected" : ""}>${c}</option>`).join("")}</select></label>
          <div class="ev-actions"><button class="btn sm ok" data-act="confirmed">Confirm</button><button class="btn sm" data-act="rejected">Reject</button>${e.status !== "todo" ? '<button class="btn sm" data-act="todo">Undo</button>' : ""}</div>`;
+      const others = sameSurveyCams();
+      if (others.length) {   // the same time on another camera from this survey
+        const v = document.createElement("label"); v.className = "small ev-view";
+        v.innerHTML = `View this time on <select data-view><option value="" selected>${esc(others.here.label)} (this camera)</option>${others.map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join("")}</select>`;
+        v.querySelector("select").onchange = (ev) => { if (ev.target.value) viewOnCamera(ev.target.value, e.n); };
+        x.appendChild(v);
+      }
       x.querySelector("[data-cls]").onchange = (ev) => decide(e.n, { cls: ev.target.value });
       x.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => {
         const act = b.dataset.act, cls = x.querySelector("[data-cls]").value;
@@ -1373,8 +1493,7 @@ $("#btn-csv").onclick = async () => { try { const r = await api("/api/events-csv
 function renderFilters() {
   const f = (S.rec && S.rec.filters) || S.filters; if (!f) return;
   S.filters = f;
-  if (document.activeElement !== $("#f-mfi")) $("#f-mfi").value = f.mfi;
-  if (document.activeElement !== $("#f-ss")) $("#f-ss").value = f.ss;
+  if (document.activeElement !== $("#f-frames")) $("#f-frames").value = f.mfi;
   $("#btn-f-reset").disabled = f.mfi === 5 && f.ss === 5;
   const note = $("#scan-note"), old = !!(S.rec && S.rec.scan_outdated);
   note.hidden = !old;
@@ -1387,8 +1506,8 @@ async function setFilters(body) {
     renderFilters(); showFrame();
   } catch (e) { err(e); }
 }
-$("#f-mfi").onchange = () => setFilters({ mfi: +$("#f-mfi").value });
-$("#f-ss").onchange = () => setFilters({ ss: +$("#f-ss").value });
+// one number sets Max Frame Interval and Sliding Subtraction together
+$("#f-frames").onchange = () => { const n = Math.max(1, Math.min(60, Math.round(+$("#f-frames").value) || 5)); setFilters({ mfi: n, ss: n }); };
 $("#btn-f-reset").onclick = () => setFilters({ mfi: 5, ss: 5 });
 api("/api/filters").then((r) => { S.filters = r.filters; renderFilters(); }).catch(() => {});
 
@@ -1570,7 +1689,7 @@ function cfRead() {
   return { name: $("#cf-name").value.trim() || "Custom",
            mfi: $("#cf-mfi-on").checked ? Math.max(2, Math.min(60, +$("#cf-mfi").value || 5)) : 0,
            ss: $("#cf-ss-on").checked ? Math.max(1, Math.min(60, +$("#cf-ss").value || 5)) : 0,
-           mc: $("#cf-mc").checked, blend: $("#cf-blend").value, opacity: +$("#cf-opacity").value };
+           mc: $("#cf-mc").checked, blend: $("#cf-blend-on").checked ? (CF.blendKind || "overlay") : "none", opacity: +$("#cf-opacity").value };
 }
 function cfShowWarnings() {
   const c = cfRead();
@@ -1590,11 +1709,11 @@ function cfRender(idx) {
   $("#cf-name").value = c.name;
   $("#cf-mfi-on").checked = c.mfi > 0; $("#cf-mfi").value = c.mfi || 5;
   $("#cf-ss-on").checked = c.ss > 0; $("#cf-ss").value = c.ss || 5;
-  $("#cf-mc").checked = c.mc; $("#cf-blend").value = c.blend; $("#cf-opacity").value = String(c.opacity);
+  $("#cf-mc").checked = c.mc; $("#cf-blend-on").checked = c.blend !== "none"; CF.blendKind = c.blend === "crossfade" ? "crossfade" : "overlay"; $("#cf-opacity").value = String(c.opacity);
   $("#cf-msg").hidden = true; cfShowWarnings();
 }
 // edits update the filter being edited straight away (saved with Save filter or Save settings)
-for (const id of ["#cf-name", "#cf-mfi-on", "#cf-mfi", "#cf-ss-on", "#cf-ss", "#cf-mc", "#cf-blend", "#cf-opacity"]) {
+for (const id of ["#cf-name", "#cf-mfi-on", "#cf-mfi", "#cf-ss-on", "#cf-ss", "#cf-mc", "#cf-blend-on", "#cf-opacity"]) {
   $(id).addEventListener("input", () => { if (!CF.list.length) return; CF.list[CF.idx] = cfRead(); cfShowWarnings();
     if (id === "#cf-name") $("#cf-list").options[CF.idx].textContent = CF.list[CF.idx].name; });
   $(id).addEventListener("change", () => { if (!CF.list.length) return; CF.list[CF.idx] = cfRead(); cfShowWarnings(); });
@@ -1627,6 +1746,7 @@ $("#cf-view").onclick = async () => {
 
 // ------------------------------------------------------------ settings
 function setCrumbMeta() {
+  if (!$("#crumb-meta")) return;
   $("#crumb-meta").textContent = `· ${S.rec.camera} · ${S.rec.start ? "starts " + fmtStamp(0) + " · " : ""}${fmtDur(S.rec.duration_s)} · ${S.rec.frames.toLocaleString()} frames · ${S.rec.units}`;
 }
 function winPad() { return Math.round(((S.cfg && S.cfg.detect.window_s) ?? 3) * (S.rec ? S.rec.fps : 16)); }
@@ -1671,7 +1791,7 @@ function stFill(c) {
   $("#st-palette").value = c.view.palette; $("#st-speed").value = String(c.view.speed);
   $("#st-dde").value = String(c.view.dde); $("#st-tnr").value = String(c.view.tnr);
   $("#st-blend").value = c.view.blend; $("#st-opacity").value = String(c.view.opacity);
-  $("#st-mfi").value = c.filters.mfi; $("#st-ss").value = c.filters.ss;
+  $("#st-frames").value = c.filters.mfi;
   $("#st-sens").value = c.detect.sensitivity; $("#st-merge").value = c.detect.merge_s;
   $("#st-minf").value = c.detect.min_frames; $("#st-window").value = c.detect.window_s;
   $("#st-folder").value = c.export.folder;
@@ -1692,7 +1812,7 @@ function stRead() {
     appearance: { scheme: v("#st-scheme"), theme: (document.querySelector("[name=st-theme]:checked") || {}).value || "dark",
                   window: (document.querySelector("[name=st-window]:checked") || {}).value || "app" },
     view: { palette: v("#st-palette"), speed: +v("#st-speed"), dde: +v("#st-dde"), tnr: +v("#st-tnr"), blend: v("#st-blend"), opacity: +v("#st-opacity") },
-    filters: { mfi: +v("#st-mfi"), ss: +v("#st-ss") },
+    filters: { mfi: +v("#st-frames"), ss: +v("#st-frames") },
     detect: { sensitivity: v("#st-sens"), merge_s: +v("#st-merge"), min_frames: +v("#st-minf"), window_s: +v("#st-window") },
     export: { folder: v("#st-folder").trim(), items: [...document.querySelectorAll("[name=st-items]:checked")].map((i) => i.value),
               overlays: v("#st-overlays"), text_size: v("#st-textsize"), naming: v("#st-naming"), quality: +v("#st-quality"), slowmo: +v("#st-slowmo") },
@@ -1725,7 +1845,7 @@ $("#st-from-view").onclick = () => {
   $("#st-palette").value = S.pal; $("#st-speed").value = $("#speed").value;
   $("#st-dde").value = String(e.dde); $("#st-tnr").value = String(e.tnr);
   $("#st-blend").value = $("#blend").value; $("#st-opacity").value = $("#opacity").value;
-  if (S.filters) { $("#st-mfi").value = S.filters.mfi; $("#st-ss").value = S.filters.ss; }
+  if (S.filters) $("#st-frames").value = S.filters.mfi;
   stDirty(); toast("Copied the current view. Click Save settings to keep it.");
 };
 $("#st-detect-reset").onclick = () => { $("#st-sens").value = "normal"; $("#st-merge").value = 2; $("#st-minf").value = 1; $("#st-window").value = 3; stDirty(); };

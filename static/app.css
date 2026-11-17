@@ -535,3 +535,18 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .gap-badge{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:4;padding:10px 16px;border-radius:10px;background:rgba(0,0,0,.72);color:#fff;font-weight:700;pointer-events:none}
 .menu-sep{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
 #persist-menu label{display:flex;align-items:center;justify-content:space-between;gap:10px}
+/* folding projects, surveys and cameras */
+.fold{all:unset;cursor:pointer;width:18px;text-align:center;color:var(--soft);font-size:12px;flex:none;border-radius:4px}
+.fold:hover,.fold:focus-visible{color:var(--text);background:var(--panel2)}
+.proj-group.folded>.sv-group,.sv-group.folded>.cam-group,
+.cam-group.folded>.file-wrap,.cam-group.folded>.cam-warn,.cam-group.folded>.drop-hint,.cam-group.folded>.join-note{display:none}
+/* which camera the Event Log is showing */
+.log-cam{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);max-width:420px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.log-cam svg{flex:none;color:var(--accent)}
+#persist-menu{width:auto;min-width:220px}
+.rec-head .row-btns{flex-wrap:nowrap}
+.rec-head h2{white-space:nowrap}
+.btn.icon-xs{padding:0 6px}
+#persist-menu label{white-space:nowrap}
+#persist-menu{min-width:240px}
+.rec-head .btn{white-space:nowrap}

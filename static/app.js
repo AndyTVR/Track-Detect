@@ -269,6 +269,16 @@ function fileCard(f, cameraId, opt = {}) {
   w.append(b, mv, x);
   return w;
 }
+// Projects, surveys and cameras fold up: the ▸/▾ beside each name. Remembered on this computer.
+S.folded = (() => { try { return new Set(JSON.parse(localStorage.getItem("td-folded") || "[]")); } catch (e) { return new Set(); } })();
+function foldBtn(id, what, box) {
+  const b = el("button", "fold", S.folded.has(id) ? "▸" : "▾"); b.type = "button";
+  const set = () => { const f = S.folded.has(id); box.classList.toggle("folded", f); b.textContent = f ? "▸" : "▾";
+    b.setAttribute("aria-expanded", String(!f)); b.title = `${f ? "Expand" : "Collapse"} ${what}`; b.setAttribute("aria-label", b.title); };
+  b.onclick = (e) => { e.stopPropagation(); if (S.folded.has(id)) S.folded.delete(id); else S.folded.add(id);
+    try { localStorage.setItem("td-folded", JSON.stringify([...S.folded])); } catch (er) {} set(); };
+  set(); return b;
+}
 function renderFiles() {
   try { syncCamCycle(); } catch (e) {}
   const box = $("#files"); box.innerHTML = "";
@@ -288,6 +298,7 @@ function renderFiles() {
     const pg = el("div", "proj-group");
     pg.appendChild(el("span", "lvl", "Project"));
     const ph = el("div", "proj-head", ICON_PROJ);
+    ph.prepend(foldBtn(pj.id, `project ${pj.name}`, pg));
     ph.appendChild(nameBox("proj-name", pj.name, "Project name", (v) => org({ action: "rename", id: pj.id, name: v })));
     ph.appendChild(binBtn(`project ${pj.name}`, () => org({ action: "delete", id: pj.id }).catch(err)));
     const psub = el("div", "cam-sub proj-sub", `<span class="small muted">${plural(pj.surveys.length, "survey")} · ${plural(pj.paths.length, "recording")}</span>`);
@@ -298,6 +309,7 @@ function renderFiles() {
     for (const sv of pj.surveys) {
       const sg = el("div", "sv-group");
       const sh = el("div", "sv-head", ICON_SV + `<span class="sv-title">Survey ${sv.no}</span>`);
+      sh.prepend(foldBtn(sv.id, `Survey ${sv.no}`, sg));
       const d = el("input", "sv-date"); d.type = "date"; d.value = sv.date || ""; d.title = "Survey date (optional)"; d.setAttribute("aria-label", `Survey ${sv.no} date`);
       d.onchange = () => org({ action: "set_date", id: sv.id, date: d.value }).catch(err);
       sh.append(d, binBtn(`Survey ${sv.no} of ${pj.name}`, () => org({ action: "delete", id: sv.id }).catch(err)));
@@ -309,6 +321,7 @@ function renderFiles() {
       for (const cam of sv.cameras) {
         const g = el("div", "cam-group"); g.dataset.cam = cam.id;
         const head = el("div", "cam-head", ICON_CAM + `<span class="cam-no">Camera ${cam.no}</span>`);
+        head.prepend(foldBtn(cam.id, `Camera ${cam.no}`, g));
         head.appendChild(nameBox("cam-name", cam.name, `Camera ${cam.no} name`, (v) => org({ action: "rename", id: cam.id, name: v }), "Add a name"));
         const others = tree.flatMap((p) => p.surveys.filter((s) => s.id !== sv.id).map((s) => [s.id, `${p.name} › ${s.label}`]));
         head.appendChild(binBtn(`Camera ${cam.no}`, () => org({ action: "delete", id: cam.id }).catch(err)));
@@ -419,6 +432,13 @@ function renderTree() {
   t.querySelectorAll(".tree-file").forEach((b) => (b.onclick = () => { $("#dlg-tree").close(); openRec(b.dataset.path); }));
 }
 $("#btn-tree").onclick = () => { renderTree(); $("#dlg-tree").showModal(); };
+$("#btn-fold-all").onclick = () => {
+  const ids = (S.tree || []).flatMap((p) => [p.id, ...p.surveys.flatMap((s) => [s.id, ...s.cameras.map((c) => c.id)])]);
+  const anyOpen = ids.some((i) => !S.folded.has(i));
+  S.folded = new Set(anyOpen ? ids : []);
+  try { localStorage.setItem("td-folded", JSON.stringify([...S.folded])); } catch (e) {}
+  renderFiles();
+};
 $("#tree-expand").onclick = () => $("#tree-body").querySelectorAll("details").forEach((d) => (d.open = true));
 $("#tree-collapse").onclick = () => $("#tree-body").querySelectorAll("details").forEach((d) => (d.open = false));
 async function refreshFiles() { try { setFiles(await api("/api/files")); } catch (e) {} }
@@ -761,7 +781,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-menu";
+const APP_VERSION = "2026.11.17-fold";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1569,6 +1589,14 @@ function surveyCams() {
 }
 function syncCamCycle() {
   const sc = surveyCams(), n = sc ? sc.cams.length : 0;
+  const lc = $("#log-cam");
+  if (!S.rec) lc.hidden = true;
+  else {
+    lc.hidden = false;
+    lc.innerHTML = sc ? `${ICON_CAM}<b>${esc(sc.at.camera.label)}</b><span class="muted"> · ${esc(sc.at.survey.label)} · ${esc(sc.at.project.name)}</span>`
+      : `${ICON_CAM}<b>Unassigned</b><span class="muted"> · ${esc(S.rec.name)}</span>`;
+    lc.title = sc ? `This Event Log is for ${sc.at.project.name} › ${sc.at.survey.label} › ${sc.at.camera.label}: ${S.rec.name}` : S.rec.name;
+  }
   $("#btn-cam-prev").disabled = $("#btn-cam-next").disabled = n < 2;
   const i = sc ? sc.cams.findIndex((c) => c.id === sc.at.camera.id) : -1;
   $("#cam-now").textContent = sc ? `${sc.at.camera.label}${n > 1 ? ` · ${i + 1} of ${n}` : ""}` : "";

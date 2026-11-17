@@ -63,6 +63,7 @@
           <button id="btn-tree" class="btn xs" type="button" title="See every project, survey, camera and recording as a tree">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h6v4H4zM14 10h6v4h-6zM14 18h6v4h-6zM7 8v12h7M7 12h7"/></svg>
             Tree</button>
+          <button id="btn-fold-all" class="btn xs icon-xs" type="button" title="Collapse or expand every project, survey and camera" aria-label="Collapse or expand all"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4l5 5 5-5M7 20l5-5 5 5"/></svg></button>
           <button id="btn-new-project" class="btn xs" type="button" title="Start a new project (comes with Survey 1 and Camera 1)">+ Project</button>
         </span>
       </div>
@@ -83,9 +84,8 @@
               id="btn-persist" class="mode caret" type="button" aria-haspopup="true" aria-expanded="false"
               aria-controls="persist-menu" title="Detection settings" aria-label="Detection settings" data-for="blend">▾</button>
             <div id="persist-menu" class="persist-menu" role="dialog" aria-label="Detection settings" hidden>
-              <span class="small strong">Detection settings</span>
-              <label class="small">Frames <span><input id="f-frames" type="number" min="1" max="60" step="1" value="5" class="num sm"> frames</span></label>
-              <span class="small muted">How many frames each trail lasts. Sets Max Frame Interval and Sliding Subtraction together.</span>
+              <span class="small strong" title="Used by Detection mode and exports. Scanning always uses Window Average + Sliding Subtraction 5.">Detection settings</span>
+              <label class="small" title="How many frames each trail lasts (sets Max Frame Interval and Sliding Subtraction together)">Trail length <span><input id="f-frames" type="number" min="1" max="60" step="1" value="5" class="num sm"> frames</span></label>
               <button id="btn-f-reset" class="btn sm" type="button">Reset to 5</button>
               <hr class="menu-sep">
           <label class="small" title="Overlay lays the trails over the thermal picture. Crossfade mixes the two whole pictures.">Blend
@@ -96,7 +96,6 @@
               <option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option>
               <option value="0.8" selected>80%</option><option value="0.9">90%</option><option value="1">100%</option>
             </select></label>
-              <span class="small muted">Used by Detection mode and exports. Scanning always uses Window Average + Sliding Subtraction 5.</span>
             </div>
           </span>
           <button class="mode" data-mode="custom" aria-pressed="false" title="Your own mix of filters (Settings > Custom filters)">Custom</button>
@@ -215,6 +214,7 @@
       <div class="row wrap between">
         <div class="row wrap">
           <h2 class="h2-plain">Event Log</h2>
+          <span id="log-cam" class="log-cam small" hidden></span>
         </div>
         <div class="row wrap">
           <button id="btn-zoom-in" class="icon" aria-label="Zoom in" title="Zoom in">+</button>
@@ -497,7 +497,7 @@
             <label>Noise reduction <select id="st-tnr"><option value="0">Off</option><option value="1">Low</option><option value="2">Medium</option><option value="3">High</option></select></label>
             <label>Detection: blend type <select id="st-blend"><option value="overlay">Overlay</option><option value="crossfade">Crossfade</option></select></label>
             <label>Detection: opacity <select id="st-opacity"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1">100%</option></select></label>
-            <label>Detection: frames (Max Frame Interval and Sliding Subtraction together) <input id="st-frames" type="number" min="1" max="60" step="1"></label>
+            <label>Detection: trail length in frames (sets Max Frame Interval and Sliding Subtraction together) <input id="st-frames" type="number" min="1" max="60" step="1"></label>
           </div>
         </section>
 

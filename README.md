@@ -122,6 +122,11 @@ clicking **Quit** in the top bar, closes it.
      or removing a file from a joined camera starts its joined scan afresh,
      because the frames no longer line up. Files of different picture sizes
      can't be joined.
+   - The **▾** beside a project, survey or camera folds it up (▸ opens it
+     again); the button beside **Tree** folds or opens everything. The
+     program remembers what's folded.
+   - The Event Log names the camera you're looking at (camera, survey,
+     project), or "Unassigned".
    - **Tree** shows everything as Project › Survey › Camera › recording.
      Click a recording there to open it.
    - The report's *Location* starts as the project name.
@@ -294,8 +299,8 @@ The **Viewing Mode** bar has four modes (keys `1`–`4`):
 - **Default**: the plain thermal picture, with no filters.
 - **Tracking**: the whole route is built up in one image.
 - **Detection**: the thermal picture with moving animals shown as bright
-  trails, in the current palette. Its ▾ menu holds **Frames**, **Blend** and
-  **Opacity**. Blend sets how the two are mixed:
+  trails, in the current palette. Its ▾ menu holds **Trail length** (in
+  frames), **Blend** and **Opacity**. Blend sets how the two are mixed:
   - **Overlay**: the trails are laid over the thermal picture, and the rest
     stays thermal. Opacity sets how solid the trails are.
   - **Crossfade**: the two whole pictures are mixed. 0% is thermal only and

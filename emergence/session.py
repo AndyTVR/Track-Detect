@@ -15,6 +15,7 @@ from .analysis import SCAN_ID, clean_filters, end_spike, detect_events, roi_mask
 from .ats import ATSFile
 from .render import Renderer, export_event
 from . import settings as cfg
+from .fsutil import safe_replace
 
 
 # Filter persistence is one setting for the whole app (saved by app.py), so
@@ -77,7 +78,7 @@ class Recording:
         p = _sidecar(self.path, ".activity.npz")
         tmp = p + ".tmp.npz"
         np.savez(tmp, **{rid: a for rid, a in self.acts.items()})
-        os.replace(tmp, p)
+        safe_replace(tmp, p)
 
     def _load_activity(self) -> dict:
         n = self.src.n_frames
@@ -168,7 +169,7 @@ class Recording:
         tmp = _sidecar(self.path, ".analysis.json.tmp")
         with open(tmp, "w") as f:
             json.dump(self.state, f, indent=1)
-        os.replace(tmp, _sidecar(self.path, ".analysis.json"))
+        safe_replace(tmp, _sidecar(self.path, ".analysis.json"))
 
     # ---------------------------------------------------------- ROIs
     @property
@@ -547,6 +548,34 @@ class Recording:
         self.save()
         return files
 
+    def noise(self) -> list:
+        """Background noise between spikes, for each scanned ROI (cached)."""
+        from .analysis import noise_stats
+        level = self.state.get("level")
+        evs = self.state.get("events", [])
+        key = (level, len(evs), tuple((rid, len(a), float(a[:64].sum()) if len(a) else 0.0) for rid, a in self.acts.items()),
+               json.dumps(self.state.get("roi_scans", {}), sort_keys=True))
+        if getattr(self, "_noise_key", None) == key:
+            return self._noise_val
+        out = []
+        pad = int(self.src.fps)
+        for r in self.rois:
+            act = self.acts.get(r["id"])
+            if act is None or not len(act):
+                continue
+            quiet = _range_mask(self.scanned_ranges_of(r["id"]), len(act))
+            quiet[self._cut(act):] = False
+            for e in evs:
+                if e.get("roi", "r1") == r["id"]:
+                    quiet[max(0, e["f0"] - pad):e["f1"] + pad + 1] = False
+            if level is not None:
+                quiet &= act <= level
+            st = noise_stats(act, quiet, self.src.fps, level, self.src.units)
+            if st:
+                out.append({"roi": r["id"], "name": r["name"], **st})
+        self._noise_key, self._noise_val = key, out
+        return out
+
     def summary(self) -> dict:
         rois = [{"id": r["id"], "name": r["name"], "points": r.get("points") or [], "scan": r.get("scan", True),
                  "colour": self.roi_colour(r["id"]), "scanned": r["id"] in self.acts,
@@ -559,6 +588,7 @@ class Recording:
                 "scan_outdated": bool(self.state.get("scanned")) and self.state.get("scan_id") != SCAN_ID,
                 "end_spike": self.end_spike_frame,
                 "unscanned": self.unscanned_ranges,
+                "noise": self.noise(),
                 "comments": sorted(self.state.get("comments", []), key=lambda c: c["frame"])}
 
 

@@ -20,6 +20,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 from emergence.ats import ATSError
 from emergence.session import SETTINGS, Jobs, Recording
 from emergence.analysis import clean_filters
+from emergence.fsutil import safe_replace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Packaged as a Windows program (PyInstaller): the bundled files live in a
@@ -191,7 +192,7 @@ def _save_org():
         tmp = _cams_path() + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump({"v": 4, "projects": _ORG["projects"], "of": _ORG["of"], "n": _ORG["n"]}, fh, indent=1)
-        os.replace(tmp, _cams_path())
+        safe_replace(tmp, _cams_path())
     except OSError:
         pass
 
@@ -754,6 +755,32 @@ def organise():
                 org["of"][p] = cid
             else:
                 org["of"].pop(p, None)
+    elif act == "list_projects":   # every saved project, listed or not
+        cams_of = {}
+        for path, cid in org["of"].items():
+            cams_of.setdefault(cid, []).append(path)
+        out["projects"] = []
+        for pj in org["projects"]:
+            paths = [x for sv in pj["surveys"] for c in sv["cameras"] for x in cams_of.get(c["id"], [])]
+            out["projects"].append({"id": pj["id"], "name": pj["name"], "surveys": len(pj["surveys"]),
+                                    "cameras": sum(len(sv["cameras"]) for sv in pj["surveys"]),
+                                    "recordings": len(paths), "missing": sum(1 for x in paths if not os.path.exists(x)),
+                                    "listed": sum(1 for x in paths if x in state["files"]),
+                                    "dates": sorted({sv["date"] for sv in pj["surveys"] if sv.get("date")})})
+    elif act == "open_project":   # list every recording saved in a project
+        n = _node(b.get("id"))
+        if not n or n[0] != "project":
+            raise UserError("That project no longer exists")
+        if b.get("replace"):
+            state["files"] = []
+        cids = {c["id"] for sv in n[1]["surveys"] for c in sv["cameras"]}
+        found = sorted((x for x, c in org["of"].items() if c in cids and os.path.exists(x)), key=lambda x: (x.lower()))
+        for x in found:
+            if x not in state["files"]:
+                state["files"].append(x)
+        out["first"] = next((x for c in [c for sv in sorted(n[1]["surveys"], key=lambda s: s["no"]) for c in sorted(sv["cameras"], key=lambda c: c["no"])]
+                             for x in found if org["of"].get(x) == c["id"]), None)
+        out["opened"] = len(found)
     elif act == "move_camera":
         n, t = _node(b.get("id")), _node(b.get("survey"))
         if not n or n[0] != "camera" or not t or t[0] != "survey":
@@ -851,7 +878,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-folders"   # must match static/app.js
+APP_VERSION = "2026.11.17-cams"   # must match static/app.js
 
 
 @app.get("/api/version")

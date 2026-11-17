@@ -24,6 +24,8 @@ from dataclasses import dataclass, asdict
 
 import numpy as np
 
+from .fsutil import safe_replace
+
 MAGIC = b"FLIR ATS-US File"
 LAYOUT_VERSION = 2
 
@@ -376,7 +378,7 @@ class ATSFile:
         try:
             tmp = side + ".tmp.npz"
             np.savez(tmp, t=t, key=key)
-            os.replace(tmp, side)
+            safe_replace(tmp, side)
         except OSError:
             pass   # read-only folder: build it again next time
         return t

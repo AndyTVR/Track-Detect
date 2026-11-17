@@ -118,7 +118,47 @@ function addTarget() {
     camera: c === "__auto" ? { auto: true } : c === "__new" || p === "__new" || sv === "__new" ? { name: $("#add-cam-name").value.trim() } : { id: c },
   };
 }
-$("#btn-open").onclick = () => openAdd();
+// the folder button: New project, Open project, Add files
+$("#btn-open").onclick = (e) => { e.stopPropagation(); closeMenus("open"); toggleMenu("#open-menu", "#btn-open"); };
+$("#open-menu").addEventListener("click", (e) => e.stopPropagation());
+$("#om-add").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openAdd(); };
+$("#om-new").onclick = () => {
+  toggleMenu("#open-menu", "#btn-open", false);
+  $("#np-name").value = ""; $("#np-date").value = ""; $("#np-msg").hidden = true; $("#dlg-newproj").showModal(); $("#np-name").focus();
+};
+$("#np-go").onclick = async (ev) => {
+  ev.preventDefault();
+  const name = $("#np-name").value.trim();
+  try {
+    const r = await org({ action: "new_project", name });
+    const at = findCam(r.created);
+    if (at && $("#np-date").value) await org({ action: "set_date", id: at.survey.id, date: $("#np-date").value });
+    $("#dlg-newproj").close(); openAdd(r.created);
+  } catch (e) { $("#np-msg").hidden = false; $("#np-msg").textContent = e.message || String(e); }
+};
+$("#om-open").onclick = async () => {
+  toggleMenu("#open-menu", "#btn-open", false);
+  try {
+    const r = await api("/api/org", { action: "list_projects" });
+    const box = $("#op-list");
+    box.innerHTML = r.projects.length ? "" : '<p class="small muted">No projects saved yet. Use New project, or Add files and assign them to a project.</p>';
+    for (const p of r.projects) {
+      const row = el("div", "op-row");
+      const dates = p.dates.length ? " · " + p.dates.map((d) => d.split("-").reverse().join("/")).join(", ") : "";
+      row.innerHTML = `<div><b>${esc(p.name)}</b><br><span class="small muted">${plural(p.surveys, "survey")} · ${plural(p.cameras, "camera")} · ${plural(p.recordings, "recording")}${dates}${p.missing ? ` · ${p.missing} not found` : ""}${p.listed ? ` · ${p.listed} already listed` : ""}</span></div>`;
+      const b = smallBtn("Open", `List every recording in ${p.name}`, async () => {
+        try {
+          const o = await api("/api/org", { action: "open_project", id: p.id, replace: $("#op-replace").checked });
+          setFiles(o); $("#dlg-openproj").close();
+          toast(`${p.name}: ${plural(o.opened, "recording")} listed.`);
+          if (o.first) openRec(o.first);
+        } catch (e) { err(e); }
+      }, "primary");
+      row.appendChild(b); box.appendChild(row);
+    }
+    $("#op-replace").checked = false; $("#dlg-openproj").showModal();
+  } catch (e) { err(e); }
+};
 $("#btn-empty-add").onclick = () => openAdd();
 function setEmpty(msg, button) { $("#empty-msg").textContent = msg; $("#btn-empty-add").hidden = !button; }
 async function browse(kind) {
@@ -201,6 +241,7 @@ function fileCard(f, cameraId) {
   return w;
 }
 function renderFiles() {
+  try { syncCamCycle(); } catch (e) {}
   const box = $("#files"); box.innerHTML = "";
   const tree = S.tree || [], un = S.unassigned || [];
   if (!S.files.length && !tree.length) { box.innerHTML = '<p class="muted small">Add .ats files, or a whole folder of them, with the folder button at the top.</p>'; return; }
@@ -211,7 +252,7 @@ function renderFiles() {
     ug.appendChild(uh);
     if (!un.length) ug.appendChild(el("p", "small muted drop-hint", "Drag a recording here to take it out of its camera."));
     for (const p of un) { const f = fileRow(p); if (f) ug.appendChild(fileCard(f, "")); }
-    if (un.length) { const us = smallBtn("Scan unassigned", "Scan every unassigned recording", () => scanGroup("unassigned", "the unassigned recordings")); uh.appendChild(us); }
+    if (un.length) { const us = smallBtn("Scan unassigned", "Scan every unassigned recording", () => scanGroup("unassigned", "the unassigned recordings"), "scan-btn"); uh.appendChild(us); }
     dropZone(ug, ""); box.appendChild(ug);
   }
   for (const pj of tree) {
@@ -223,7 +264,7 @@ function renderFiles() {
     const psub = el("div", "cam-sub proj-sub", `<span class="small muted">${plural(pj.surveys.length, "survey")} · ${plural(pj.paths.length, "recording")}</span>`);
     const pb = el("span", "row-btns");
     pb.append(smallBtn("+ Survey", `Add a survey (a visit or night) to ${pj.name}`, () => org({ action: "new_survey", project: pj.id }).catch(err)),
-              smallBtn("Scan project", `Scan every recording in ${pj.name}`, () => scanGroup(pj.id, pj.name)));
+              smallBtn("Scan project", `Scan every recording in ${pj.name}`, () => scanGroup(pj.id, pj.name), "scan-btn"));
     psub.appendChild(pb); pg.append(ph, psub);
     for (const sv of pj.surveys) {
       const sg = el("div", "sv-group");
@@ -234,7 +275,7 @@ function renderFiles() {
       const ssub = el("div", "cam-sub", `<span class="small muted">${plural(sv.cameras.length, "camera")} · ${plural(sv.paths.length, "recording")}</span>`);
       const sb = el("span", "row-btns");
       sb.append(smallBtn("+ Camera", `Add a camera to Survey ${sv.no}`, () => org({ action: "new_camera", survey: sv.id }).catch(err)),
-                smallBtn("Scan survey", `Scan every recording in Survey ${sv.no}`, () => scanGroup(sv.id, `Survey ${sv.no}`)));
+                smallBtn("Scan survey", `Scan every recording in Survey ${sv.no}`, () => scanGroup(sv.id, `Survey ${sv.no}`), "scan-btn"));
       ssub.appendChild(sb); sg.append(sh, ssub);
       for (const cam of sv.cameras) {
         const g = el("div", "cam-group"); g.dataset.cam = cam.id;
@@ -252,7 +293,7 @@ function renderFiles() {
         const sub = el("div", "cam-sub", `<span class="small muted">${plural(cam.paths.length, "recording")}</span>`);
         const cb = el("span", "row-btns");
         cb.append(smallBtn("+ Add files", `Add recordings to Camera ${cam.no}`, () => openAdd(cam.id)));
-        if (cam.paths.length) cb.append(smallBtn("Scan camera", `Scan every recording from Camera ${cam.no}`, () => scanGroup(cam.id, `Camera ${cam.no}`), "cam-scan"));
+        if (cam.paths.length) cb.append(smallBtn("Scan camera", `Scan every recording from Camera ${cam.no}`, () => scanGroup(cam.id, `Camera ${cam.no}`), "cam-scan scan-btn"));
         if (moveCam) cb.append(moveCam);
 
         sub.appendChild(cb); g.append(head, sub);
@@ -313,7 +354,7 @@ async function openRec(path) {
     S.frame = 0; S.sel = null; S.ws = 0; S.we = S.rec.frames - 1; S.pts = S.rec.roi || []; S.lim = null; S.times = null;
     if (!S.linking) $("#linked-bar").hidden = true;
     $("#scrub").max = S.rec.frames - 1;
-    ["#btn-roi-clear", "#btn-scan", "#btn-scan-menu", "#btn-roi-pick"].forEach((s) => ($(s).disabled = false));
+    ["#btn-roi-clear", "#btn-roi-pick"].forEach((s) => ($(s).disabled = false));
     document.querySelectorAll(".shape-btn").forEach((b) => (b.disabled = false));
     S.roiHidden = new Set(); S.roiActive = (S.rec.rois[0] || {}).id; renderRois();
     $("#empty").hidden = true;
@@ -398,7 +439,7 @@ const toggleImage = (open) => toggleMenu("#image-menu", "#btn-image", open, "#pa
 // only one dropdown open at a time
 function closeMenus(except) {
   for (const [k, m, b] of [["persist", "#persist-menu", "#btn-persist"], ["image", "#image-menu", "#btn-image"],
-                           ["roi", "#roi-menu", "#btn-roi-pick"], ["scan", "#scan-menu", "#btn-scan-menu"]])
+                           ["roi", "#roi-menu", "#btn-roi-pick"], ["open", "#open-menu", "#btn-open"]])
     if (k !== except && !$(m).hidden) toggleMenu(m, b, false);
 }
 $("#btn-persist").onclick = (e) => { e.stopPropagation(); closeMenus("persist"); togglePersist(); };
@@ -434,7 +475,7 @@ function limPos(f) { const n = Math.max(1, S.rec.frames - 1); return `calc(8px +
 function drawLimits() {
   const has = !!S.rec;
   for (const id of ["#lim-a", "#lim-b", "#lim-fill"]) $(id).hidden = !has;
-  if (!has) { $("#lim-label").textContent = ""; $("#btn-lim-reset").hidden = true; $("#scan-lim-only").disabled = true; return; }
+  if (!has) { $("#lim-label").textContent = ""; $("#btn-lim-reset").hidden = true; return; }
   const [a, b] = playBounds(), n = Math.max(1, S.rec.frames - 1);
   $("#lim-a").style.left = limPos(a); $("#lim-b").style.left = limPos(b);
   $("#lim-fill").style.left = limPos(a); $("#lim-fill").style.width = `calc((100% - 16px) * ${(b - a) / n})`;
@@ -442,9 +483,6 @@ function drawLimits() {
   $("#lim-label").textContent = whole ? "Play limits: whole recording. Drag the blue markers to set your own."
     : `Play limits: ${fmtTime(a)} → ${fmtTime(b)} (${fmtDur(spanS(a, b))})${locked() ? " · locked to event " + S.sel : ""}`;
   $("#btn-lim-reset").hidden = whole || locked();
-  $("#scan-lim-only").disabled = whole; if (whole) $("#scan-lim-only").checked = false;
-  $("#scan-lim-wrap").classList.toggle("dim", whole);
-  $("#scan-lim-wrap").title = whole ? "Drag the blue markers on the progress bar to set play limits first" : `Scan only ${fmtTime(a)} → ${fmtTime(b)}`;
 }
 function limDrag(which, e) {
   if (!S.rec) return;
@@ -645,7 +683,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-folders";
+const APP_VERSION = "2026.11.17-cams";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -731,8 +769,14 @@ svg.addEventListener("pointermove", (e) => {
   }
   S.box = b; drawRoi();
 });
-svg.addEventListener("pointerup", () => {
+svg.addEventListener("pointerup", (e) => {
   if (!S.drag) return;
+  {   // a click (no drag) once the shape has been drawn sets the ROI
+    const b0 = svg.getBoundingClientRect(), sc = b0.width / img.naturalWidth, p = toImg(e);
+    const moved = Math.hypot(p[0] - S.drag.p0[0], p[1] - S.drag.p0[1]) * sc;
+    if (moved < 4 && S.shapeDragged) { S.box = S.drag.b0; S.drag = null; drawRoi(); finishRoi(); return; }
+    if (moved >= 4) S.shapeDragged = true;
+  }
   const b = S.box;   // keep edges in order and the shape a sensible size
   S.box = { x0: Math.min(b.x0, b.x1), y0: Math.min(b.y0, b.y1), x1: Math.max(b.x0, b.x1), y1: Math.max(b.y0, b.y1) };
   if (S.box.x1 - S.box.x0 < 8 || S.box.y1 - S.box.y0 < 8) S.box = S.drag.b0.x1 - S.drag.b0.x0 >= 8 ? S.drag.b0 : defaultBox();
@@ -756,7 +800,7 @@ function setShape(sh) {
 function startRoi(sh) {
   if (!S.rec) return;
   if (!S.drawing) {
-    S.drawing = true; S.pts = []; S.box = null; S.hover = null; S.roiSaved = false;
+    S.drawing = true; S.pts = []; S.box = null; S.hover = null; S.roiSaved = false; S.shapeDragged = false;
     S.roiOrig = (activeRoi().points || []).map((q) => q.slice()); S.roiOrigChanged = !!activeRoi().changed;
     $("#stage").classList.add("drawing"); setMode("raw");
     const p = activeRoi().points || [];   // a rectangle or circle starts on the ROI's current outline
@@ -781,7 +825,7 @@ async function finishRoi() {
   const pts = shapePoints();
   if (pts.length < 3) return toast("Add at least 3 points first, then right-click to finish.");
   S.drawing = false; S.hover = null; $("#stage").classList.remove("drawing"); setShape(S.shape);
-  try { S.rec = await api("/api/roi", { id: S.roiActive, points: pts, all_files: $("#roi-all").checked }); renderRois(); refreshFiles(); showFrame(); toast(`${activeRoi().name} saved. Press Scan recording.`); }
+  try { S.rec = await api("/api/roi", { id: S.roiActive, points: pts, all_files: $("#roi-all").checked }); renderRois(); refreshFiles(); showFrame(); toast(`${activeRoi().name} saved. Scan it from the recordings list: Scan camera, Scan project or Scan unassigned.`, 5000); }
   catch (e) { err(e); }
 }
 $("#btn-roi-done").onclick = finishRoi;
@@ -808,7 +852,7 @@ function updateRoiStatus() {
   if (S.drawing) {
     el.textContent = S.shape === "poly"
       ? "Click round the roost to add points. Right-click (or Enter) to finish: the last point joins back to the first. Backspace removes a point."
-      : "Drag on the picture to draw it, drag the middle to move it, or drag a handle to resize, as often as you like. Each change is saved; click Done (or press Enter) when it's right.";
+      : "Drag on the picture to draw it, drag the middle to move it, or drag a handle to resize, as often as you like. Then click once anywhere on the picture to set it.";
     return;
   }
   if (!S.rec) { el.textContent = "Open a recording, then pick a shape to draw round the roost."; return; }
@@ -844,6 +888,7 @@ function renderRois() {
       <i class="roi-dot" style="background:${r.colour}"></i>
       <input type="text" value="${esc(r.name)}" maxlength="40" aria-label="Name of ${esc(r.name)}">
       <span class="roi-pts">${n ? "drawn" : "not drawn"}</span>
+      <label class="roi-scan" title="${n >= 3 ? "Include this ROI when scanning" : "Draw it first"}"><input type="checkbox" ${r.scan && n >= 3 ? "checked" : ""} ${n >= 3 ? "" : "disabled"}> Scan</label>
       <button type="button" class="ib eye${vis ? "" : " off"}" aria-pressed="${vis}" title="${vis ? "Hide" : "Show"} ${esc(r.name)}">${vis ? EYE : EYE_OFF}</button>
       <button type="button" class="ib del" title="Delete ${esc(r.name)}" ${rois().length < 2 ? "disabled" : ""}>×</button>`;
     row.querySelector("[type=radio]").onchange = () => { S.roiActive = r.id; renderRois(); };
@@ -852,23 +897,13 @@ function renderRois() {
     nm.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); nm.blur(); } };
     nm.onchange = async () => { const v = nm.value.trim(); if (!v) { nm.value = r.name; return; } if (await roiAction({ action: "rename", id: r.id, name: v })) { renderRois(); renderEvents(); drawPlot(); showFrame(); } };
     row.querySelector(".eye").onclick = () => toggleRoiVisible(r.id);
+    row.querySelector(".roi-scan input").onchange = async (e) => { if (await roiAction({ action: "scan", id: r.id, scan: e.target.checked })) renderRois(); };
     row.querySelector(".del").onclick = async () => {
       if (!confirmTwice(row.querySelector(".del"), `Click again to delete ${r.name} and its events`)) return;
       if (await roiAction({ action: "delete", id: r.id })) { S.roiHidden.delete(r.id); afterRoiChange(); toast(`${r.name} deleted.`); }
     };
     list.appendChild(row);
   }
-  // the Scan menu: which ROIs to scan
-  const sl = $("#scan-list"); sl.innerHTML = "";
-  for (const r of rois()) {
-    const drawn = (r.points || []).length >= 3;
-    const l = document.createElement("label"); l.className = "check small";
-    l.innerHTML = `<input type="checkbox" ${r.scan && drawn ? "checked" : ""} ${drawn ? "" : "disabled"}> <i class="roi-dot" style="background:${r.colour}"></i> ${esc(r.name)}${drawn ? "" : ' <span class="muted">(not drawn)</span>'}`;
-    l.querySelector("input").onchange = async (e) => { if (await roiAction({ action: "scan", id: r.id, scan: e.target.checked })) renderRois(); };
-    sl.appendChild(l);
-  }
-  const nScan = rois().filter((r) => r.scan && (r.points || []).length >= 3).length;
-  $("#btn-scan").textContent = rois().length > 1 ? `Scan Footage (${nScan} ROI${nScan === 1 ? "" : "s"})` : "Scan Footage";
   renderLegend(); updateRoiStatus();
 }
 // a delete button asks for a second click instead of a pop-up
@@ -901,14 +936,10 @@ $("#btn-roi-add").onclick = async (e) => {
   toast(`${activeRoi().name} added. Pick a shape to draw it.`, 5000);
 };
 const toggleRoiMenu = (open) => toggleMenu("#roi-menu", "#btn-roi-pick", open);
-const toggleScanMenu = (open) => toggleMenu("#scan-menu", "#btn-scan-menu", open);
 $("#btn-roi-pick").onclick = (e) => { e.stopPropagation(); closeMenus("roi"); toggleRoiMenu(); };
-$("#btn-scan-menu").onclick = (e) => { e.stopPropagation(); closeMenus("scan"); toggleScanMenu(); };
 $("#roi-menu").addEventListener("click", (e) => e.stopPropagation());
-$("#scan-menu").addEventListener("click", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------ scan, jobs
-$("#btn-scan").onclick = () => startScan(false, $("#scan-lim-only").checked ? playBounds() : null);
 async function startScan(all, lim) {
   if (!S.rec && !all) return;
   try {
@@ -974,7 +1005,7 @@ function pollJobs() {
 // ------------------------------------------------------------ activity plot
 // View = frames a..b. Data for the view is fetched at screen resolution, so
 // zooming in shows every frame. The blue line is the detection level.
-const P = { a: 0, b: 0, data: [], level: null, suggested: null, drag: null, fetchId: 0, units: "", cap: null, yMode: "auto", range: null, capTop: null };
+const P = { a: 0, b: 0, data: [], level: null, suggested: null, drag: null, fetchId: 0, units: "", cap: null, yMode: "default", range: null, capTop: null };
 const plotBox = $("#plot"), plotCanvas = $("#plot-canvas");
 
 async function loadActivity(keepView) {
@@ -1031,11 +1062,18 @@ function autoTop(peaks, base) {
   for (let i = 0; i < maxDrop && i < hs.length - 1; i++) if (hs[i] > 2 * hs[i + 1]) k = i + 1;
   return k ? base + hs[k] * 1.12 : null;
 }
+// Default: the height comes from the suggested detection level, which sits a
+// quarter of the way up, so the background noise and small spikes are clear.
+function defaultTop(lo) {
+  const s = P.suggested ?? P.level; if (s == null || !(s > lo)) return null;
+  return lo + 4 * (s - lo);
+}
 function yRange() {
   if (!P.data.length) return [0, 1];
   const st = viewStats(); P.stats = st;
   let lo = st.lo, hi = st.max;
-  P.capTop = P.yMode === "manual" ? P.cap : P.yMode === "auto" ? autoTop(st.peaks, Math.min(lo, P.level ?? lo)) : null;
+  P.capTop = P.yMode === "manual" ? P.cap : P.yMode === "auto" ? autoTop(st.peaks, Math.min(lo, P.level ?? lo))
+    : P.yMode === "default" ? defaultTop(lo) : null;
   P.capped = P.capTop != null && P.capTop < hi;
   if (P.capped) hi = P.capTop;
   if (P.level != null) { lo = Math.min(lo, P.level); hi = Math.max(hi, P.level); }
@@ -1088,7 +1126,7 @@ function drawPlot() {
   ctx.clearRect(0, 0, g.W, g.H); $("#markers").innerHTML = "";
   const tag = $("#level-tag");
   if (!S.rec || !P.data.length) {
-    ctx.fillStyle = cssv("--muted"); ctx.font = "12px sans-serif"; ctx.fillText(S.rec ? "Not scanned yet: press Scan recording, or Scan play limits for part of it" : "", 12, 24);
+    ctx.fillStyle = cssv("--muted"); ctx.font = "12px sans-serif"; ctx.fillText(S.rec ? "Not scanned yet: use Scan camera (or Scan project) in the recordings list" : "", 12, 24);
     $("#plot-axis").innerHTML = ""; tag.hidden = true; syncCapBar(); return;
   }
   // grey hatching: stretches not scanned (a play-limits scan), and an ignored spike at the end
@@ -1222,7 +1260,7 @@ $("#btn-zoom-in").onclick = () => zoom(1 / 1.6, S.frame >= P.a && S.frame <= P.b
 $("#btn-zoom-out").onclick = () => zoom(1.6);
 $("#btn-zoom-fit").onclick = () => { if (!S.rec) return; P.a = 0; P.b = S.rec.frames - 1; fetchSoon(); };
 function setYMode(m) { P.yMode = m; if (m !== "manual") P.cap = null; drawPlot(); }
-document.querySelectorAll("[data-y]").forEach((b) => (b.onclick = () => setYMode(b.dataset.y === "log" ? "log" : "auto")));
+document.querySelectorAll("[data-y]").forEach((b) => (b.onclick = () => setYMode(b.dataset.y === "log" ? "log" : b.dataset.y === "default" ? "default" : "auto")));
 // The bar left of the plot sets the y-axis height in Linear mode: it starts
 // where the automatic cut-off puts it; drag down to cut off more, up to the
 // top for full height.
@@ -1266,7 +1304,7 @@ $("#cap-h").addEventListener("keydown", (e) => {
   const cur = P.capped ? P.capTop : sp[1], f = (cur - sp[0]) / (sp[1] - sp[0]);
   capSet(f + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 0.1 : 0.02));
 });
-$("#cap-auto").onclick = () => setYMode("auto");
+$("#cap-auto").onclick = () => setYMode("default");
 $("#btn-enlarge").onclick = () => {
   const big = $("#plot-panel").classList.toggle("big");
   $("#btn-enlarge").setAttribute("aria-pressed", String(big)); $("#btn-enlarge").textContent = big ? "Smaller" : "Enlarge";
@@ -1283,11 +1321,12 @@ function syncPlotSliders(g, nClipped) {
   $("#t-label").textContent = `${fmtTime(P.a)} → ${fmtTime(P.b)} (${fmtDur(spanS(P.a, P.b))})`;
   const nTall = P.capped && P.stats ? P.stats.peaks.filter((p) => p > P.capTop).length : 0;
   $("#cap-label").textContent =
-    P.yMode === "auto" ? (P.capped ? `Automatic: ${nTall} very tall spike${nTall === 1 ? "" : "s"} cut off (▲) so the rest are clear. Drag the bar's handle to change it.` : "Automatic: no spike dwarfs the others here, so nothing is cut off. Drag the bar's handle to cut off tall spikes.")
+    P.yMode === "default" ? (P.capped ? `Default: height set from the suggested level (${fmtVal(P.suggested ?? P.level)}); ${nTall} taller spike${nTall === 1 ? "" : "s"} marked ▲.` : "Default: height set from the suggested level; every spike fits.")
+    : P.yMode === "auto" ? (P.capped ? `Automatic: ${nTall} very tall spike${nTall === 1 ? "" : "s"} cut off (▲) so the rest are clear. Drag the bar's handle to change it.` : "Automatic: no spike dwarfs the others here, so nothing is cut off. Drag the bar's handle to cut off tall spikes.")
     : P.yMode === "log" ? "Log scale: tall spikes are squeezed down so small ones stay visible."
     : P.capped ? `Cut off at ${fmtVal(P.capTop)}${nClipped ? " · taller spikes marked ▲" : ""}` : "Full height: nothing cut off.";
   $("#cap-auto").hidden = P.yMode !== "manual";
-  document.querySelectorAll("[data-y]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.y === "log") === (P.yMode === "log"))));
+  document.querySelectorAll("[data-y]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.y === "log" ? P.yMode === "log" : b.dataset.y === "default" ? P.yMode === "default" : P.yMode === "auto" || P.yMode === "manual")));
   syncCapBar();
 }
 function timeSlider(which) {
@@ -1400,13 +1439,69 @@ async function viewOnCamera(camId, n) {
   bb.onclick = async () => { bar.hidden = true; await openRec(back.path); if (S.rec && S.rec.path === back.path && evById(back.n)) selectEvent(back.n); };
   bar.appendChild(bb); bar.hidden = false;
 }
+// ---- step through the cameras of this survey, at the same moment
+function surveyCams() {
+  const f = S.rec && fileRow(S.rec.path), at = f && f.camera_id && findCam(f.camera_id);
+  return at ? { at, cams: at.survey.cameras.filter((c) => c.paths.length) } : null;
+}
+function syncCamCycle() {
+  const sc = surveyCams(), n = sc ? sc.cams.length : 0;
+  $("#btn-cam-prev").disabled = $("#btn-cam-next").disabled = n < 2;
+  const i = sc ? sc.cams.findIndex((c) => c.id === sc.at.camera.id) : -1;
+  $("#cam-now").textContent = sc ? `${sc.at.camera.label}${n > 1 ? ` · ${i + 1} of ${n}` : ""}` : "";
+  const t = n < 2 ? (sc ? "This survey has no other camera with recordings" : "Put this recording in a camera to step between cameras") : "";
+  $("#btn-cam-prev").title = t || "The same moment on the previous camera of this survey";
+  $("#btn-cam-next").title = t || "The same moment on the next camera of this survey";
+}
+async function cycleCamera(dir) {
+  const sc = surveyCams(); if (!sc || sc.cams.length < 2) return;
+  const f = fileRow(S.rec.path);
+  if (!f || !f.start) return toast("This recording has no start time, so it can't be matched to another camera.", 6000);
+  const s0 = Date.parse(f.start), t = s0 + secAt(S.frame) * 1000;
+  const lim = S.lim ? S.lim.map((x) => s0 + secAt(x) * 1000) : null;
+  const n = sc.cams.length, i = sc.cams.findIndex((c) => c.id === sc.at.camera.id);
+  for (let k = 1; k < n; k++) {
+    const c = sc.cams[(((i + dir * k) % n) + n) % n];
+    const hit = c.paths.map(fileRow).find((r) => r && r.start && r.end && Date.parse(r.start) <= t && Date.parse(r.end) >= t);
+    if (!hit) continue;
+    try { await openRec(hit.path); } catch (e) { return err(e); }
+    if (!S.rec || S.rec.path !== hit.path) return;
+    await loadTimes(hit.path);
+    const h0 = Date.parse(hit.start);
+    if (lim) { S.lim = [frameAtSec((lim[0] - h0) / 1000), frameAtSec((lim[1] - h0) / 1000)]; $("#in-window").checked = false; }
+    S.frame = frameAtSec((t - h0) / 1000); drawLimits(); showFrame(); drawPlot();
+    if (k > 1) toast(`Skipped ${plural(k - 1, "camera")} with no recording at ${clockAt(t)}.`, 5000);
+    return;
+  }
+  toast(`No other camera in ${sc.at.survey.label} was recording at ${clockAt(t)}.`, 6000);
+}
+$("#btn-cam-prev").onclick = () => cycleCamera(-1);
+$("#btn-cam-next").onclick = () => cycleCamera(1);
+// ---- background noise between spikes, for each ROI
+function renderNoise() {
+  const box = $("#noise-box"), ns = (S.rec && S.rec.noise) || [];
+  box.hidden = !ns.length; if (!ns.length) { box.innerHTML = ""; return; }
+  const word = { low: "Low", moderate: "Moderate", high: "High" };
+  let h = `<div class="noise-head"><span class="small strong">Background noise between spikes</span><span class="small muted">how busy each ROI is when no bat is passing</span></div>`;
+  for (const x of ns) {
+    const pct = (x.rises * 100).toFixed(x.rises < 0.1 ? 1 : 0);
+    h += `<div class="noise-row ${x.rating}"><span class="noise-chip">${word[x.rating]}</span>
+      <span class="small">${ns.length > 1 ? `<b>${esc(x.name)}</b> · ` : ""}average ${fmtVal(x.mean)}, varies ±${fmtVal(x.sd)}, small rises ${pct}% of the time${x.headroom != null ? ` · line ${fmtVal(x.headroom)} above the background` : ""}</span>
+      ${x.worst ? `<button type="button" class="btn xs" data-noisy="${x.worst[0]}">Noisiest: ${fmtTime(x.worst[0])}–${fmtTime(x.worst[1])}</button>` : ""}</div>`;
+  }
+  const bad = ns.filter((x) => x.rating !== "low");
+  if (bad.length) h += `<p class="small muted noise-tip">${bad.some((x) => x.rating === "high") ? "This ROI's background keeps rising and falling" : "This ROI's background is busier than open sky"}: something in it may move or change, such as swaying branches, passing cloud, water or a warm surface cooling. That raises the detection level and can hide faint bats. Check the noisiest stretch, and if something there moves, redraw the ROI to leave it out.</p>`;
+  box.innerHTML = h;
+  box.querySelectorAll("[data-noisy]").forEach((b) => (b.onclick = () => { stopPlay(); S.frame = +b.dataset.noisy; S.lim = null; drawLimits(); showFrame(); }));
+}
 function renderEvents() {
   const box = $("#events"), evs = (S.rec && S.rec.events) || [];
   $("#btn-export").disabled = !S.sel; $("#btn-csv").disabled = !evs.length; $("#btn-report").disabled = !(S.rec && S.rec.scanned);
   $("#btn-export-confirmed").disabled = !evs.some((e) => e.status === "confirmed");
   $("#reviewed").textContent = evs.length ? `${evs.filter((e) => e.status !== "todo").length} of ${evs.length} reviewed` : "";
   if (!S.rec) return;
-  if (!S.rec.scanned) { box.innerHTML = '<p class="muted small">Draw an ROI, then Scan recording.</p>'; return; }
+  renderNoise();
+  if (!S.rec.scanned) { box.innerHTML = '<p class="muted small">Draw an ROI, then use Scan camera or Scan project in the recordings list.</p>'; return; }
   if (!evs.length) { box.innerHTML = '<p class="muted small">No spikes reach the detection level. Drag the blue line lower on the plot.</p>'; return; }
   box.innerHTML = "";
   for (const e of evs) {

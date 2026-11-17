@@ -43,8 +43,16 @@ Double-click the **Track and Detect** desktop shortcut, or **Run Track and
 Detect.bat**. The app opens in its own window. Closing that window, or
 clicking **Quit** in the top bar, closes it.
 
-1. **Add recordings.** Click the folder button in the top bar, or **Add
-   Recording** in the middle of the empty picture. Choose individual `.ats`
+1. **Add recordings.** Click the folder button in the top bar. It offers:
+   - **New project…**: name a project (and Survey 1's date if you like),
+     then add recordings straight into it;
+   - **Open project…**: every project you've made, with its surveys,
+     cameras and recordings. **Open** lists all its recordings again (any
+     that have been moved or deleted are skipped);
+   - **Add files…**, also on the **Add Recording** button in the middle of
+     the empty picture.
+
+   In the Add dialog: Choose individual `.ats`
    files, a whole survey folder, or paste paths, one per line. The first
    recording added opens straight away. Remove a file from the list with
    its **×** (the file itself isn't deleted). Each file shows its times and
@@ -104,8 +112,8 @@ clicking **Quit** in the top bar, closes it.
      removes the last point.
    - **Rectangle** or **Circle**: drag on the picture to draw it, drag the
      middle to move it, or drag an edge or corner handle to resize it, as
-     many times as you like. Each change is saved as you let go. Click
-     **Done** (or press Enter, or right-click) when it's right; **Cancel**
+     many times as you like. When it's right, **click once anywhere on the
+     picture** to set it (or press Enter, or click **Done**). **Cancel**
      puts back the outline it had before.
 
    For a polygon, **right-click** on the picture to finish (or press Enter,
@@ -124,18 +132,12 @@ clicking **Quit** in the top bar, closes it.
 
    With more than one ROI, each is outlined in its colour with its name on
    the picture.
-3. **Scan.** The scan buttons sit beside the **Event Log** heading:
-   - The **▾** on the Scan button lists your ROIs. Tick the ones to scan
-     (Scan Footage and the project, survey and camera scans use this). All the
-     ticked ROIs are scanned in one pass, so extra ROIs barely add time.
-   - **Scan Footage** scans the whole recording. To scan several, use the
-     scan buttons in the recordings list (step 1).
-   - Tick **Play limits only** before Scan Footage to scan only between the
-     two blue play-limit markers on the progress bar (see step 5). Use it to scan just the
-     emergence period of a long recording. Parts not scanned are hatched
-     grey and marked "Not scanned" on the plot, and no events are found
-     there. Scanning another stretch later adds to it. If you redraw the
-     ROI, the next part scan starts afresh.
+3. **Scan.** Scan from the recordings list: **Scan camera**, **Scan
+   survey**, **Scan project** or **Scan unassigned** (the buttons in the
+   theme colour). Each recording is scanned with its own ROIs.
+   - In the ROI menu (the button with the coloured dot), tick **Scan** for
+     each ROI to include. All the ticked ROIs are scanned in one pass, so
+     extra ROIs barely add time.
 
    One pass builds the activity plot for the ROI and shows progress as it
    goes. The scan always uses **Window Average (3×3) + Sliding Subtraction
@@ -162,13 +164,28 @@ clicking **Quit** in the top bar, closes it.
      recording, or drag the shaded bar to slide that window along.
    - **Y-axis**: stops one tall spike flattening the others. These options
      only change the view, not which events are found.
-     - **Linear** (default) automatically cuts off spikes more than twice
+     - **Default** sets the height from the suggested detection level:
+       the line sits a quarter of the way up, so the background noise and
+       small spikes are easy to see. Taller spikes are marked ▲. Click it to
+       go back to this view at any time.
+     - **Linear** automatically cuts off spikes more than twice
        the height of the next one down, marked ▲, so the rest stay clear.
        To change it, drag the handle on the **bar left of the plot**: down
        cuts off more, the top shows full height. **Back to automatic**
-       returns to the automatic height.
+       returns to the Default view.
      - **Log** squeezes tall spikes down so small ones stay visible.
    - Use **Enlarge** for a bigger plot.
+   - **Background noise between spikes**: above the plot, each scanned ROI
+     gets a rating (**Low**, **Moderate** or **High**) of how busy its
+     background is when no bat is passing. It is worked out from the frames
+     outside events and below the line: the average level, how much it
+     jitters (±), and how often it rises part-way towards the line. Open
+     sky or a still wall rates Low. Something in the ROI that moves or
+     changes, such as swaying branches, passing cloud, water or a warm
+     surface cooling, rates Moderate or High: it pushes the suggested level
+     up and can hide faint bats. If the noise comes and goes, a
+     **Noisiest** button jumps to the worst 30 s so you can see what's
+     causing it, and perhaps redraw the ROI to leave it out.
 5. **Review each event.** Click a marker or event card. The app jumps to the
    event and plays within a window 3 s either side. Use the controls under
    the picture to watch it:
@@ -181,6 +198,8 @@ clicking **Quit** in the top bar, closes it.
    | ▶ | Play / pause (`Space`) |
    | Lock Play Limits to Current Event | Keep playback inside the selected event's window |
    | Speed | ¼× to 4× |
+   | ‹ Prev event / Next event › | Step through the events |
+   | ‹ Prev camera / Next camera › | The same moment on the other cameras of this survey: the picture stays at the same clock time, and play limits you've set move with it. Cameras with no recording at that time are skipped. The camera you're on is named between the buttons. |
 
    **Play limits**: the two blue markers under the progress bar set where
    playback starts and stops. Drag them to play any stretch you like; the
@@ -240,6 +259,9 @@ The **Viewing Mode** bar has four modes (keys `1`–`4`):
     stays thermal. Opacity sets how solid the trails are.
   - **Crossfade**: the two whole pictures are mixed. 0% is thermal only and
     100% is trails only.
+
+  Detection opens as **Crossfade at 80%** unless you save something else
+  in Settings.
 
   The colour bar adjusts the thermal picture underneath.
 

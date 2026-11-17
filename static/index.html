@@ -34,8 +34,13 @@
     <button id="btn-settings" class="btn icon-btn" aria-haspopup="dialog" title="Settings" aria-label="Settings">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 </button>
-    <button id="btn-open" class="btn icon-btn" title="Add recordings" aria-label="Add recordings">
+    <span class="open-wrap"><button id="btn-open" class="btn icon-btn" title="Projects and recordings" aria-label="Projects and recordings" aria-haspopup="true" aria-expanded="false" aria-controls="open-menu">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1"/><path d="M3 7v10a2 2 0 0 0 2 2h13.5a2 2 0 0 0 1.9-1.4L22.5 12a1.5 1.5 0 0 0-1.4-2H8.2a2 2 0 0 0-1.9 1.4L3.5 19"/></svg></button>
+      <div id="open-menu" class="persist-menu open-menu" role="menu" hidden>
+        <button type="button" class="menu-item" id="om-new" role="menuitem">New project…</button>
+        <button type="button" class="menu-item" id="om-open" role="menuitem">Open project…</button>
+        <button type="button" class="menu-item" id="om-add" role="menuitem">Add files…</button>
+      </div></span>
     <button id="btn-quit" class="btn" title="Close Track &amp; Detect">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
       Quit</button>
@@ -100,7 +105,7 @@
         </span>
         <span class="pal" id="opacity-wrap" hidden>
           <label class="small pal" title="Overlay lays the trails over the thermal picture. Crossfade mixes the two whole pictures.">Blend
-            <select id="blend" aria-label="Blend type"><option value="overlay" selected>Overlay</option><option value="crossfade">Crossfade</option></select></label>
+            <select id="blend" aria-label="Blend type"><option value="overlay">Overlay</option><option value="crossfade" selected>Crossfade</option></select></label>
           <label class="small pal" id="opacity-label">Opacity
             <select id="opacity" aria-label="Trail opacity">
               <option value="0">0%</option><option value="0.1">10%</option><option value="0.2">20%</option><option value="0.3">30%</option>
@@ -195,6 +200,11 @@
             <button id="btn-prev" class="btn sm" aria-label="Previous event">‹ Prev event</button>
             <button id="btn-next" class="btn sm" aria-label="Next event">Next event ›</button>
           </div>
+          <div class="tgroup cam-cycle" role="group" aria-label="Cameras">
+            <button id="btn-cam-prev" class="btn sm" disabled title="The same moment on the previous camera of this survey">‹ Prev camera</button>
+            <span id="cam-now" class="small muted cam-now"></span>
+            <button id="btn-cam-next" class="btn sm" disabled title="The same moment on the next camera of this survey">Next camera ›</button>
+          </div>
         </div>
         <div class="scrub-wrap" id="scrub-wrap">
           <div class="lim-fill" id="lim-fill"></div>
@@ -210,16 +220,6 @@
       <div class="row wrap between">
         <div class="row wrap">
           <h2 class="h2-plain">Event Log</h2>
-          <span class="split-wrap">
-            <button id="btn-scan" class="btn sm primary split-main" disabled>Scan Footage</button><button id="btn-scan-menu"
-              class="btn sm primary split-caret" type="button" disabled aria-haspopup="true" aria-expanded="false" aria-controls="scan-menu" title="Choose which ROIs to scan">▾</button>
-            <div id="scan-menu" class="persist-menu scan-menu" role="dialog" aria-label="ROIs to scan" hidden>
-              <span class="small strong">ROIs to scan</span>
-              <div id="scan-list" class="scan-list"></div>
-              <span class="small muted">Used by Scan Footage and the project, survey and camera scans.</span>
-            </div>
-          </span>
-          <label class="check small" id="scan-lim-wrap" title="Scan only between the play limits set on the progress bar"><input id="scan-lim-only" type="checkbox" disabled> Play limits only</label>
         </div>
         <div class="row wrap">
           <button id="btn-zoom-in" class="icon" aria-label="Zoom in" title="Zoom in">+</button>
@@ -236,6 +236,7 @@
         <span id="level-info" class="small muted">Or drag the blue line on the plot.</span>
         <div id="roi-legend" class="roi-legend" aria-label="Show or hide ROIs on the plot"></div>
       </div>
+      <div id="noise-box" class="noise-box" hidden></div>
       <p id="scan-note" class="small warn" hidden></p>
       <div class="plot-row">
         <div class="cap-bar" id="cap-bar" title="Y-axis height: drag the handle down to cut off tall spikes so smaller ones show, or to the top for full height">
@@ -264,14 +265,15 @@
         <div class="row wrap">
           <span class="small strong">Y-axis</span>
           <div class="seg sm" role="group" aria-label="Y-axis">
-            <button class="mode" data-y="linear" aria-pressed="true">Linear</button>
+            <button class="mode" data-y="default" aria-pressed="true" title="Height set from the suggested detection level">Default</button>
+            <button class="mode" data-y="linear" aria-pressed="false">Linear</button>
             <button class="mode" data-y="log" aria-pressed="false">Log</button>
           </div>
           <span id="cap-label" class="small muted"></span>
           <button id="cap-auto" class="btn xs" type="button" hidden>Back to automatic</button>
         </div>
       </div>
-      <p class="small muted plot-help">Drag the <span class="blue">blue line</span> to set the detection level: spikes above it become events, spikes below it (grey) are ignored. Scroll to zoom, drag to pan, click to jump to that moment. Use the time window to pick a stretch of the recording. <b>Linear</b> automatically cuts off spikes that dwarf the others (marked ▲); drag the handle on the bar left of the plot to set the height yourself. <b>Log</b> squeezes tall spikes down. These only change the view, not which events are found.</p>
+      <p class="small muted plot-help">Drag the <span class="blue">blue line</span> to set the detection level: spikes above it become events, spikes below it (grey) are ignored. Scroll to zoom, drag to pan, click to jump to that moment. Use the time window to pick a stretch of the recording. <b>Default</b> sets the height from the suggested detection level, so the line sits a quarter of the way up and the noise and small spikes are easy to see. <b>Linear</b> automatically cuts off spikes that dwarf the others (marked ▲); drag the handle on the bar left of the plot to set the height yourself. <b>Log</b> squeezes tall spikes down. These only change the view, not which events are found.</p>
     </section>
   </main>
 
@@ -331,6 +333,27 @@
       <button value="cancel" class="btn">Cancel</button>
       <button id="btn-folder-ok" value="ok" class="btn primary">Add</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-newproj">
+  <form method="dialog" class="dlg">
+    <h2>New project</h2>
+    <label>Project name <input id="np-name" type="text" maxlength="40" placeholder="e.g. St Fagans"></label>
+    <label>Survey 1 date (optional) <input id="np-date" type="date"></label>
+    <p class="small muted">The project starts with Survey 1 and Camera 1. Next you can add recordings to it.</p>
+    <p id="np-msg" class="small err" hidden></p>
+    <div class="row wrap end"><button value="cancel" class="btn">Cancel</button><button id="np-go" value="ok" class="btn primary">Create and add files</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-openproj">
+  <form method="dialog" class="dlg wide">
+    <h2>Open project</h2>
+    <p class="small muted">Lists every recording saved in the project. Recordings that have been moved or deleted since are skipped.</p>
+    <div id="op-list" class="op-list"></div>
+    <label class="check"><input id="op-replace" type="checkbox"> Clear the current list first</label>
+    <div class="row wrap end"><button value="cancel" class="btn">Close</button></div>
   </form>
 </dialog>
 
@@ -589,9 +612,9 @@
   <form method="dialog" class="dlg">
     <h2 id="so-title">Reset all decisions?</h2>
     <p class="small">This undoes every Confirm, Reject and classification on <b id="so-name"></b> (<span id="so-count"></span>). Every event goes back to "Not reviewed". It can't be undone.</p>
-    <label class="check small"><input id="so-comments" type="checkbox"> Also delete all comments (<span id="so-ncom"></span>)</label>
-    <label class="check small"><input id="so-level" type="checkbox"> Also reset the detection level to the suggested level</label>
-    <label class="check small"><input id="so-rescan" type="checkbox"> Also scan the recording again with the current settings</label>
+    <label class="check small"><input id="so-comments" type="checkbox"> Delete all comments (<span id="so-ncom"></span>)</label>
+    <label class="check small"><input id="so-level" type="checkbox"> Reset the detection level to the suggested level</label>
+    <label class="check small"><input id="so-rescan" type="checkbox"> Scan the recording again with the current settings</label>
     <p class="small muted">Files you've already exported are kept.</p>
     <div class="row wrap end">
       <button value="cancel" class="btn">Cancel</button>

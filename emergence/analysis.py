@@ -408,3 +408,48 @@ def suggest(tracks: list, fps: float) -> tuple[str, list[str]]:
     else:
         head = "Flight through view (commuting/foraging)"
     return head, notes
+
+
+def noise_stats(activity: np.ndarray, quiet: np.ndarray, fps: float, level: float | None,
+                units: str = "°C") -> dict | None:
+    """The background in the gaps between spikes: how high it sits, how much it
+    jitters, and how often it rises part-way to the detection level. A clean
+    ROI (sky, a still wall) is low and steady; one that takes in swaying
+    branches, moving cloud or water rises and falls all the time, so it needs
+    a higher detection level and hides faint bats.
+
+    quiet: frames to use (scanned, not in or near an event, below the level)."""
+    q = activity[quiet]
+    if len(q) < max(30, int(fps * 2)):
+        return None
+    base = float(np.median(q))
+    sd = float(np.median(np.abs(q - base))) * 1.4826
+    if units in TEMP_UNITS:
+        floor = 0.6 * temp_scale(units)
+    else:
+        lo, hi = np.percentile(activity, [5, 99.9])
+        floor = max(1.0, 0.02 * float(hi - lo))
+    rise = base + 0.5 * floor                      # half the minimum margin above the background
+    rises = float((q > rise).mean())
+    # how the jitter changes through the recording, in 30 s blocks
+    idx = np.flatnonzero(quiet)
+    blk = max(1, int(fps * 30))
+    worst, var_ratio = None, 1.0
+    if len(idx) >= blk * 3:
+        groups = {}
+        for i in idx:
+            groups.setdefault(int(i // blk), []).append(i)
+        sds = {g: float(np.median(np.abs(activity[v] - np.median(activity[v])))) * 1.4826
+               for g, v in groups.items() if len(v) >= blk // 3}
+        if len(sds) >= 3:
+            med = float(np.median(list(sds.values()))) or 1e-9
+            g = max(sds, key=sds.get)
+            var_ratio = sds[g] / med
+            if var_ratio > 2.5:
+                worst = [g * blk, min(len(activity) - 1, (g + 1) * blk - 1)]
+    score = 6 * sd / floor
+    rating = ("high" if score > 2 or rises > 0.10 else
+              "moderate" if score > 1 or rises > 0.02 or worst is not None else "low")
+    return {"mean": float(q.mean()), "base": base, "sd": sd, "rises": rises, "rise_at": rise,
+            "rating": rating, "worst": worst, "var_ratio": var_ratio, "frames": int(len(q)),
+            "headroom": (float(level) - base) if level is not None else None}

@@ -311,7 +311,7 @@ function renderFiles() {
 
     const psub = el("div", "cam-sub proj-sub", `<span class="small muted">${plural(pj.surveys.length, "survey")} · ${plural(pj.paths.length, "recording")}</span>`);
     const pb = el("span", "row-btns");
-    pb.append(smallBtn("Map", `Map of ${pj.name}: the site and where each camera stood and looked`, () => openMap(pj.id), "map-btn"),
+    pb.append(smallBtn("Site Plan", `Site plan of ${pj.name}: the site, where each camera and acoustic detector was and which way each camera looked`, () => openMap(pj.id), "map-btn"),
               smallBtn("+ Survey", `Add a survey (a visit or night) to ${pj.name}`, () => org({ action: "new_survey", project: pj.id }).catch(err)),
               smallBtn("Scan project", `Scan every recording in ${pj.name}`, () => scanGroup(pj.id, pj.name), "scan-btn"));
     psub.appendChild(pb); pg.append(ph, psub);
@@ -327,6 +327,10 @@ function renderFiles() {
       sb.append(smallBtn("+ Camera", `Add a camera to Survey ${sv.no}`, () => org({ action: "new_camera", survey: sv.id }).catch(err)),
                 smallBtn("Scan survey", `Scan every recording in Survey ${sv.no}`, () => scanGroup(sv.id, `Survey ${sv.no}`), "scan-btn"));
       ssub.appendChild(sb); sg.append(sh, ssub);
+      if ((sv.detectors || []).length) {
+        const dl = el("button", "det-line small", `<span class="det-pin-s">A</span> ${plural(sv.detectors.length, "acoustic detector")}: ${sv.detectors.map((d) => esc(d.name)).join(", ")}`);
+        dl.type = "button"; dl.title = "Open the site plan"; dl.onclick = () => { MAPS.sv = sv.id; openMap(pj.id); }; sg.appendChild(dl);
+      }
       for (const cam of sv.cameras) {
         const g = el("div", "cam-group"); g.dataset.cam = cam.id;
         const head = el("div", "cam-head", ICON_CAM + `<span class="cam-no">Camera ${cam.no}</span>`);
@@ -425,7 +429,7 @@ function projMenu(pj) {
     i.onclick = async (e) => { e.stopPropagation(); m.hidden = true; try { await fn(); } catch (er) { err(er); } }; m.appendChild(i); };
   item("Save project", async () => { const r = await api("/api/org", { action: "save_project", id: pj.id }); toast(`${pj.name} saved. Project file: ${r.file}`, 8000); });
   item("Rename…", () => { const i = [...document.querySelectorAll(".proj-name")].find((x) => x.value === pj.name); if (i) { i.focus(); i.select(); } });
-  item("Map and site plan…", () => openMap(pj.id));
+  item("Site plan…", () => openMap(pj.id));
   item(pj.template ? `New survey from site plan (${plural(pj.template, "camera")})` : "New survey", async () => {
     const r = await org({ action: "new_survey", project: pj.id }); if (r.from_template) toast("New survey made from the site plan: the same cameras, positions and lenses.", 6000); });
   if (pj.template) item("Stop using the site plan template", () => org({ action: "clear_template", project: pj.id }));
@@ -817,7 +821,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-low";
+const APP_VERSION = "2026.11.17-det";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2234,16 +2238,24 @@ function conePoints(m) {
   for (let k = 0; k <= n; k++) pts.push(geoDest(m.lat, m.lon, m.bearing - m.fov / 2 + m.fov * k / n, m.range));
   return pts;
 }
-// as FLIR Raven: IFOV = range × angle ÷ pixels; pixels on a round 0.1 m target
-function ifovMm(m) { return m.range * (m.fov * Math.PI / 180) / SENSOR_PX * 1000; }
-function targetPx(m, size = 0.1) { return Math.PI / 4 * Math.pow(size * 1000 / ifovMm(m), 2); }
+// Pixel size at the range: the lens sees 2 × range × tan(angle ÷ 2) across, shared
+// between 640 pixels (480 down). The vertical angle comes from FLIR's lens figures.
+const LENS_V = { 29: 22, 51: 39, 95: 74, 14: 10, 24: 18, 42: 32, 80: 63 };
+const SENSOR_PY = 480;
+function vfov(m) { return LENS_V[m.fov] ?? 2 * Math.atan(Math.tan(m.fov * Math.PI / 360) * SENSOR_PY / SENSOR_PX) * 180 / Math.PI; }
+function viewW(m) { return 2 * m.range * Math.tan(m.fov * Math.PI / 360); }       // metres across at the range
+function viewH(m) { return 2 * m.range * Math.tan(vfov(m) * Math.PI / 360); }     // metres high at the range
+function pixW(m) { return viewW(m) / SENSOR_PX * 1000; }                           // mm
+function pixH(m) { return viewH(m) / SENSOR_PY * 1000; }
+function ifovMm(m) { return pixW(m); }
+function targetPx(m, size = 0.1) { return Math.PI / 4 * (size * 1000 / pixW(m)) * (size * 1000 / pixH(m)); }   // pixels on a round target
 const camIcon = (no, sel) => L.divIcon({ className: "cam-pin" + (sel ? " sel" : ""), html: `<span>${no}</span>`, iconSize: [26, 30], iconAnchor: [13, 30] });
 const tipIcon = L.divIcon({ className: "cone-tip", iconSize: [14, 14], iconAnchor: [7, 7] });
 
 function openMap(projectId) {
   const pj = (S.tree || []).find((p) => p.id === projectId); if (!pj) return;
   MAPS.pj = pj.id; MAPS.sel = null;
-  $("#map-title").textContent = `Map: ${pj.name}`;
+  $("#map-title").textContent = `Site plan: ${pj.name}`;
   $("#map-survey").innerHTML = pj.surveys.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
   $("#map-survey").value = MAPS.sv && pj.surveys.some((s) => s.id === MAPS.sv) ? MAPS.sv : (pj.surveys[pj.surveys.length - 1] || {}).id || "";
   MAPS.sv = $("#map-survey").value;
@@ -2294,6 +2306,14 @@ function drawMap() {
     sm.on("dragend", () => setSite(sm.getLatLng()));
     $("#map-site-note").textContent = `Site: ${pj.site.lat.toFixed(5)}, ${pj.site.lon.toFixed(5)}`;
   } else $("#map-site-note").textContent = "No site pin yet.";
+  for (const d of (sv ? sv.detectors || [] : [])) {
+    if (!d.map) continue;
+    const sel = MAPS.sel === d.id;
+    if (d.range > 0) L.circle([d.map.lat, d.map.lon], { radius: d.range, color: "#f0a020", weight: 1.5, dashArray: "5 5", fillColor: "#f0a020", fillOpacity: sel ? 0.18 : 0.08, interactive: false }).addTo(MAPS.layer);
+    const mk = L.marker([d.map.lat, d.map.lon], { draggable: true, icon: L.divIcon({ className: "det-pin" + (sel ? " sel" : ""), html: `<span>A${d.no}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] }), title: d.name, zIndexOffset: 1100 }).addTo(MAPS.layer);
+    mk.on("click", () => { MAPS.sel = d.id; drawMap(); });
+    mk.on("dragend", () => { const p = mk.getLatLng(); d.map = { lat: p.lat, lon: p.lng }; saveDet(d, { map: d.map }); drawMap(); });
+  }
   for (const cam of (sv ? sv.cameras : [])) {
     const m = cam.map; if (!m) continue;
     const sel = MAPS.sel === cam.id;
@@ -2316,6 +2336,7 @@ function drawMap() {
 }
 function renderMapCams(quiet) {
   const sv = mapSurvey(), box = $("#map-cams");
+  if (!quiet) { if (document.activeElement !== $("#map-surveyor")) $("#map-surveyor").value = sv ? sv.surveyor || "" : ""; renderDets(); }
   if (!sv) { box.innerHTML = '<p class="small muted">This project has no surveys yet.</p>'; return; }
   if (quiet) {   // while dragging: just refresh the numbers
     for (const cam of sv.cameras) { const r = box.querySelector(`[data-mc="${cam.id}"]`); if (!r || !cam.map) continue;
@@ -2337,7 +2358,9 @@ function renderMapCams(quiet) {
         <label ${m.lens === "custom" ? "" : "hidden"}>Angle ° <input data-k="fov" type="number" min="1" max="180" step="1" value="${m.fov}"></label>
         <label>Facing ° <input data-k="bearing" type="number" min="0" max="359" step="1" value="${Math.round(m.bearing)}"></label>
         <label>Range m <input data-k="range" type="number" min="1" max="2000" step="1" value="${Math.round(m.range)}"></label>
+        <label class="span2">Surveyor <input data-s="1" type="text" maxlength="80" value="${esc(cam.surveyor || "")}" placeholder="Who set up this camera"></label>
       </div><div class="mc-stats small muted">${camStats(m)}</div>`);
+      row.querySelector("[data-s]").onchange = async (e) => { cam.surveyor = e.target.value.trim(); try { await api("/api/org", { action: "set_info", id: cam.id, surveyor: cam.surveyor }); } catch (er) { err(er); } };
       row.querySelectorAll("[data-k]").forEach((i) => (i.onchange = () => {
         const k = i.dataset.k;
         if (k === "model") { m.model = i.value; const l = LENSES[m.model]; m.fov = l.includes(m.fov) ? m.fov : (l.includes(95) ? 95 : l[l.length - 1]); m.lens = String(m.fov); }
@@ -2354,8 +2377,51 @@ function renderMapCams(quiet) {
     box.appendChild(row);
   }
 }
+// acoustic detectors: placed like cameras, with a dashed circle for their range
+const DET_FIELDS = [["name", "Acoustic detector name"], ["surveyor", "Surveyor"], ["model", "Model"], ["serial", "Serial no."]];
+function saveDet(d, fields) {   // edits close together go in one save, none lost
+  MAPS.dt = MAPS.dt || {}; MAPS.dp = MAPS.dp || {};
+  clearTimeout(MAPS.dt[d.id]); MAPS.dp[d.id] = { ...(MAPS.dp[d.id] || {}), ...fields };
+  MAPS.dt[d.id] = setTimeout(async () => { const f = MAPS.dp[d.id]; delete MAPS.dp[d.id];
+    try { await api("/api/org", { action: "set_detector", id: d.id, fields: f }); } catch (e) { err(e); } }, 250);
+}
+function renderDets() {
+  const sv = mapSurvey(), box = $("#map-dets"); box.innerHTML = "";
+  if (!sv) return;
+  const ds = sv.detectors || (sv.detectors = []);
+  if (!ds.length) box.innerHTML = '<p class="small muted">No acoustic detectors in this survey.</p>';
+  for (const d of ds) {
+    const row = el("div", "mc det" + (MAPS.sel === d.id ? " sel" : ""));
+    row.innerHTML = `<div class="mc-head"><span class="det-pin-s">A${d.no}</span><b>${esc(d.name)}</b></div>
+      <div class="mc-grid">${DET_FIELDS.map(([k, l]) => `<label class="${k === "name" || k === "model" ? "span2" : ""}">${l} <input data-d="${k}" type="text" maxlength="80" ${k === "model" ? 'list="det-models"' : ""} value="${esc(d[k] || "")}"></label>`).join("")}
+        <label>Range m <input data-d="range" type="number" min="0" max="500" step="1" value="${Math.round(d.range ?? 20)}" title="Rough detection range, drawn as a dashed circle (0 for none)"></label>
+        <label class="span2">Other info <textarea data-d="notes" rows="2" maxlength="200" placeholder="Settings, height, mounting…">${esc(d.notes || "")}</textarea></label>
+      </div>${d.map ? `<div class="mc-stats small muted">${d.map.lat.toFixed(6)}, ${d.map.lon.toFixed(6)}</div>` : ""}`;
+    row.querySelectorAll("[data-d]").forEach((i) => (i.onchange = () => {
+      const k = i.dataset.d; d[k] = k === "range" ? Math.max(0, +i.value || 0) : i.value.trim();
+      saveDet(d, { [k]: d[k] }); if (k === "name" || k === "range") drawMap();
+    }));
+    const acts = el("div", "row wrap");
+    if (!d.map) acts.append(smallBtn("Place on map", `Put ${d.name} in the middle of the map`, () => {
+      const c = MAPS.map.getCenter(), at = geoDest(c.lat, c.lng, 180, 6 * d.no); d.map = { lat: at[0], lon: at[1] }; MAPS.sel = d.id; saveDet(d, { map: d.map }); drawMap(); }, "primary"));
+    else acts.append(smallBtn("Show", `Centre the map on ${d.name}`, () => { MAPS.sel = d.id; MAPS.map.setView([d.map.lat, d.map.lon], Math.max(MAPS.map.getZoom(), 18)); drawMap(); }),
+                     smallBtn("Remove from map", "Take it off the map (keeps its details)", () => { d.map = null; saveDet(d, { map: null }); drawMap(); }));
+    acts.append(smallBtn("Delete", `Delete ${d.name}`, async () => {
+      if (!confirm(`Delete ${d.name} from this survey?`)) return;
+      try { await api("/api/org", { action: "delete_detector", id: d.id }); sv.detectors = sv.detectors.filter((x) => x !== d); drawMap(); } catch (e) { err(e); } }));
+    row.appendChild(acts);
+    row.addEventListener("click", (e) => { if (e.target.closest("input, select, button, textarea")) return; if (MAPS.sel !== d.id) { MAPS.sel = d.id; drawMap(); } });
+    box.appendChild(row);
+  }
+}
+$("#map-add-det").onclick = async () => {
+  const sv = mapSurvey(); if (!sv) return;
+  try { const r = await api("/api/org", { action: "add_detector", survey: sv.id });
+    const d = (r.tree || []).flatMap((p) => p.surveys).find((s) => s.id === sv.id).detectors.find((x) => x.id === r.created);
+    (sv.detectors = sv.detectors || []).push(d); MAPS.sel = d.id; drawMap(); } catch (e) { err(e); }
+};
 function camStats(m) {
-  return `IFOV ${ifovMm(m).toFixed(1)} mm at ${Math.round(m.range)} m · ${targetPx(m).toFixed(1)} px on a 0.1 m target · ${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}`;
+  return `<b>Pixel size ${pixW(m).toFixed(1)} × ${pixH(m).toFixed(1)} mm</b> at ${Math.round(m.range)} m · view ${viewW(m).toFixed(1)} × ${viewH(m).toFixed(1)} m · ${targetPx(m).toFixed(1)} px on a 0.1 m target · ${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}`;
 }
 async function setSite(ll) {
   try {
@@ -2376,13 +2442,17 @@ $("#map-template").onclick = async () => {
 $("#map-print").onclick = () => {
   const pj = mapProject(), sv = mapSurvey(); if (!pj) return;
   const cams = (sv ? sv.cameras : []).filter((c) => c.map);
-  const rows = cams.map((c) => { const m = c.map; return `<tr><td>${c.no}</td><td>${esc(c.label)}</td><td>${esc(m.model)} ${m.fov}°</td><td>${Math.round(m.bearing)}°</td><td>${Math.round(m.range)} m</td><td>${ifovMm(m).toFixed(1)} mm</td><td>${targetPx(m).toFixed(2)} px</td><td>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</td></tr>`; }).join("");
+  const rows = cams.map((c) => { const m = c.map; return `<tr><td>${c.no}</td><td>${esc(c.label)}</td><td>${esc(m.model)} ${m.fov}°</td><td>${Math.round(m.bearing)}°</td><td>${Math.round(m.range)} m</td><td>${pixW(m).toFixed(1)} × ${pixH(m).toFixed(1)} mm</td><td>${targetPx(m).toFixed(2)} px</td><td>${esc(c.surveyor || "")}</td><td>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</td></tr>`; }).join("");
+  const dets = (sv ? sv.detectors || [] : []);
+  const drows = dets.map((d) => `<tr><td>A${d.no}</td><td>${esc(d.name)}</td><td>${esc(d.model)}</td><td>${esc(d.serial)}</td><td>${esc(d.surveyor)}</td><td>${d.range ? Math.round(d.range) + " m" : ""}</td><td>${esc(d.notes)}</td><td>${d.map ? d.map.lat.toFixed(6) + ", " + d.map.lon.toFixed(6) : "not placed"}</td></tr>`).join("");
   const d = new Date();
   $("#plan-print").innerHTML = `<h1>${esc(pj.name)}: site plan</h1>
-    <p>${sv ? esc(sv.label) + " · " : ""}Printed ${d.toLocaleDateString("en-GB")}${pj.site ? ` · Site ${pj.site.lat.toFixed(6)}, ${pj.site.lon.toFixed(6)}` : ""}</p>
-    <table><thead><tr><th>No.</th><th>Camera</th><th>Model and lens</th><th>Facing</th><th>Range</th><th>IFOV</th><th>Pixels on 0.1 m target</th><th>GPS</th></tr></thead><tbody>${rows || '<tr><td colspan="8">No cameras placed yet.</td></tr>'}</tbody></table>`;
-  if (cams.length) {
-    const pts = cams.flatMap((c) => conePoints(c.map));
+    <p>${sv ? esc(sv.label) + " · " : ""}${sv && sv.surveyor ? "Surveyor(s): " + esc(sv.surveyor) + " · " : ""}Printed ${d.toLocaleDateString("en-GB")}${pj.site ? ` · Site ${pj.site.lat.toFixed(6)}, ${pj.site.lon.toFixed(6)}` : ""}</p>
+    <table><thead><tr><th>No.</th><th>Camera</th><th>Model and lens</th><th>Facing</th><th>Range</th><th>Pixel size</th><th>Pixels on 0.1 m target</th><th>Surveyor</th><th>GPS</th></tr></thead><tbody>${rows || '<tr><td colspan="9">No cameras placed yet.</td></tr>'}</tbody></table>
+    ${dets.length ? `<h2>Acoustic detectors</h2><table><thead><tr><th>No.</th><th>Name</th><th>Model</th><th>Serial no.</th><th>Surveyor</th><th>Range</th><th>Other info</th><th>GPS</th></tr></thead><tbody>${drows}</tbody></table>` : ""}`;
+  const dpts = (sv ? sv.detectors || [] : []).filter((x) => x.map).map((x) => [x.map.lat, x.map.lon]);
+  if (cams.length || dpts.length) {
+    const pts = cams.flatMap((c) => conePoints(c.map)).concat(dpts);
     MAPS.map.fitBounds(L.latLngBounds(pts), { padding: [30, 30] });
   }
   document.body.classList.add("printing-plan");
@@ -2390,6 +2460,8 @@ $("#map-print").onclick = () => {
 };
 window.addEventListener("afterprint", () => { document.body.classList.remove("printing-plan"); if (MAPS.map) MAPS.map.invalidateSize(); });
 $("#map-survey").onchange = () => { MAPS.sv = $("#map-survey").value; MAPS.sel = null; drawMap(); };
+$("#map-surveyor").onchange = async () => { const sv = mapSurvey(); if (!sv) return; sv.surveyor = $("#map-surveyor").value.trim();
+  try { await api("/api/org", { action: "set_info", id: sv.id, surveyor: sv.surveyor }); } catch (e) { err(e); } };
 $("#map-close").onclick = () => $("#dlg-map").close();
 $("#dlg-map").addEventListener("close", () => refreshFiles());
 $("#map-search").onsubmit = async (e) => {

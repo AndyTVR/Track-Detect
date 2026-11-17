@@ -494,8 +494,10 @@ def org_tree(rows):
                 files = sorted(byc.get(c["id"], []), key=lambda r: (r["start"] or "", r["name"]))
                 cams.append({"id": c["id"], "no": c["no"], "name": c.get("name") or "", "label": camera_label(c),
                              "paths": [r["path"] for r in files], "overlaps": _overlaps(files),
-                             "join": bool(c.get("joined")), "joined": CAM_JOIN.get(c["id"], ""), "map": c.get("map")})
+                             "join": bool(c.get("joined")), "joined": CAM_JOIN.get(c["id"], ""), "map": c.get("map"),
+                             "surveyor": c.get("surveyor") or ""})
             surveys.append({"id": sv["id"], "no": sv["no"], "date": sv.get("date") or "", "label": survey_label(sv), "cameras": cams,
+                            "surveyor": sv.get("surveyor") or "", "detectors": sv.get("detectors") or [],
                             "paths": [p for c in cams for p in c["paths"]]})
         tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"), "template": len(pj.get("template") or []),
                      "paths": [p for sv in surveys for p in sv["paths"]]})
@@ -863,6 +865,10 @@ def organise():
                 c = _new_camera(sv, t.get("name", ""))
                 if t.get("map"):
                     c["map"] = copy.deepcopy(t["map"])
+                if t.get("surveyor"):
+                    c["surveyor"] = t["surveyor"]
+            for d in n[1].get("template_detectors") or []:
+                sv.setdefault("detectors", []).append({**copy.deepcopy(d), "id": _nid("d")})
             out["from_template"] = True
             out["created"] = sv["cameras"][0]["id"]
         else:
@@ -944,18 +950,61 @@ def organise():
                            "lens": str(m.get("lens") or "")[:30]}
         else:
             n[1].pop("map", None)
+    elif act == "set_info":   # surveyor names: {id: survey or camera, surveyor}
+        n = _node(b.get("id"))
+        if not n or n[0] not in ("survey", "camera"):
+            raise UserError("That no longer exists")
+        v = str(b.get("surveyor") or "").strip()[:80]
+        if v:
+            n[1]["surveyor"] = v
+        else:
+            n[1].pop("surveyor", None)
+    elif act == "add_detector":   # an acoustic bat detector in a survey
+        n = _node(b.get("survey"))
+        if not n or n[0] != "survey":
+            raise UserError("That survey no longer exists")
+        ds = n[1].setdefault("detectors", [])
+        no = max([d.get("no", 0) for d in ds] or [0]) + 1
+        d = {"id": _nid("d"), "no": no, "name": f"Detector {no}", "surveyor": "", "model": "", "serial": "", "notes": "",
+             "range": 20.0, "map": None}
+        ds.append(d)
+        out["created"] = d["id"]
+    elif act in ("set_detector", "delete_detector"):
+        found = None
+        for pj, sv in ((pj, sv) for pj in org["projects"] for sv in pj["surveys"]):
+            for d in sv.get("detectors") or []:
+                if d["id"] == b.get("id"):
+                    found = (sv, d)
+        if not found:
+            raise UserError("That detector no longer exists")
+        sv, d = found
+        if act == "delete_detector":
+            sv["detectors"].remove(d)
+        else:
+            f = b.get("fields") or {}
+            for k in ("name", "surveyor", "model", "serial", "notes"):
+                if k in f:
+                    d[k] = str(f[k] or "").strip()[:200 if k == "notes" else 80]
+            if "range" in f:
+                d["range"] = _num_in(f["range"], 0, 500)
+            if "map" in f:
+                m = f["map"]
+                d["map"] = {"lat": _num_in(m["lat"], -90, 90), "lon": _num_in(m["lon"], -180, 180)} if m else None
     elif act == "save_template":   # a survey's cameras become the plan for the project's later surveys
         n = _node(b.get("survey"))
         if not n or n[0] != "survey":
             raise UserError("That survey no longer exists")
         import copy
-        n[2]["template"] = [{"name": c.get("name") or "", "map": copy.deepcopy(c.get("map"))} for c in sorted(n[1]["cameras"], key=lambda c: c["no"])]
+        n[2]["template"] = [{"name": c.get("name") or "", "map": copy.deepcopy(c.get("map")), "surveyor": c.get("surveyor") or ""}
+                            for c in sorted(n[1]["cameras"], key=lambda c: c["no"])]
+        n[2]["template_detectors"] = [{k: copy.deepcopy(v) for k, v in d.items() if k != "id"} for d in n[1].get("detectors") or []]
         out["template"] = len(n[2]["template"])
     elif act == "clear_template":
         n = _node(b.get("project"))
         if not n or n[0] != "project":
             raise UserError("That project no longer exists")
         n[1].pop("template", None)
+        n[1].pop("template_detectors", None)
     elif act == "close_project":   # take its recordings off the list (the project stays saved)
         n = _node(b.get("id"))
         if not n or n[0] != "project":
@@ -1136,7 +1185,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-low"   # must match static/app.js
+APP_VERSION = "2026.11.17-det"   # must match static/app.js
 
 
 @app.get("/api/version")

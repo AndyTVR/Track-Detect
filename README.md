@@ -130,7 +130,7 @@ clicking **Quit** in the top bar, closes it.
    - The **⚙** beside PROJECT holds the project's options: **Save project**
      (everything is saved as you go; this also writes `<project>.tdproject`
      beside its recordings, a project file to keep or share), **Rename**,
-     **Map and site plan**, **New survey** (from the site plan, if there is
+     **Site plan**, **New survey** (from the site plan, if there is
      one), **Open recordings folder**, **Close project** (takes its
      recordings off the list; reopen it from the folder button > Open
      project), **Reset all decisions** and **Delete project** (its
@@ -138,20 +138,34 @@ clicking **Quit** in the top bar, closes it.
      has **Open a project file…** for a `.tdproject` file, for example from
      another computer; recordings that have moved are looked for beside the
      project file.
-   - **Map** (on each project) opens a satellite map of the site. Search for
-     a place or postcode (or type latitude, longitude), then **Set site
-     here** to pin the site. Pick a survey and **Place on map** each camera:
-     drag its numbered pin to where it stood, and drag the white dot at the
-     end of its cone to turn it and set how far it reaches (or type the
-     facing in degrees and the range in metres). Choose the camera and lens:
-     FLIR A70 29°, 51° or 95°; FLIR A700 14°, 24°, 42° or 80°; or another
-     angle. Each camera shows its IFOV at that range and the pixels on a
-     0.1 m target, worked out as in FLIR Raven (range × lens angle ÷ 640
-     pixels; a round target). Everything is saved as you go, with the
-     projects. **Save as site plan template** makes the survey's cameras
-     (names, positions, facing, range and lenses) the plan for the project:
+   - **Site Plan** (on each project) opens a satellite map of the site.
+     Search for a place or postcode (or type latitude, longitude), then
+     **Set site here** to pin the site. Pick a survey and enter its
+     **Surveyor(s)**.
+     - **Cameras**: **Place on map** each camera, drag its numbered pin to
+       where it stood, and drag the white dot at the end of its cone to turn
+       it and set how far it reaches (or type the facing in degrees and the
+       range in metres). Choose the camera and lens (FLIR A70 29°, 51° or
+       95°; FLIR A700 14°, 24°, 42° or 80°; or another angle) and who set it
+       up. Each camera shows its **pixel size** at that range, by
+       trigonometry: the lens sees 2 × range × tan(angle ÷ 2) across,
+       shared between 640 pixels (and the vertical angle between 480), with
+       the view's width and height and the pixels covering a round 0.1 m
+       target.
+     - **Acoustic detectors**: **+ Add detector** for each one, with its
+       name, surveyor, model (common models are suggested as you type),
+       serial number, a rough detection range (drawn as a dashed circle) and
+       other info, then **Place on map** and drag its orange A1, A2… pin into
+       place. A survey's detectors are also listed under it in the
+       recordings list.
+
+     Everything is saved as you go, with the projects.
+     **Save as site plan template** makes the survey's cameras
+     (names, positions, facing, range, lenses and surveyors) and acoustic
+     detectors the plan for the project:
      every new survey starts with them, so a repeat visit needs no setting
-     up. **Print site plan** prints the map with a camera table (or saves it
+     up. **Print site plan** prints the map with tables of the cameras and
+     detectors (or saves it
      as a PDF: choose Save as PDF as the printer). The map needs an internet connection for the imagery (Esri
      World Imagery, or OpenStreetMap from the layers button); place names
      come from OpenStreetMap's Nominatim.

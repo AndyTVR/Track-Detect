@@ -395,7 +395,7 @@
   <section id="plan-print" class="plan-print" aria-hidden="true"></section>
   <div class="map-wrap">
     <aside class="map-side">
-      <div class="row between"><h2 id="map-title">Project map</h2><button id="map-close" class="btn sm" type="button">Close</button></div>
+      <div class="row between"><h2 id="map-title">Site plan</h2><button id="map-close" class="btn sm" type="button">Close</button></div>
       <form id="map-search" class="map-search" role="search">
         <input id="map-q" type="search" placeholder="Search a place or postcode, or type lat, long" aria-label="Search the map">
         <button class="btn sm" type="submit">Find</button>
@@ -406,13 +406,22 @@
         <span id="map-site-note" class="small muted"></span>
       </div>
       <label class="small">Survey <select id="map-survey"></select></label>
+      <label class="small">Surveyor(s) for this survey <input id="map-surveyor" type="text" maxlength="80" placeholder="e.g. A. Milner, J. Smith"></label>
       <div class="row wrap">
         <button id="map-template" class="btn sm" type="button" title="Later surveys of this project start with these cameras: their names, positions, facing, range and lenses">Save as site plan template</button>
         <button id="map-print" class="btn sm" type="button" title="Print the site plan, or save it as a PDF">Print site plan</button>
       </div>
       <p id="map-template-note" class="small muted"></p>
+      <h3 class="map-h">Cameras</h3>
       <div id="map-cams" class="map-cams"></div>
-      <p class="small muted">Drag a camera to move it. Drag the white dot at the end of its cone to turn it and set how far it reaches. Changes are saved as you go.</p>
+      <div class="row between"><h3 class="map-h">Acoustic detectors</h3><button id="map-add-det" class="btn sm" type="button">+ Add detector</button></div>
+      <div id="map-dets" class="map-cams"></div>
+      <datalist id="det-models">
+        <option value="Wildlife Acoustics Song Meter SM4BAT FS"><option value="Wildlife Acoustics Song Meter Mini Bat 2"><option value="Wildlife Acoustics Song Meter Mini Bat">
+        <option value="Wildlife Acoustics Echo Meter Touch 2"><option value="Titley Anabat Swift"><option value="Titley Anabat Express"><option value="Titley Anabat Scout">
+        <option value="Elekon Batlogger M2"><option value="Elekon Batlogger A+"><option value="Pettersson D500X"><option value="AudioMoth">
+      </datalist>
+      <p class="small muted">Drag a camera or detector to move it. Drag the white dot at the end of a camera's cone to turn it and set how far it reaches. Pixel size is the size of one pixel at the range: 2 × range × tan(lens angle ÷ 2) shared between 640 pixels across (480 down). Changes are saved as you go.</p>
     </aside>
     <div id="map" class="map" aria-label="Map of the site"></div>
   </div>

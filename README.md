@@ -420,9 +420,10 @@ reads that camera's files correctly.
   count. Some A700 files store raw sensor values instead (the St Fagans
   recordings, for example). These are converted to °C from the colour range
   Research Studio showed when recording started, which runs from the first
-  frame's coldest pixel to its hottest. That is right for temperature
-  differences, which is what detection uses, but absolute values are
-  approximate, so the level shows "°C, approx.". Scans already made in
+  frame's coldest pixel to its hottest, then lowered by 20 °C, as those
+  readings run about 20 °C high. That is right for temperature differences,
+  which is what detection uses, but absolute values are approximate, so the
+  level shows "°C, approx.". Scans already made in
   counts are converted, with no need to rescan. Files with no temperature
   information at all (RS8481 recordings saved as Counts) still show counts. Files saved in counts show as counts, which still works for
   detection.

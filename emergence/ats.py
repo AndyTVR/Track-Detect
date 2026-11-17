@@ -73,6 +73,11 @@ def uk_time(t_utc: _dt.datetime):
     return t_utc.astimezone(_dt.timezone(_dt.timedelta(0), "GMT")), "GMT"
 
 
+# Files converted from raw sensor values with Research Studio's colour range
+# read about 20 °C too high (checked against known temperatures at St Fagans),
+# so their readings are lowered by this much. Only those files are affected.
+APPROX_OFFSET_C = -20.0
+
 class ATSFile:
     """Random access to the frames of an .ats recording."""
 
@@ -206,6 +211,7 @@ class ATSFile:
             # its coldest to its hottest pixel, so those two pixels give a straight-line
             # conversion. Good for temperature differences; absolute values are approximate.
             c0, c1 = self.xml["span"]["TemperatureC"]
+            c0, c1 = c0 + APPROX_OFFSET_C, c1 + APPROX_OFFSET_C   # these readings run about 20 °C high
             first = self.raw(0)
             k0, k1 = float(first.min()), float(first.max())
             if k1 > k0 and c1 > c0:

@@ -878,7 +878,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.17-cams"   # must match static/app.js
+APP_VERSION = "2026.11.17-test"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -972,7 +972,8 @@ def start_scan():
         label = f"Scan {os.path.basename(p)}" + (" (play limits)" if part else "")
         if len(r.rois) > 1:
             label += f", {len(ids)} ROI{'s' if len(ids) != 1 else ''}"
-        out.append(jobs.submit(label, lambda prog, stop, r=r, ids=ids: {"ok": r.run_scan(prog, stop, ranges=part, roi_ids=ids)}))
+        out.append(jobs.submit(label, lambda prog, stop, r=r, ids=ids: {"ok": r.run_scan(prog, stop, ranges=part, roi_ids=ids)},
+                               path=p, kind="scan"))
     return jsonify(jobs=out, skipped=len(targets) - len(out))
 
 
@@ -988,7 +989,8 @@ def start_over():
     out = {"recording": r.summary(), "jobs": []}
     if b.get("rescan") and r.roi:
         out["jobs"].append(jobs.submit(f"Scan {os.path.basename(r.path)} again",
-                                       lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop, ranges=part, fresh=True)}))
+                                       lambda prog, stop, r=r: {"ok": r.run_scan(prog, stop, ranges=part, fresh=True)},
+                                       path=r.path, kind="scan"))
     elif reset_level and r.acts:
         r.redetect(r.state.get("suggested_level") or 0)
         out["recording"] = r.summary()
@@ -1146,6 +1148,97 @@ def activity():
     rng = [float(np.percentile(act, 1)), float(act.max())] if act is not None and len(act) else None
     return jsonify(values=r.activity_range(a, b, pts), series=r.activity_series(a, b, pts), frames=n, units=r.src.units, range=rng,
                    level=r.state.get("level"), suggested_level=r.state.get("suggested_level"))
+
+
+@app.get("/api/scan-live")
+def scan_live():
+    """The current recording's scan so far, while it runs."""
+    r = rec()
+    n = r.src.n_frames
+    a = int(request.args.get("a", 0))
+    b = int(request.args.get("b", n - 1))
+    pts = max(50, min(4000, int(request.args.get("points", 1200))))
+    lv = r.live_range(a, b, pts)
+    return jsonify(live=lv is not None, units=r.src.units, frames=n, **(lv or {}))
+
+
+@app.post("/api/test-scan")
+def test_scan():
+    """A quick look at background noise: scan one randomly chosen minute of a
+    recording from a camera (or the current recording) with its ROIs, without
+    saving anything, and rate the noise between spikes."""
+    import random
+    b = request.json or {}
+    paths = [p for p in (_paths_under(b["node"]) if b.get("node") else [state["current"]]) if p and os.path.exists(p)]
+    cands = [p for p in paths if any(len(x.get("points") or []) >= 3 for x in rec(p).rois)]
+    if not cands:
+        raise UserError("Draw an ROI on a recording from this camera first (tick 'Use for every file from this camera' to share it)")
+    p = random.choice(cands)
+    r = rec(p)
+    n, fps = r.src.n_frames, r.src.fps
+    length = int(min(n, max(fps * 60, 30)))   # one minute
+    edge = int(min(fps * 10, max(0, n - length) // 4))
+    a = random.randint(edge, max(edge, n - length - edge))
+    bb = min(n - 1, a + length - 1)
+    rois = [x for x in r.rois if len(x.get("points") or []) >= 3]
+
+    def work(prog, stop):
+        from emergence.analysis import roi_mask, scan_multi, suggested_level, noise_stats
+        shape = (r.src.height, r.src.width)
+        seg = scan_multi(r.src, [roi_mask(x["points"], shape) for x in rois], prog, stop, start=a, stop=bb)
+        if seg.shape[1] < bb - a + 1:
+            return {"cancelled": True}
+        sens = cfg_mod().SENSITIVITY[cfg_mod().get("detect", "sensitivity")]
+        out = []
+        for j, x in enumerate(rois):
+            act = seg[j]
+            lvl = suggested_level(act, sens, r.src.units)
+            quiet = act <= lvl
+            hot = np.flatnonzero(~quiet)
+            pad = int(fps)
+            for i in hot:
+                quiet[max(0, i - pad):i + pad + 1] = False
+            st = noise_stats(act, quiet, fps, lvl, r.src.units) or {}
+            spikes = int(((act[1:] > lvl) & (act[:-1] <= lvl)).sum() + (act[0] > lvl))
+            out.append({"roi": x["id"], "name": x["name"], "level": float(lvl), "spikes": spikes, **st})
+        return {"test": {"path": p, "name": os.path.basename(p), "a": a, "b": bb, "seconds": (bb - a + 1) / fps, "whole": bb - a + 1 >= n,
+                         "from": r.src.time_label(a), "to": r.src.time_label(bb), "date": r.src.date_label(a),
+                         "units": r.src.units, "rois": out}}
+
+    j = jobs.submit(f"Test scan of {os.path.basename(p)}", work, path=p, kind="test")
+    return jsonify(job=j)
+
+
+def cfg_mod():
+    from emergence import settings as cfg
+    return cfg
+
+
+@app.post("/api/export-camera")
+def export_camera():
+    """Every recording from a camera, in time order, as one MP4 (or just this
+    recording if it isn't in a camera)."""
+    from emergence.render import export_recordings_video, safe_name
+    b = request.json or {}
+    cur = state["current"]
+    cid = _org()["of"].get(cur) if cur else None
+    if cid:
+        pj, sv, c = _place(cur)
+        rows = sorted([_file_row(p) for p in _paths_under(cid) if os.path.exists(p)], key=lambda x: (x["start"] or "", x["name"]))
+        paths = [x["path"] for x in rows]
+        name = f"{pj['name']}_Survey{sv['no']}{('_' + sv['date']) if sv.get('date') else ''}_{camera_label(c).replace(': ', '_')}"
+    else:
+        if not cur:
+            raise UserError("Open a recording first")
+        paths, name = [cur], os.path.splitext(os.path.basename(cur))[0]
+    folder = (b.get("folder") or cfg_mod().get("export", "folder") or os.path.join(os.path.dirname(paths[0]), "exports"))
+    os.makedirs(folder, exist_ok=True)
+    out = os.path.join(folder, safe_name(name) + ("_detection" if b.get("mode") == "blend" else "") + ".mp4")
+    recs_ = [rec(p) for p in paths]
+    opts = {k: b.get(k) for k in ("mode", "palette", "blend", "opacity", "enh", "overlays", "quality")}
+    j = jobs.submit(f"Camera video: {os.path.basename(out)}",
+                    lambda prog, stop: {"files": export_recordings_video(recs_, out, opts, prog, stop)}, kind="export")
+    return jsonify(job=j, path=out, recordings=len(paths))
 
 
 @app.post("/api/event/<int:n>/track")

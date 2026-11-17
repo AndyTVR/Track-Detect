@@ -102,7 +102,7 @@ def scan(src, mask, progress=None, should_stop=None, mode="scan", filters=None,
 
 
 def scan_multi(src, masks, progress=None, should_stop=None, mode="scan", filters=None,
-               start=0, stop=None) -> np.ndarray:
+               start=0, stop=None, live=None) -> np.ndarray:
     """Max value inside each ROI mask, for every frame from start to stop
     (inclusive), through the Scan filters, in a single pass over the
     recording. Returns an array of shape (number of ROIs, frames); fewer
@@ -127,6 +127,8 @@ def scan_multi(src, masks, progress=None, should_stop=None, mode="scan", filters
     pipe = Pipeline(**mode_cfg(mode, filters))
     m_len = stop - start + 1
     out = np.zeros((len(masks), m_len), np.float32)
+    if live is not None:   # lets the plot show the scan filling in
+        live["out"] = out
     for i in range(max(0, start - pipe.preroll), stop + 1):
         k = i - start
         if should_stop and should_stop():
@@ -140,6 +142,8 @@ def scan_multi(src, masks, progress=None, should_stop=None, mode="scan", filters
             continue   # warming up the filters
         for j, sub in enumerate(subs):
             out[j, k] = float(y[sub].max()) if sub is not None else float(y.max())
+        if live is not None:
+            live["k"] = k + 1
         if progress and (k % 200 == 0 or i == stop):
             progress(k + 1, m_len)
     if start == 0:

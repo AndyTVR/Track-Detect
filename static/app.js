@@ -90,19 +90,39 @@ function fillAddPlace(want) {   // want: {project, survey, camera} ids to presel
   cs.value = sv && sv.cameras.some((c) => c.id === c0) ? c0 : (c0 === "__auto" || c0 === "__new" ? c0 : sv && sv.cameras.length ? sv.cameras[0].id : "__new");
   $("#add-cam-name").hidden = cs.value !== "__new";
   $("#add-auto-note").hidden = cs.value !== "__auto";
+  if (typeof checkAddName === "function" && $("#add-proj-warn")) checkAddName();
   const on = radio("add-where", "camera").checked;
   $("#add-place").classList.toggle("off", !on);
   $("#add-folders-note").classList.toggle("off", !radio("add-where", "folders").checked);
   $("#add-place").querySelectorAll("select, input").forEach((el) => (el.disabled = !on));
 }
 // opened from the top bar or the empty viewer: Unassigned; from a camera's "+ Add files": that camera
+// every saved project's name, so a new one can't repeat it
+async function loadProjectNames() {
+  try { S.allProj = (await api("/api/org", { action: "list_projects" })).projects; } catch (e) { S.allProj = S.allProj || []; }
+}
+function projClash(name) {
+  const n = (name || "").trim().toLowerCase(); if (!n) return null;
+  return (S.allProj || []).find((p) => p.name.toLowerCase() === n) || (S.tree || []).find((p) => p.name.toLowerCase() === n) || null;
+}
+function checkAddName() {
+  const isNew = radio("add-where", "camera").checked && $("#add-proj").value === "__new";
+  const c = isNew ? projClash($("#add-proj-name").value) : null;
+  $("#add-proj-warn").hidden = !c;
+  if (c) $("#add-proj-warn").textContent = `There's already a project called ${c.name}. Choose it from the Project list instead, or use another name.`;
+  $("#btn-folder-ok").disabled = !!c;
+}
+$("#add-proj-name").addEventListener("input", checkAddName);
+function sizeBox() { const t = $("#folder-input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight + 2, 260) + "px"; }
+$("#folder-input").addEventListener("input", sizeBox);
 function openAdd(cameraId) {
+  loadProjectNames().then(checkAddName);
   $("#folder-input").value = ""; $("#pick-msg").hidden = true; $("#add-cam-msg").hidden = true;
   $("#add-proj-name").value = ""; $("#add-cam-name").value = ""; $("#add-sv-date").value = "";
   const at = typeof cameraId === "string" ? findCam(cameraId) : null;
   radio("add-where", at ? "camera" : "none").checked = true;
   fillAddPlace(at ? { project: at.project.id, survey: at.survey.id, camera: at.camera.id } : {});
-  $("#dlg-folder").showModal();
+  checkAddName(); $("#dlg-folder").showModal(); sizeBox();
 }
 document.querySelectorAll("[name=add-where]").forEach((r) => (r.onchange = () => fillAddPlace({})));
 $("#add-proj").onchange = () => fillAddPlace({ survey: "", camera: "" });
@@ -124,8 +144,14 @@ $("#open-menu").addEventListener("click", (e) => e.stopPropagation());
 $("#om-add").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openAdd(); };
 $("#om-new").onclick = () => {
   toggleMenu("#open-menu", "#btn-open", false);
-  $("#np-name").value = ""; $("#np-date").value = ""; $("#np-msg").hidden = true; $("#dlg-newproj").showModal(); $("#np-name").focus();
+  $("#np-name").value = ""; $("#np-date").value = ""; $("#np-msg").hidden = true; $("#np-warn").hidden = true; $("#np-go").disabled = false;
+  loadProjectNames(); $("#dlg-newproj").showModal(); $("#np-name").focus();
 };
+$("#np-name").addEventListener("input", () => {
+  const c = projClash($("#np-name").value);
+  $("#np-warn").hidden = !c; $("#np-go").disabled = !!c;
+  if (c) $("#np-warn").textContent = `There's already a project called ${c.name}. Use Open project to open it, or choose another name.`;
+});
 $("#np-go").onclick = async (ev) => {
   ev.preventDefault();
   const name = $("#np-name").value.trim();
@@ -146,14 +172,16 @@ $("#om-open").onclick = async () => {
       const row = el("div", "op-row");
       const dates = p.dates.length ? " · " + p.dates.map((d) => d.split("-").reverse().join("/")).join(", ") : "";
       row.innerHTML = `<div><b>${esc(p.name)}</b><br><span class="small muted">${plural(p.surveys, "survey")} · ${plural(p.cameras, "camera")} · ${plural(p.recordings, "recording")}${dates}${p.missing ? ` · ${p.missing} not found` : ""}${p.listed ? ` · ${p.listed} already listed` : ""}</span></div>`;
-      const b = smallBtn("Open", `List every recording in ${p.name}`, async () => {
+      const already = p.recordings > 0 && p.listed >= p.recordings - p.missing;
+      const b = smallBtn(already ? "Already open" : "Open", already ? `${p.name} is already open: all its recordings are listed` : `List every recording in ${p.name}`, async () => {
         try {
           const o = await api("/api/org", { action: "open_project", id: p.id, replace: $("#op-replace").checked });
           setFiles(o); $("#dlg-openproj").close();
           toast(`${p.name}: ${plural(o.opened, "recording")} listed.`);
           if (o.first) openRec(o.first);
         } catch (e) { err(e); }
-      }, "primary");
+      }, already ? "" : "primary");
+      if (already) b.disabled = true;
       row.appendChild(b); box.appendChild(row);
     }
     $("#op-replace").checked = false; $("#dlg-openproj").showModal();
@@ -169,7 +197,7 @@ async function browse(kind) {
   try {
     const r = await api("/api/pick", { kind });
     if (!r.paths.length) { msg.textContent = "Nothing chosen."; return; }
-    const box = $("#folder-input"); box.value = (box.value.trim() ? box.value.trim() + "\n" : "") + r.paths.join("\n");
+    const box = $("#folder-input"); box.value = (box.value.trim() ? box.value.trim() + "\n" : "") + r.paths.join("\n"); sizeBox();
     msg.textContent = `${r.paths.length} ${kind === "files" ? "file" : "folder"}${r.paths.length === 1 ? "" : "s"} added below. Click Add to list them.`;
   } catch (e) {
     msg.className = "small err"; msg.textContent = e.message || String(e);
@@ -293,6 +321,10 @@ function renderFiles() {
         const sub = el("div", "cam-sub", `<span class="small muted">${plural(cam.paths.length, "recording")}</span>`);
         const cb = el("span", "row-btns");
         cb.append(smallBtn("+ Add files", `Add recordings to Camera ${cam.no}`, () => openAdd(cam.id)));
+        if (cam.paths.length) {
+          const tb = smallBtn("Test scan", TEST_TIP, () => testScan(cam.id, `Camera ${cam.no}`), "test-btn");
+          tb.setAttribute("aria-description", TEST_TIP); cb.append(tb);
+        }
         if (cam.paths.length) cb.append(smallBtn("Scan camera", `Scan every recording from Camera ${cam.no}`, () => scanGroup(cam.id, `Camera ${cam.no}`), "cam-scan scan-btn"));
         if (moveCam) cb.append(moveCam);
 
@@ -315,6 +347,41 @@ $("#btn-new-project").onclick = async () => {
   try { const r = await org({ action: "new_project" }); const at = findCam(r.created);
     const inp = at && [...document.querySelectorAll(".proj-name")].find((i) => i.value === at.project.name); if (inp) { inp.focus(); inp.select(); } } catch (e) { err(e); }
 };
+const TEST_TIP = "A quick scan can check if ROI is affected by background movement without scanning the full recording";
+async function testScan(node, what) {
+  try {
+    const r = await api("/api/test-scan", { node });
+    S.testNode = { node, what }; (S.watch = S.watch || new Set()).add(r.job.id);   // show the result even if it finishes before the next check
+    toast(`Test scan of ${what}: scanning a random minute of ${r.job.label.replace(/^Test scan of /, "")}…`, 4000); pollJobs();
+  } catch (e) { err(e); }
+}
+function showTestResult(t) {
+  S.lastTest = t;
+  const len = t.seconds >= 59 ? "one minute, chosen at random" : `${Math.round(t.seconds)} s${t.whole ? ": the whole recording, as it's shorter than a minute" : ""}`;
+  $("#ts-sub").textContent = `${S.testNode ? S.testNode.what + " · " : ""}${t.name}, ${t.date} ${t.from}–${t.to} (${len}). Nothing is saved.`;
+  const fv = (v) => v == null ? "" : (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2)) + (isTemp(t.units) ? " " + t.units : "");
+  const word = { low: "Low", moderate: "Moderate", high: "High" };
+  let h = "";
+  for (const x of t.rois) {
+    const rating = x.rating || "none";
+    h += `<div class="noise-row ${rating}"><span class="noise-chip" ${x.rating ? "" : 'title="Too few quiet frames in this stretch to judge the background"'}>${word[rating] || "Not enough data"}</span><span class="small"><b>${esc(x.name)}</b> · ${plural(x.spikes, "spike")} above the suggested level (${fv(x.level)})${x.sd != null ? ` · background ${fv(x.base)}, varies ±${fv(x.sd)}, small rises ${(x.rises * 100).toFixed(1)}% of the time` : ""}</span></div>`;
+  }
+  const bad = t.rois.filter((x) => x.rating && x.rating !== "low");
+  const none = t.rois.every((x) => !x.rating);
+  const msg = none ? "There were too few quiet frames in this stretch to judge the background. Test another minute, or use a longer recording."
+    : bad.length ? "The background in this ROI moves or changes more than open sky. Something in it, such as branches, cloud, water or a cooling surface, will raise the detection level and can hide faint bats. Use View this minute to see what moves, then redraw the ROI to leave it out, or test another minute."
+    : "The background looks steady: the ROI isn't picking up much movement. One minute is only a sample, so test another minute if the night was windy or cloud came over.";
+  h += `<p class="small ${bad.length ? "" : "muted"}">${msg}</p>`;
+  $("#ts-body").innerHTML = h;
+  if (!$("#dlg-test").open) $("#dlg-test").showModal();
+}
+$("#ts-view").onclick = async () => {
+  const t = S.lastTest; if (!t) return;
+  $("#dlg-test").close();
+  if (!S.rec || S.rec.path !== t.path) await openRec(t.path);
+  S.lim = [t.a, t.b]; $("#in-window").checked = false; S.frame = t.a; drawLimits(); showFrame();
+};
+$("#ts-again").onclick = () => { if (S.testNode) { $("#dlg-test").close(); testScan(S.testNode.node, S.testNode.what); } };
 async function scanGroup(node, what) {
   try {
     const r = await api("/api/scan", { node });
@@ -683,7 +750,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-cams";
+const APP_VERSION = "2026.11.17-test";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -949,6 +1016,26 @@ async function startScan(all, lim) {
   } catch (e) { err(e); }
 }
 $("#btn-cancel").onclick = () => api("/api/jobs/cancel", {}).catch(err);
+$("#btn-export-camera").onclick = () => {
+  if (!S.rec) return;
+  const f = fileRow(S.rec.path), at = f && f.camera_id && findCam(f.camera_id);
+  const rows = at ? at.camera.paths.map(fileRow).filter(Boolean) : [f || { name: S.rec.name }];
+  $("#cv-sub").textContent = at ? `${at.project.name} › ${at.survey.label} › ${at.camera.label}: ${plural(rows.length, "recording")}${rows.length > 1 ? ", joined in time order" : ""}, as one MP4.`
+    : `${S.rec.name} isn't in a camera, so just this recording, as one MP4.`;
+  $("#cv-blend").textContent = `(${$("#blend").value === "crossfade" ? "crossfade" : "overlay"} at ${Math.round(+$("#opacity").value * 100)}%)`;
+  $("#dlg-camvid").showModal();
+};
+$("#cv-go").onclick = async (ev) => {
+  ev.preventDefault(); $("#dlg-camvid").close();
+  const mode = (document.querySelector("[name=cv-mode]:checked") || {}).value || "raw";
+  const overlays = $("#cv-roi").checked ? "roi+time" : $("#cv-time").checked ? "time" : "none";
+  try {
+    const r = await api("/api/export-camera", { mode, overlays, palette: S.pal, blend: $("#blend").value, opacity: +$("#opacity").value, enh: enhVals() });
+    (S.watch = S.watch || new Set()).add(r.job.id);
+    toast(`Exporting ${plural(r.recordings, "recording")} to ${r.path}…`, 6000); pollJobs();
+  } catch (e) { err(e); }
+};
+$("#cv-roi").onchange = () => { if ($("#cv-roi").checked) $("#cv-time").checked = true; };
 // Start over: undo all decisions on this recording and scan it again
 $("#btn-start-over").onclick = () => {
   if (!S.rec) return;
@@ -972,18 +1059,40 @@ $("#so-go").onclick = async () => {
     else toast(rescan ? "Decisions reset. Draw an ROI to scan again." : "All decisions reset.");
   } catch (e) { err(e); } finally { $("#so-go").disabled = false; }
 };
+// Progress shows over the Event Log plot: a percentage, what's running and
+// what's queued. While the open recording is being scanned, its plot fills in
+// as the scan goes (read every second; it doesn't slow the scan).
+function showJobProgress(all, active) {
+  const ov = $("#job-overlay");
+  const fails = all.filter((j) => j.state === "error" && !(S.seenErr || (S.seenErr = new Set())).has(j.id));
+  for (const j of fails) { S.seenErr.add(j.id); if (S.watch && S.watch.has(j.id)) toast(`${j.label} failed: ${j.error}`, 9000); }
+  const run = active.find((j) => j.state === "running") || active[0];
+  if (!run) { ov.hidden = true; S.liveScan = false; return; }
+  const pct = Math.round(100 * run.done / Math.max(1, run.total));
+  ov.hidden = false;
+  $("#job-pct").textContent = run.state === "queued" ? "…" : pct + "%";
+  $("#job-label").textContent = run.label;
+  $("#job-more").textContent = active.length > 1 ? `${active.length - 1} more waiting` : "";
+  $("#job-bar").style.width = pct + "%";
+  const mine = run.kind === "scan" && S.rec && run.path === S.rec.path && run.state === "running";
+  ov.classList.toggle("live", mine);
+  if (mine) liveScanPlot();
+}
+async function liveScanPlot() {
+  if (S.liveBusy || Date.now() - (S.liveAt || 0) < 900) return;
+  S.liveBusy = true; S.liveAt = Date.now();
+  try {
+    const pts = Math.max(200, Math.round(plotBox.clientWidth * (window.devicePixelRatio || 1)));
+    const r = await api(`/api/scan-live?a=${P.a}&b=${P.b}&points=${pts}`);
+    if (r.live && r.values.length && S.rec) { S.liveScan = true; P.data = r.values; P.series = {}; P.units = r.units; drawPlot(); }
+  } catch (e) {} finally { S.liveBusy = false; }
+}
 function pollJobs() {
   if (S.polling) return;
   S.polling = setInterval(async () => {
     let r; try { r = await api("/api/jobs"); } catch (e) { return; }
     const active = r.jobs.filter((j) => j.state === "queued" || j.state === "running");
-    const recent = r.jobs.slice(-6).reverse();
-    $("#jobs-panel").hidden = !recent.length;
-    $("#jobs").innerHTML = recent.map((j) => {
-      const pct = j.state === "done" ? 100 : Math.round(100 * j.done / Math.max(1, j.total));
-      const st = j.state === "error" ? `Failed: ${esc(j.error)}` : j.state === "running" ? pct + "%" : j.state;
-      return `<div class="job"><span>${esc(j.label)} · <span class="muted">${st}</span></span><div class="bar"><i style="width:${pct}%"></i></div></div>`;
-    }).join("");
+    showJobProgress(r.jobs, active);
     const sig = r.jobs.map((j) => j.id + j.state).join();
     if (sig !== S.lastJobs) {
       S.lastJobs = sig; refreshFiles();
@@ -992,8 +1101,9 @@ function pollJobs() {
       for (const j of r.jobs) {
         if (j.state !== "done" || !j.result || !S.watch.has(j.id)) continue;
         S.watch.delete(j.id);
-        if (j.result.report) { toast("Report saved: " + j.result.report, 8000); api("/api/open-path", { path: j.result.report }).catch(() => {}); }
-        else if (j.result.files) toast(`Saved ${j.result.files.length} files to the exports folder.`);
+        if (j.result.test) showTestResult(j.result.test);
+        else if (j.result.report) { toast("Report saved: " + j.result.report, 8000); api("/api/open-path", { path: j.result.report }).catch(() => {}); }
+        else if (j.result.files) toast(j.kind === "export" && j.result.files.length === 1 ? `Saved ${j.result.files[0]}` : `Saved ${j.result.files.length} files to the exports folder.`, 7000);
       }
       if (S.rec) { try { const rec = await api("/api/recording"); const sigOf = (x) => JSON.stringify([x.scanned, x.level, x.suggested_level, (x.events || []).map((e) => [e.f0, e.f1, e.status])]);
             const changed = sigOf(rec) !== sigOf(S.rec) || JSON.stringify(rec.rois) !== JSON.stringify(S.rec.rois); S.rec = rec; renderFilters(); if (changed) { renderRois(); await loadActivity(true); renderEvents(); } } catch (e) {} }
@@ -1498,6 +1608,7 @@ function renderEvents() {
   const box = $("#events"), evs = (S.rec && S.rec.events) || [];
   $("#btn-export").disabled = !S.sel; $("#btn-csv").disabled = !evs.length; $("#btn-report").disabled = !(S.rec && S.rec.scanned);
   $("#btn-export-confirmed").disabled = !evs.some((e) => e.status === "confirmed");
+  $("#btn-export-camera").disabled = !S.rec;
   $("#reviewed").textContent = evs.length ? `${evs.filter((e) => e.status !== "todo").length} of ${evs.length} reviewed` : "";
   if (!S.rec) return;
   renderNoise();

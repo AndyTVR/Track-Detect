@@ -52,8 +52,9 @@ clicking **Quit** in the top bar, closes it.
    - **Add files…**, also on the **Add Recording** button in the middle of
      the empty picture.
 
-   In the Add dialog: Choose individual `.ats`
-   files, a whole survey folder, or paste paths, one per line. The first
+   In the Add dialog: choose individual `.ats` files, a whole survey folder,
+   or paste paths, one per line (the box grows as you add lines, then
+   scrolls). The first
    recording added opens straight away. Remove a file from the list with
    its **×** (the file itself isn't deleted). Each file shows its times and
    status.
@@ -63,7 +64,7 @@ clicking **Quit** in the top bar, closes it.
    or night there (Survey 1, Survey 2 …, each with an optional date), and
    each survey has numbered cameras (Camera 1, Camera 2 …), each with an
    optional name such as "Front elevation".
-   - The Add dialog asks where to put the recordings:
+   - Under **Assign recordings**, the Add dialog asks where to put them:
      - **Leave unassigned**: they go in the **Unassigned** box at the top of
        the list, and can be assigned after upload.
      - **Assign files to New/Existing Project**: pick an existing project,
@@ -85,6 +86,11 @@ clicking **Quit** in the top bar, closes it.
        Projects with the same name, surveys with the same date and cameras
        with the same name are reused, so adding more files later puts them
        in the right place.
+   - A project name can only be used once. If you type the name of a
+     project that already exists, the dialog says so straight away and
+     won't add until you pick the existing project or change the name.
+     **Open project** shows **Already open** for a project whose recordings
+     are all listed.
    - **+ Project** (at the top of the list) starts a project with Survey 1
      and Camera 1. **+ Survey** and **+ Camera** add more.
    - **Drag** a recording onto a camera to move it there, or onto
@@ -138,9 +144,17 @@ clicking **Quit** in the top bar, closes it.
    - In the ROI menu (the button with the coloured dot), tick **Scan** for
      each ROI to include. All the ticked ROIs are scanned in one pass, so
      extra ROIs barely add time.
+   - **Test scan** (on each camera) scans one randomly chosen minute of one
+     of the camera's recordings, with its ROIs, and rates the background
+     noise there: a quick scan can check if the ROI is affected by background
+     movement without scanning the full recording. Nothing is saved. **View
+     this minute** opens that stretch so you can see what's moving; **Test
+     another minute** tries a different one.
+   - Progress shows over the Event Log plot: the percentage, what's running
+     and how many more are waiting, with **Cancel**. While the open
+     recording is being scanned, its plot fills in as the scan goes.
 
-   One pass builds the activity plot for the ROI and shows progress as it
-   goes. The scan always uses **Window Average (3×3) + Sliding Subtraction
+   One pass builds the activity plot for the ROI. The scan always uses **Window Average (3×3) + Sliding Subtraction
    (5 frames)**, whichever mode is showing. Recordings scanned with older
    settings are flagged in the Detection panel so you can scan them again.
    A very large spike at the end of a recording is always left out of the
@@ -241,6 +255,15 @@ clicking **Quit** in the top bar, closes it.
      (5 by default) after activity is first seen, so the trail has built up.
    - a still of the frame where each animal first appears
 
+   **Export camera video** saves every recording from the open recording's
+   camera, joined in time order, as one MP4 (just this recording if it isn't
+   in a camera). Choose the Default thermal picture or Detection (with the
+   blend and opacity showing now), and whether to show the ROI and the date
+   and time. It uses the current palette and image clean-up, and goes to the
+   exports folder, named after the project, survey and camera. Long
+   recordings take a while, roughly as long as the footage or less;
+   progress shows over the Event Log.
+
    **Save events CSV** writes a table of events for the report, with their
    comments. If there are any comments, it also writes `<name>_comments.csv`
    listing every comment with its time.
@@ -297,7 +320,8 @@ Exports and the PDF report use it too.
 
 **Image clean-up**: two tick-boxes, each with a Low / Medium / High
 strength.
-- **Detail enhancement** boosts local contrast, bringing out roof edges,
+- **Detail enhancement** (on at Medium unless you change it in Settings)
+  boosts local contrast, bringing out roof edges,
   vegetation and animals against smooth sky, even when one hot area takes up
   most of the colour range. It applies to all three modes.
   Higher strengths also boost noise.

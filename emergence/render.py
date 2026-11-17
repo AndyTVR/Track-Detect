@@ -449,3 +449,46 @@ def export_event(src, ev, roi_points, outdir, stem, opts=None, progress=None) ->
     if progress:
         progress(total, total)
     return files
+
+
+def export_recordings_video(recs, path, opts=None, progress=None, should_stop=None) -> list[str]:
+    """Several recordings (one camera's, in time order) written one after
+    another into a single MP4, each frame with its date and time. mode "raw"
+    is the thermal picture (Default); "blend" is Detection with the app's blend
+    type and opacity. Recordings of a different size are scaled to the first."""
+    opts = opts or {}
+    mode = "blend" if opts.get("mode") == "blend" else "raw"
+    show_roi = opts.get("overlays", "roi+time") == "roi+time"
+    show_time = opts.get("overlays", "roi+time") != "none"
+    enh = clean_enh(opts.get("enh"))
+    how = "crossfade" if opts.get("blend") == "crossfade" else "overlay"
+    op = float(opts.get("opacity") if opts.get("opacity") is not None else 0.8)
+    first = recs[0].src
+    size, fps = (first.width, first.height), first.fps
+    total = sum(r.src.n_frames for r in recs)
+    done = 0
+    vw = VideoWriter(path, size, fps, int(opts.get("quality") or 75))
+    try:
+        for r in recs:
+            ren = Renderer(r.src)
+            ren.filters = r.filters
+            roi = r.roi if show_roi else None
+            for i in range(r.src.n_frames):
+                if should_stop and should_stop():
+                    vw.close()
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+                    return []
+                img = ren.image(i, mode, roi, show_roi=show_roi, show_time=show_time, palette=opts.get("palette"),
+                                opacity=op, blend=how, enh=enh)
+                if (img.shape[1], img.shape[0]) != size:
+                    img = cv2.resize(img, size, interpolation=cv2.INTER_AREA)
+                vw.write(img)
+                done += 1
+                if progress and done % 50 == 0:
+                    progress(done, total)
+    finally:
+        vw.close()
+    return [path]

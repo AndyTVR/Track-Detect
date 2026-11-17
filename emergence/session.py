@@ -288,13 +288,19 @@ class Recording:
         masks = [roi_mask(self.roi_by_id(rid)["points"], shape) for rid in ids]
         total = sum(b - a + 1 for a, b in ranges)
         segs, offset = [], 0
-        for a, b in ranges:
-            seg = scan_multi(self.src, masks, (lambda d, t, o=offset: progress(o + d, total)) if progress else None,
-                             should_stop, start=a, stop=b)
-            if seg.shape[1] < b - a + 1:
-                return False  # cancelled
-            segs.append((a, b, seg))
-            offset += b - a + 1
+        self.live = {"ids": ids, "segs": []}   # what's been scanned so far, for the plot to fill in as it goes
+        try:
+            for a, b in ranges:
+                lv = {"start": a, "k": 0}
+                self.live["segs"].append(lv)
+                seg = scan_multi(self.src, masks, (lambda d, t, o=offset: progress(o + d, total)) if progress else None,
+                                 should_stop, start=a, stop=b, live=lv)
+                if seg.shape[1] < b - a + 1:
+                    return False  # cancelled
+                segs.append((a, b, seg))
+                offset += b - a + 1
+        finally:
+            self.live = None
         scans = self.state.setdefault("roi_scans", {})
         for j, rid in enumerate(ids):
             r = self.roi_by_id(rid)
@@ -438,6 +444,28 @@ class Recording:
             j = int(np.argmax(seg[s:e]))
             out.append([int(a + s + j), round(float(seg[s + j]), 3)])
         return out
+
+    def live_range(self, a: int, b: int, points: int):
+        """While this recording is being scanned: the activity so far (all ROIs
+        combined), as plot points; None when no scan is running."""
+        lv = getattr(self, "live", None)
+        if not lv:
+            return None
+        out = []
+        for s in list(lv["segs"]):
+            arr, k = s.get("out"), int(s.get("k", 0))
+            if arr is None or k <= 0:
+                continue
+            comb = arr[:, :k].max(axis=0)
+            lo, hi = max(a, s["start"]), min(b, s["start"] + k - 1)
+            if hi < lo:
+                continue
+            seg = np.zeros(self.src.n_frames, np.float32)   # pooled over just the scanned part
+            seg[lo:hi + 1] = comb[lo - s["start"]:hi - s["start"] + 1]
+            share = max(10, int(points * (hi - lo + 1) / max(1, b - a + 1)))
+            out += self._pool(seg, lo, hi, share)
+        done = sum(int(s.get("k", 0)) for s in lv["segs"])
+        return {"values": sorted(out), "done": done}
 
     def activity_range(self, a: int, b: int, points: int):
         """Max-pooled combined activity between frames a and b, for the zoomable plot."""
@@ -602,9 +630,9 @@ class Jobs:
         self._cancel = threading.Event()
         threading.Thread(target=self._run, daemon=True).start()
 
-    def submit(self, label, fn):
+    def submit(self, label, fn, path=None, kind=None):
         job = {"id": f"{time.time():.6f}", "label": label, "done": 0, "total": 1,
-               "state": "queued", "result": None, "error": None}
+               "state": "queued", "result": None, "error": None, "path": path, "kind": kind}
         self.history.append(job)
         self.history = self.history[-50:]
         self.q.put((job, fn))

@@ -69,11 +69,6 @@
       <div id="files" class="files"><p class="muted small">Add .ats files, or a whole folder of them.</p></div>
     </section>
 
-    <section class="panel" id="jobs-panel" hidden>
-      <h2>Working</h2>
-      <div id="jobs"></div>
-      <button id="btn-cancel" class="btn sm">Cancel current</button>
-    </section>
   </aside>
 
   <main class="col-main">
@@ -249,6 +244,13 @@
           <div id="markers"></div>
           <div id="cursor" class="cursor"></div>
           <div id="level-tag" class="level-tag" hidden></div>
+          <div id="job-overlay" class="job-overlay" role="status" aria-live="polite" hidden>
+            <div class="job-pct" id="job-pct">0%</div>
+            <div class="small" id="job-label"></div>
+            <div class="small muted" id="job-more"></div>
+            <div class="job-bar"><i id="job-bar"></i></div>
+            <button id="btn-cancel" class="btn xs" type="button">Cancel</button>
+          </div>
         </div>
       </div>
       <div class="row between mono small muted" id="plot-axis"></div>
@@ -290,6 +292,7 @@
     </button>
     <div class="row wrap">
       <button id="btn-export-confirmed" class="btn sm" disabled>Export all confirmed</button>
+      <button id="btn-export-camera" class="btn sm" disabled title="Every recording from this camera, joined in time order, as one MP4 video">Export camera video</button>
       <button id="btn-csv" class="btn sm" disabled>Save events CSV</button>
       <button id="btn-report" class="btn sm" disabled>Create report</button>
     </div>
@@ -308,13 +311,13 @@
       <textarea id="folder-input" rows="5" placeholder="C:\Users\...\St Fagans 10.8.26\front 2.ats&#10;C:\Users\...\BCT\19.10.26"></textarea>
     </label>
     <fieldset class="add-cam">
-      <legend>Where to put them</legend>
+      <legend>Assign recordings</legend>
       <div class="add-cam-row"><label class="check"><input type="radio" name="add-where" value="none"> Leave unassigned</label>
         <span class="small muted">Files can be assigned after upload</span></div>
       <div class="add-cam-row"><label class="check"><input type="radio" name="add-where" value="camera"> Assign files to New/Existing Project</label></div>
       <div class="add-place" id="add-place">
         <label class="small">Project <select id="add-proj" aria-label="Project"></select></label>
-        <input id="add-proj-name" type="text" maxlength="40" placeholder="New project name, e.g. St Fagans" aria-label="New project name">
+        <span class="add-name-wrap"><input id="add-proj-name" type="text" maxlength="40" placeholder="New project name, e.g. St Fagans" aria-label="New project name"><span id="add-proj-warn" class="small err" hidden></span></span>
         <label class="small">Survey <select id="add-sv" aria-label="Survey"></select></label>
         <label class="small" id="add-sv-date-wrap">Survey date (optional) <input id="add-sv-date" type="date" aria-label="Survey date"></label>
         <label class="small">Camera <select id="add-cam" aria-label="Camera"></select></label>
@@ -340,6 +343,7 @@
   <form method="dialog" class="dlg">
     <h2>New project</h2>
     <label>Project name <input id="np-name" type="text" maxlength="40" placeholder="e.g. St Fagans"></label>
+    <span id="np-warn" class="small err" hidden></span>
     <label>Survey 1 date (optional) <input id="np-date" type="date"></label>
     <p class="small muted">The project starts with Survey 1 and Camera 1. Next you can add recordings to it.</p>
     <p id="np-msg" class="small err" hidden></p>
@@ -354,6 +358,34 @@
     <div id="op-list" class="op-list"></div>
     <label class="check"><input id="op-replace" type="checkbox"> Clear the current list first</label>
     <div class="row wrap end"><button value="cancel" class="btn">Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-camvid">
+  <form method="dialog" class="dlg">
+    <h2>Export camera video</h2>
+    <p id="cv-sub" class="small muted"></p>
+    <fieldset class="items"><legend class="small muted">Picture</legend>
+      <label class="check"><input type="radio" name="cv-mode" value="raw" checked> Default (the thermal picture)</label>
+      <label class="check"><input type="radio" name="cv-mode" value="blend"> Detection <span id="cv-blend" class="small muted"></span></label>
+    </fieldset>
+    <label class="check"><input id="cv-roi" type="checkbox" checked> Show the ROI</label>
+    <label class="check"><input id="cv-time" type="checkbox" checked> Show the date and time</label>
+    <p class="small muted">Uses the palette and image clean-up showing now. Long recordings take a while: roughly as long as the footage itself, often less. You can keep working; progress shows over the Event Log.</p>
+    <div class="row wrap end"><button value="cancel" class="btn">Cancel</button><button id="cv-go" value="ok" class="btn primary">Export</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-test">
+  <form method="dialog" class="dlg wide">
+    <h2>Test scan</h2>
+    <p id="ts-sub" class="small muted"></p>
+    <div id="ts-body" class="ts-body"></div>
+    <div class="row wrap end">
+      <button id="ts-view" type="button" class="btn">View this minute</button>
+      <button id="ts-again" type="button" class="btn">Test another minute</button>
+      <button value="cancel" class="btn primary">Close</button>
+    </div>
   </form>
 </dialog>
 

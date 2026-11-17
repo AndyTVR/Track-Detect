@@ -19,7 +19,7 @@ EXPORT_ITEMS = ("path_still", "path_clip", "review_clip", "blend_still", "blend_
 DEFAULTS = {
     "version": 1,
     "appearance": {"scheme": "forest", "theme": "dark", "window": "app"},
-    "view": {"palette": "white", "dde": 0, "tnr": 0, "blend": "crossfade", "opacity": 0.8, "speed": 1.0},
+    "view": {"palette": "white", "dde": 2, "tnr": 0, "blend": "crossfade", "opacity": 0.8, "speed": 1.0},
     "filters": {"mfi": 5, "ss": 5},
     "detect": {"sensitivity": "normal", "merge_s": 2.0, "min_frames": 1, "window_s": 3.0},
     "export": {"folder": "", "items": list(EXPORT_ITEMS), "overlays": "roi+time", "text_size": "medium",
@@ -68,12 +68,12 @@ def clean(d: dict | None) -> dict:
     items = [i for i in (ex.get("items") if isinstance(ex.get("items"), list) else D["export"]["items"])
              if i in EXPORT_ITEMS]
     return {
-        "version": 2,
+        "version": 3,
         "appearance": {"scheme": _pick(a.get("scheme"), ("forest", "ocean", "teal", "heather", "slate"), "forest"),
                        "theme": _pick(a.get("theme"), ("dark", "light"), "dark"),
                        "window": _pick(a.get("window"), ("app", "browser"), "app")},
         "view": {"palette": _pick(v.get("palette"), PALETTES, "white"),
-                 "dde": _num(v.get("dde"), 0, 3, 0, int), "tnr": _num(v.get("tnr"), 0, 3, 0, int),
+                 "dde": _num(v.get("dde"), 0, 3, 2, int), "tnr": _num(v.get("tnr"), 0, 3, 0, int),
                  "blend": _pick(v.get("blend"), ("overlay", "crossfade"), "crossfade"),
                  "opacity": round(_num(v.get("opacity"), 0, 1, 0.8), 2),
                  "speed": _pick(_num(v.get("speed"), 0.25, 4, 1.0), (0.25, 0.5, 1.0, 2.0, 4.0), 1.0)},
@@ -124,6 +124,9 @@ def load(path: str) -> dict:
     # version 2: Detection opens as Crossfade at 80% (earlier files saved Overlay as their default)
     if raw and int(raw.get("version") or 1) < 2 and isinstance(raw.get("view"), dict):
         raw["view"]["blend"] = "crossfade"
+    # version 3: detail enhancement opens at Medium
+    if raw and int(raw.get("version") or 1) < 3 and isinstance(raw.get("view"), dict):
+        raw["view"]["dde"] = 2
     CURRENT.clear()
     CURRENT.update(clean(raw))
     return CURRENT

@@ -586,6 +586,10 @@
           </div>
           <p class="small muted"><b>Show pixel values as</b> sets the colour bar beside the picture, the activity plot, the detection level and exports. Temperature needs a recording with temperature calibration; others always show raw counts. Recordings you've already scanned are converted, so there's no need to scan again.</p>
           <p class="small muted">If a camera's clock was wrong, enter the correction to add: for example −90 if it was 1½ minutes fast, or 3600 if it was still on GMT during BST. Every time shown, exported and reported uses it. <span id="st-offset-eg"></span></p>
+          <h4 class="st-sub">Temperature correction by camera</h4>
+          <p class="small muted">Some A70/A700 recordings store raw sensor values, which are converted to °C from the range Research Studio showed (marked "°C, approx."). If a camera's readings come out too high or low, enter the correction in °C, for example −20. It applies only to those converted recordings, and detection isn't affected.</p>
+          <div id="st-toffs" class="st-toffs"></div>
+          <div class="row wrap"><input id="st-toff-new" type="text" maxlength="60" placeholder="Camera model, e.g. FLIR A70" aria-label="Camera model"><button id="st-toff-add" type="button" class="btn sm">Add camera</button></div>
         </section>
 
         <section data-pane="classes" hidden>

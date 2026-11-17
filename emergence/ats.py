@@ -57,7 +57,7 @@ def _last_sunday(year: int, month: int) -> _dt.date:
 # correction in seconds, and what pixel values are shown as: "C" or "F"
 # (temperature, when the file has calibration) or "counts" (the raw values).
 TIME = {"zone": "uk", "offset_s": 0.0}
-TEMP = {"unit": "C"}
+TEMP = {"unit": "C", "offsets": {"FLIR A700": -20.0}}   # offsets: Settings > Time & units
 
 
 def uk_time(t_utc: _dt.datetime):
@@ -73,10 +73,6 @@ def uk_time(t_utc: _dt.datetime):
     return t_utc.astimezone(_dt.timezone(_dt.timedelta(0), "GMT")), "GMT"
 
 
-# Files converted from raw sensor values with Research Studio's colour range
-# read about 20 °C too high (checked against known temperatures at St Fagans),
-# so their readings are lowered by this much. Only those files are affected.
-APPROX_OFFSET_C = -20.0
 
 class ATSFile:
     """Random access to the frames of an .ats recording."""
@@ -197,21 +193,32 @@ class ATSFile:
                 slope = (c1 - c0) / (k1 - k0)
                 self.count_slope = float(slope)
                 to_c = lambda a: (a.astype(np.float32) - k0) * slope + c0
+        span = self.xml.get("span", {}).get("TemperatureC") if self.xml.get("span_mode") == "FromImage" else None
         if to_c is None and "Temperature" in src:
-            # Radiometric cameras store temperature directly: 0.01 K per count.
+            # Radiometric cameras often store temperature directly: 0.01 K per count.
+            # Some A70/A700 files store raw sensor values instead; where Research
+            # Studio's automatic range is in the file, it shows which: under
+            # 0.01 K the first frame's coldest and hottest pixels must match it.
             sample = self.raw(min(self.n_frames - 1, 2))[::16, ::16]
             med = float(np.median(sample))
-            if 20000 < med < 40000:
+            ok = 20000 < med < 40000
+            if ok and span:
+                first = self.raw(0)
+                lo, hi = float(first.min()) / 100 - 273.15, float(first.max()) / 100 - 273.15
+                ok = abs(lo - span[0]) < 2 and abs(hi - span[1]) < 2
+            if ok:
                 self.count_slope = 0.01
                 to_c = lambda a: a.astype(np.float32) / 100.0 - 273.15
         self.temp_approx = False
-        if to_c is None and "Temperature" in src and self.xml.get("span_mode") == "FromImage" and "TemperatureC" in self.xml.get("span", {}):
+        self.temp_offset = 0.0
+        if to_c is None and "Temperature" in src and span:
             # Raw sensor values from a radiometric camera (A700 files saved this way):
             # Research Studio's automatic colour range for the first frame runs from
             # its coldest to its hottest pixel, so those two pixels give a straight-line
             # conversion. Good for temperature differences; absolute values are approximate.
             c0, c1 = self.xml["span"]["TemperatureC"]
-            c0, c1 = c0 + APPROX_OFFSET_C, c1 + APPROX_OFFSET_C   # these readings run about 20 °C high
+            self.temp_offset = float((TEMP.get("offsets") or {}).get(self.camera, 0.0))   # Settings: correction for this camera
+            c0, c1 = c0 + self.temp_offset, c1 + self.temp_offset
             first = self.raw(0)
             k0, k1 = float(first.min()), float(first.max())
             if k1 > k0 and c1 > c0:
@@ -468,6 +475,7 @@ class ATSFile:
             "fps": self.fps,
             "fps_source": self.fps_source,
             "temp_approx": bool(getattr(self, "temp_approx", False)),
+            "temp_offset": float(getattr(self, "temp_offset", 0.0)),
             "duration_s": self.seconds_at(self.n_frames - 1) + 1 / self.fps,
             "start": self.time_utc(0).isoformat() if self.start_time else None,   # includes clock correction
             "zone": self.zone_of(0),

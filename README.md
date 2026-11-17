@@ -53,9 +53,11 @@ clicking **Quit** in the top bar, closes it.
    - a **New camera**, with a name you choose, such as "Front elevation";
    - an **existing camera**;
    - or **Sort automatically**, where files from the same folder with the
-     same name start in the same camera: "front 1", "front 2"
-   become **Front**, and "rear 1", "rear 2" become **Rear**. Files with
-   numbered names such as "Rec-0003" group by folder ("Camera 1", "Camera 2" …).
+     same name go in the same camera: "front 1", "front 2" become
+     **Front**, and "rear 1", "rear 2" become **Rear**. Files with numbered
+     names such as "Rec-0003" group by folder ("Camera 1", "Camera 2" …).
+
+   Afterwards:
    - Click a camera's name to rename it, for example "Front elevation".
    - The **⤢** button beside a file moves it to another camera, or to a new
      one.

@@ -460,11 +460,6 @@ class Recording:
             return None
         return end_spike(act, self.src.fps, self.src.units)
 
-    @property
-    def end_cut(self):
-        act = self.activity
-        return None if act is None else self._cut(act)
-
     @staticmethod
     def _pool(act, a, b, points):
         seg = act[a : b + 1]
@@ -581,16 +576,6 @@ class Recording:
         if evs and any(e["status"] == "todo" for e in evs):
             return "In review"
         return "Reviewed"
-
-    def activity_preview(self, points=1200):
-        a = self.activity
-        if a is None:
-            return []
-        n = len(a)
-        if n <= points:
-            return [round(float(v), 3) for v in a]
-        edges = np.linspace(0, n, points + 1).astype(int)
-        return [round(float(a[edges[k]:edges[k + 1]].max()), 3) for k in range(points)]
 
     def export(self, n, opts, progress=None):
         ev = self.event(n)

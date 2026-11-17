@@ -153,19 +153,6 @@ def scan_multi(src, masks, progress=None, should_stop=None, mode="scan", filters
     return out
 
 
-def _rolling_stat(a: np.ndarray, block: int, fn):
-    """Cheap rolling statistic: fn over blocks, linearly interpolated."""
-    n = len(a)
-    if n == 0:
-        return a
-    centres, vals = [], []
-    for s in range(0, n, block):
-        seg = a[s : s + block]
-        centres.append(s + len(seg) / 2)
-        vals.append(fn(seg))
-    return np.interp(np.arange(n), centres, vals).astype(np.float32)
-
-
 @dataclass
 class Event:
     n: int

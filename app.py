@@ -35,7 +35,7 @@ if FROZEN:
         sys.stdout = sys.stdout or _log
         sys.stderr = sys.stderr or _log
 else:
-    DATA = HERE
+    DATA = os.environ.get("TD_DATA") or HERE   # TD_DATA: the automated tests use a throwaway folder
 app = Flask(__name__, static_folder=os.path.join(RES, "static"), static_url_path="/static")
 
 from emergence import beta  # noqa: E402
@@ -46,10 +46,7 @@ state = {"files": [], "current": None}
 _lock = threading.Lock()
 
 
-class UserError(Exception):
-    def __init__(self, msg, code=400):
-        super().__init__(msg)
-        self.code = code
+from emergence.errors import UserError  # noqa: E402
 
 
 @app.errorhandler(UserError)
@@ -121,299 +118,12 @@ def _file_row(p):
             "start": t0, "end": t1}
 
 
-# ------------------------------------------------------------------ projects, surveys and cameras
-# Recordings are organised Project > Survey > Camera. A project is a site, a
-# survey one visit or night there (numbered, with an optional date), and each
-# survey has numbered cameras with optional names. Recordings not put in a
-# camera are "unassigned". All of it is remembered in cameras.json in the
-# settings folder; each recording is filed by its camera's id.
-_ORG = {"projects": [], "of": {}, "n": 0, "loaded": False}
-_GENERIC_STEMS = {"rec", "record", "recording", "video", "file", "ats", "seq", "sequence", "clip", "capture"}
-
-
-def _name_stem(p):
-    """'front 2.ats' -> 'front'; '' when the name has no word stem worth using."""
-    import re
-    st = os.path.splitext(os.path.basename(p))[0].strip()
-    st = re.sub(r"[\s_\-]*\(?\d+\)?$", "", st).strip(" _-").lower()
-    if not st or len(st) > 24 or re.search(r"\d", st) or st in _GENERIC_STEMS or not re.search(r"[a-z]", st):
-        return ""
-    return st
-
-
-def _cams_path():
-    return os.path.join(DATA, "cameras.json")
-
-
-def _nid(prefix):
-    _ORG["n"] += 1
-    return f"{prefix}{_ORG['n']}"
-
-
-def _org():
-    if not _ORG["loaded"]:
-        import json, re
-        _ORG["loaded"] = True
-        try:
-            with open(_cams_path(), encoding="utf-8") as fh:
-                d = json.load(fh)
-        except (OSError, ValueError):
-            d = {}
-        if d.get("v") == 4:
-            _ORG["projects"] = d.get("projects") or []
-            _ORG["of"] = d.get("of") or {}
-            _ORG["n"] = int(d.get("n") or 0)
-        elif d.get("v") in (2, 3):   # projects and cameras of earlier versions: each project gets a Survey 1
-            of, proj = d.get("of") or {}, d.get("proj") or {}
-            byp = {}
-            for path, cam in of.items():
-                byp.setdefault(proj.get(path) or os.path.basename(os.path.dirname(path)) or "Project 1", {}).setdefault(cam, []).append(path)
-            for pname, cams in byp.items():
-                sv = {"id": _nid("s"), "no": 1, "date": "", "cameras": []}
-                for cname in cams:
-                    m = re.fullmatch(r"camera\s*(\d+)", cname.strip(), re.I)
-                    used = {c["no"] for c in sv["cameras"]}
-                    no = int(m.group(1)) if m and int(m.group(1)) not in used else max(used | {0}) + 1
-                    c = {"id": _nid("c"), "no": no, "name": "" if m else cname}
-                    sv["cameras"].append(c)
-                    for path in cams[cname]:
-                        _ORG["of"][path] = c["id"]
-                sv["cameras"].sort(key=lambda c: c["no"])
-                _ORG["projects"].append({"id": _nid("p"), "name": pname, "surveys": [sv]})
-            _save_org()
-    return _ORG
-
-
-def _save_org():
-    import json
-    _org()   # never write before the saved file has been read
-    try:
-        os.makedirs(DATA, exist_ok=True)
-        tmp = _cams_path() + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"v": 4, "projects": _ORG["projects"], "of": _ORG["of"], "n": _ORG["n"]}, fh, indent=1)
-        safe_replace(tmp, _cams_path())
-    except OSError:
-        pass
-
-
-def _walk():
-    """(project, survey, camera) for every camera."""
-    for pj in _org()["projects"]:
-        for sv in pj["surveys"]:
-            for c in sv["cameras"]:
-                yield pj, sv, c
-
-
-def _node(nid):
-    """('project'|'survey'|'camera', node, project, survey) for an id, or None."""
-    for pj in _org()["projects"]:
-        if pj["id"] == nid:
-            return "project", pj, pj, None
-        for sv in pj["surveys"]:
-            if sv["id"] == nid:
-                return "survey", sv, pj, sv
-            for c in sv["cameras"]:
-                if c["id"] == nid:
-                    return "camera", c, pj, sv
-    return None
-
-
-def camera_label(c):
-    """'Camera 2' or 'Camera 2: Front elevation'."""
-    base = f"Camera {c['no']}"
-    nm = (c.get("name") or "").strip()
-    return f"{base}: {nm}" if nm and nm.lower() != base.lower() else base
-
-
-def survey_label(sv):
-    lab = f"Survey {sv['no']}"
-    if sv.get("date"):
-        try:
-            import datetime as _d
-            lab += " · " + _d.date.fromisoformat(sv["date"]).strftime("%-d %b %Y" if os.name != "nt" else "%#d %b %Y")
-        except ValueError:
-            lab += " · " + sv["date"]
-    return lab
-
-
-def _place(p):
-    """Where a recording is filed: (project, survey, camera), or None if unassigned."""
-    cid = _org()["of"].get(p) or JOIN_CAM.get(p)
-    n = _node(cid) if cid else None
-    if not n or n[0] != "camera":
-        return None
-    return n[2], n[3], n[1]
-
-
-def _paths_under(nid):
-    """Listed recordings under a project, survey or camera ("unassigned" for those in none)."""
-    if nid == "unassigned":
-        return [p for p in state["files"] if _place(p) is None]
-    n = _node(nid)
-    if not n:
-        return []
-    kind, node = n[0], n[1]
-    cams = ({node["id"]} if kind == "camera" else
-            {c["id"] for c in node["cameras"]} if kind == "survey" else
-            {c["id"] for sv in node["surveys"] for c in sv["cameras"]})
-    return [p for p in state["files"] if _org()["of"].get(p) in cams]
-
-
-def _new_project(name=""):
-    used = {pj["name"].lower() for pj in _org()["projects"]}
-    name = (name or "").strip()[:40]
-    if name and name.lower() in used:
-        raise UserError(f"There's already a project called {name}")
-    if not name:
-        k = 1
-        while f"project {k}" in used:
-            k += 1
-        name = f"Project {k}"
-    pj = {"id": _nid("p"), "name": name, "surveys": []}
-    _org()["projects"].append(pj)
-    return pj
-
-
-def _new_survey(pj, date=""):
-    sv = {"id": _nid("s"), "no": max([s["no"] for s in pj["surveys"]] or [0]) + 1, "date": _clean_date(date), "cameras": []}
-    pj["surveys"].append(sv)
-    return sv
-
-
-def _new_camera(sv, name=""):
-    name = (name or "").strip()[:40]
-    if name and name.lower() in {(c.get("name") or "").lower() for c in sv["cameras"]}:
-        raise UserError(f"Survey {sv['no']} already has a camera called {name}")
-    c = {"id": _nid("c"), "no": max([c["no"] for c in sv["cameras"]] or [0]) + 1, "name": name}
-    sv["cameras"].append(c)
-    return c
-
-
-def _clean_date(d):
-    import datetime as _d
-    d = (d or "").strip()[:10]
-    if not d:
-        return ""
-    try:
-        return _d.date.fromisoformat(d).isoformat()
-    except ValueError:
-        raise UserError("Give the survey date as a date, for example 2026-08-10")
-
-
-
-
-def _folder_date(name):
-    """A survey date in a folder name ('10.8.26', '19-10-2026', '2026-08-10'),
-    as (ISO date, the name with the date taken out); ("", name) if none."""
-    import re, datetime as _d
-    for pat, order in ((r"(?<!\d)(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})(?!\d)", "ymd"),
-                       (r"(?<!\d)(\d{1,2})[-_.](\d{1,2})[-_.](\d{2}|\d{4})(?!\d)", "dmy")):
-        m = re.search(pat, name)
-        if not m:
-            continue
-        a, b, c = (int(x) for x in m.groups())
-        y, mo, d = (a, b, c) if order == "ymd" else (c + 2000 if c < 100 else c, b, a)
-        try:
-            iso = _d.date(y, mo, d).isoformat()
-        except ValueError:
-            continue
-        rest = (name[:m.start()] + " " + name[m.end():]).strip(" _-.,")
-        return iso, " ".join(rest.split())
-    return "", name
-
-
-def _file_by_folders(paths, roots):
-    """Sort recordings into projects, surveys and cameras from their folders.
-    Below the folder they were added from (root):
-      root/file          project = root's name, cameras by file name (front 1 -> Front)
-      root/A/file        A is a date: survey A, cameras by file name; otherwise camera A
-      root/A/B/file      survey A, camera B
-    A date in a folder name becomes the survey's date ("St Fagans 10.8.26" ->
-    project St Fagans, survey dated 10/08/2026). A root named only by a date
-    takes its project name from the folder above. Existing projects, surveys
-    (same date) and cameras (same name) with matching names are reused."""
-    of = _org()["of"]
-    made = {}   # (project id, survey key) -> survey made in this add
-    for p in paths:
-        root = roots.get(p) or os.path.dirname(p)
-        rel = os.path.relpath(os.path.dirname(p), root)
-        parts = [] if rel in (".", "") else rel.split(os.sep)
-        rdate, rname = _folder_date(os.path.basename(root))
-        if not rname:   # the root is just a date: the project is the folder above
-            rname = _folder_date(os.path.basename(os.path.dirname(root)))[1] or "Project"
-        sv_name, cam_name = "", None
-        if len(parts) == 1:
-            d1, n1 = _folder_date(parts[0])
-            if d1:
-                sv_name = parts[0]
-            else:
-                cam_name = parts[0]
-        elif len(parts) >= 2:
-            sv_name, cam_name = parts[-2], parts[-1]
-        sdate = _folder_date(sv_name)[0] if sv_name else rdate
-        pj = next((x for x in _org()["projects"] if x["name"].lower() == rname[:40].lower()), None) or _new_project(rname)
-        key = (pj["id"], sdate or sv_name or "")
-        sv = made.get(key) or next((x for x in pj["surveys"] if sdate and x.get("date") == sdate), None)
-        if sv is None:
-            sv = _new_survey(pj, sdate)
-        made[key] = sv
-        if cam_name is None:   # cameras by file name
-            stem = _name_stem(p)
-            cam_name = stem[:1].upper() + stem[1:] if stem else ""
-        c = next((x for x in sv["cameras"] if (x.get("name") or "").lower() == cam_name[:40].lower()), None) or _new_camera(sv, cam_name)
-        of[p] = c["id"]
-
-
-def _file_into(paths, target):
-    """File recordings as the Add dialog asked. target: None/"" = leave as they are
-    (new ones stay unassigned); {"camera": id}; or {"project": {id|new}, "survey":
-    {id|new, date}, "camera": {id|new|auto}}."""
-    if not target or not paths:
-        return
-    of = _org()["of"]
-    if isinstance(target, dict) and target.get("camera") and isinstance(target["camera"], str):
-        n = _node(target["camera"])
-        if not n or n[0] != "camera":
-            raise UserError("That camera no longer exists")
-        for p in paths:
-            of[p] = n[1]["id"]
-        return
-    pj_t, sv_t, cam_t = target.get("project") or {}, target.get("survey") or {}, target.get("camera") or {}
-    if pj_t.get("id"):
-        n = _node(pj_t["id"])
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        pj = n[1]
-    else:
-        pj = _new_project(pj_t.get("name", ""))
-    if sv_t.get("id"):
-        sv = next((s for s in pj["surveys"] if s["id"] == sv_t["id"]), None)
-        if sv is None:
-            raise UserError("That survey isn't in the chosen project")
-    else:
-        sv = _new_survey(pj, sv_t.get("date", ""))
-    if cam_t.get("id"):
-        c = next((c for c in sv["cameras"] if c["id"] == cam_t["id"]), None)
-        if c is None:
-            raise UserError("That camera isn't in the chosen survey")
-        for p in paths:
-            of[p] = c["id"]
-    elif cam_t.get("auto"):
-        # files from one folder with the same name stem share a camera ("front 1",
-        # "front 2" -> Front); files with numbered names group by folder
-        groups = {}
-        for p in paths:
-            groups.setdefault((os.path.dirname(p), _name_stem(p)), []).append(p)
-        for (_, stem), ps in groups.items():
-            nm = stem[:1].upper() + stem[1:] if stem else ""
-            c = next((c for c in sv["cameras"] if nm and (c.get("name") or "").lower() == nm.lower()), None) or _new_camera(sv, nm)
-            for p in ps:
-                of[p] = c["id"]
-    else:
-        c = _new_camera(sv, cam_t.get("name", ""))
-        for p in paths:
-            of[p] = c["id"]
+from emergence.org import (_CTX, JOIN_CAM, CAM_JOIN, configure, _ORG, _GENERIC_STEMS, _name_stem, _cams_path,
+    _nid, _org, _save_org, _walk, _node, camera_label, survey_label, _place, _paths_under, _new_project,
+    _new_survey, _new_camera, _clean_date, _folder_date, _file_by_folders, _file_into, _place_row, _overlaps,
+    org_tree)  # noqa: E402,F401  projects, surveys, cameras: emergence/org.py
+from emergence import org as org_mod  # noqa: E402
+org_mod.configure(lambda: DATA, lambda: state["files"])
 
 
 _TIMES = {}
@@ -444,65 +154,6 @@ def _file_times(p):
                 except Exception:
                     pass
     return _TIMES[key]
-
-
-def _place_row(p):
-    pl = _place(p)
-    if pl is None:
-        return {"camera_id": "", "survey_id": "", "project_id": "", "place": "Unassigned"}
-    pj, sv, c = pl
-    return {"camera_id": c["id"], "survey_id": sv["id"], "project_id": pj["id"],
-            "place": f"{pj['name']} › {survey_label(sv)} › {camera_label(c)}"}
-
-
-def _overlaps(files):
-    import datetime as _d
-    out = []
-    for i, a in enumerate(files):
-        for b in files[i + 1:]:
-            if not (a["start"] and a["end"] and b["start"] and b["end"]) or "assumed" in (a["timing"], b["timing"]):
-                continue
-            lo, hi = max(a["start"], b["start"]), min(a["end"], b["end"])
-            if (_d.datetime.fromisoformat(hi) - _d.datetime.fromisoformat(lo)).total_seconds() > 2:
-                out.append({"a": a["name"], "b": b["name"], "from": lo, "to": hi})
-    return out
-
-
-def org_tree(rows):
-    """Projects > surveys > cameras > recordings (in time order), with any
-    recordings from one camera that overlap in time (they shouldn't: one camera
-    records one file at a time). Files whose frame rate had to be assumed are
-    left out of that check, and 2 s of overlap is allowed for. A project is
-    shown if a listed recording is in it, or if nothing has been put in it yet."""
-    listed = {r["path"] for r in rows}
-    byc = {}
-    for r in rows:
-        byc.setdefault(r["camera_id"], []).append(r)
-    used = {}
-    for p, cid in _org()["of"].items():
-        used.setdefault(cid, set()).add(p)
-    tree = []
-    for pj in _org()["projects"]:
-        cids = [c["id"] for sv in pj["surveys"] for c in sv["cameras"]]
-        shown = any(byc.get(c) for c in cids) or not any(used.get(c) for c in cids)
-        if not shown:
-            continue
-        surveys = []
-        for sv in sorted(pj["surveys"], key=lambda s: s["no"]):
-            cams = []
-            for c in sorted(sv["cameras"], key=lambda c: c["no"]):
-                files = sorted(byc.get(c["id"], []), key=lambda r: (r["start"] or "", r["name"]))
-                cams.append({"id": c["id"], "no": c["no"], "name": c.get("name") or "", "label": camera_label(c),
-                             "paths": [r["path"] for r in files], "overlaps": _overlaps(files),
-                             "join": bool(c.get("joined")), "joined": CAM_JOIN.get(c["id"], ""), "map": c.get("map"),
-                             "surveyor": c.get("surveyor") or ""})
-            surveys.append({"id": sv["id"], "no": sv["no"], "date": sv.get("date") or "", "label": survey_label(sv), "cameras": cams,
-                            "surveyor": sv.get("surveyor") or "", "detectors": sv.get("detectors") or [],
-                            "paths": [p for c in cams for p in c["paths"]]})
-        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"), "template": len(pj.get("template") or []),
-                     "paths": [p for sv in surveys for p in sv["paths"]]})
-    unassigned = sorted([r for r in rows if not r["camera_id"]], key=lambda r: (os.path.dirname(r["path"]), r["start"] or "", r["name"]))
-    return tree, [r["path"] for r in unassigned if r["path"] in listed]
 
 
 # ------------------------------------------------------------------ pages
@@ -685,8 +336,6 @@ def list_files():
 
 # ---- joined recordings: a camera's consecutive files read as one
 from emergence.session import JOINS
-JOIN_CAM = {}   # joined recording's path -> camera id
-CAM_JOIN = {}   # camera id -> joined recording's path
 
 
 def _joined_path(cid, first):
@@ -838,6 +487,339 @@ def _num_in(v, lo, hi):
     return x
 
 
+# Each action of /api/org: (body, the organisation, the reply to fill in, the action's name)
+def _org_new_project(b, org, out, act):
+    pj = _new_project(b.get("name", ""))
+    sv = _new_survey(pj)
+    out["created"] = _new_camera(sv)["id"]
+
+
+def _org_new_survey(b, org, out, act):
+    n = _node(b.get("project"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    sv = _new_survey(n[1], b.get("date", ""))
+    tpl = n[1].get("template") if b.get("template", True) else None
+    if tpl:   # the site plan: the same cameras, names, positions and lenses as before
+        import copy
+        for t in tpl:
+            c = _new_camera(sv, t.get("name", ""))
+            if t.get("map"):
+                c["map"] = copy.deepcopy(t["map"])
+            if t.get("surveyor"):
+                c["surveyor"] = t["surveyor"]
+        for d in n[1].get("template_detectors") or []:
+            sv.setdefault("detectors", []).append({**copy.deepcopy(d), "id": _nid("d")})
+        out["from_template"] = True
+        out["created"] = sv["cameras"][0]["id"]
+    else:
+        out["created"] = _new_camera(sv)["id"]
+
+
+def _org_new_camera(b, org, out, act):
+    n = _node(b.get("survey"))
+    if not n or n[0] != "survey":
+        raise UserError("That survey no longer exists")
+    out["created"] = _new_camera(n[1], b.get("name", ""))["id"]
+
+
+def _org_rename(b, org, out, act):
+    n = _node(b.get("id"))
+    if not n:
+        raise UserError("That no longer exists")
+    name = (b.get("name") or "").strip()[:40]
+    if n[0] == "project":
+        if not name:
+            raise UserError("Give the project a name")
+        if any(pj is not n[1] and pj["name"].lower() == name.lower() for pj in org["projects"]):
+            raise UserError(f"There's already a project called {name}")
+        n[1]["name"] = name
+    elif n[0] == "camera":
+        if name and any(c is not n[1] and (c.get("name") or "").lower() == name.lower() for c in n[3]["cameras"]):
+            raise UserError(f"Survey {n[3]['no']} already has a camera called {name}")
+        n[1]["name"] = name   # blank: just "Camera 2"
+    else:
+        raise UserError("Surveys are numbered; you can set their date")
+
+
+def _org_set_date(b, org, out, act):
+    n = _node(b.get("id"))
+    if not n or n[0] != "survey":
+        raise UserError("That survey no longer exists")
+    n[1]["date"] = _clean_date(b.get("date", ""))
+
+
+def _org_delete(b, org, out, act):
+    n = _node(b.get("id"))
+    if not n:
+        raise UserError("That no longer exists")
+    kind, node, pj, sv = n
+    gone = ({node["id"]} if kind == "camera" else {c["id"] for c in node["cameras"]} if kind == "survey"
+            else {c["id"] for s_ in node["surveys"] for c in s_["cameras"]})
+    for p in [p for p, c in org["of"].items() if c in gone]:
+        org["of"].pop(p)
+    if kind == "camera":
+        sv["cameras"].remove(node)
+    elif kind == "survey":
+        pj["surveys"].remove(node)
+    else:
+        org["projects"].remove(node)
+
+
+def _org_move(b, org, out, act):
+    cid = b.get("camera") or ""
+    if cid:
+        n = _node(cid)
+        if not n or n[0] != "camera":
+            raise UserError("That camera no longer exists")
+    for p in b.get("paths") or []:
+        if p not in state["files"]:
+            continue
+        if cid:
+            org["of"][p] = cid
+        else:
+            org["of"].pop(p, None)
+
+
+def _org_set_site(b, org, out, act):
+    """the project's site on the map: {lat, lon, zoom}, or null to clear"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    site = b.get("site")
+    if site:
+        n[1]["site"] = {"lat": _num_in(site.get("lat"), -90, 90), "lon": _num_in(site.get("lon"), -180, 180),
+                        "zoom": int(_num_in(site.get("zoom", 17), 1, 21))}
+    else:
+        n[1].pop("site", None)
+
+
+def _org_set_camera_map(b, org, out, act):
+    """where a camera stood and where it looked"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "camera":
+        raise UserError("That camera no longer exists")
+    m = b.get("map")
+    if m:
+        n[1]["map"] = {"lat": _num_in(m.get("lat"), -90, 90), "lon": _num_in(m.get("lon"), -180, 180),
+                       "bearing": _num_in(m.get("bearing", 0), -360, 720) % 360, "range": _num_in(m.get("range", 30), 1, 2000),
+                       "fov": _num_in(m.get("fov", 51), 1, 180), "model": str(m.get("model") or "")[:30],
+                       "lens": str(m.get("lens") or "")[:30]}
+    else:
+        n[1].pop("map", None)
+
+
+def _org_set_info(b, org, out, act):
+    """surveyor names: {id: survey or camera, surveyor}"""
+    n = _node(b.get("id"))
+    if not n or n[0] not in ("survey", "camera"):
+        raise UserError("That no longer exists")
+    v = str(b.get("surveyor") or "").strip()[:80]
+    if v:
+        n[1]["surveyor"] = v
+    else:
+        n[1].pop("surveyor", None)
+
+
+def _org_add_detector(b, org, out, act):
+    """an acoustic bat detector in a survey"""
+    n = _node(b.get("survey"))
+    if not n or n[0] != "survey":
+        raise UserError("That survey no longer exists")
+    ds = n[1].setdefault("detectors", [])
+    no = max([d.get("no", 0) for d in ds] or [0]) + 1
+    d = {"id": _nid("d"), "no": no, "name": f"Detector {no}", "surveyor": "", "model": "", "serial": "", "notes": "",
+         "range": 20.0, "map": None}
+    ds.append(d)
+    out["created"] = d["id"]
+
+
+def _org_set_detector(b, org, out, act):
+    found = None
+    for pj, sv in ((pj, sv) for pj in org["projects"] for sv in pj["surveys"]):
+        for d in sv.get("detectors") or []:
+            if d["id"] == b.get("id"):
+                found = (sv, d)
+    if not found:
+        raise UserError("That detector no longer exists")
+    sv, d = found
+    if act == "delete_detector":
+        sv["detectors"].remove(d)
+    else:
+        f = b.get("fields") or {}
+        for k in ("name", "surveyor", "model", "serial", "notes"):
+            if k in f:
+                d[k] = str(f[k] or "").strip()[:200 if k == "notes" else 80]
+        if "range" in f:
+            d["range"] = _num_in(f["range"], 0, 500)
+        if "map" in f:
+            m = f["map"]
+            d["map"] = {"lat": _num_in(m["lat"], -90, 90), "lon": _num_in(m["lon"], -180, 180)} if m else None
+
+
+def _org_save_template(b, org, out, act):
+    """a survey's cameras become the plan for the project's later surveys"""
+    n = _node(b.get("survey"))
+    if not n or n[0] != "survey":
+        raise UserError("That survey no longer exists")
+    import copy
+    n[2]["template"] = [{"name": c.get("name") or "", "map": copy.deepcopy(c.get("map")), "surveyor": c.get("surveyor") or ""}
+                        for c in sorted(n[1]["cameras"], key=lambda c: c["no"])]
+    n[2]["template_detectors"] = [{k: copy.deepcopy(v) for k, v in d.items() if k != "id"} for d in n[1].get("detectors") or []]
+    out["template"] = len(n[2]["template"])
+
+
+def _org_clear_template(b, org, out, act):
+    n = _node(b.get("project"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    n[1].pop("template", None)
+    n[1].pop("template_detectors", None)
+
+
+def _org_close_project(b, org, out, act):
+    """take its recordings off the list (the project stays saved)"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    gone = set(_paths_under(n[1]["id"]))
+    _refresh_joins()
+    gone |= {vp for vp, cid in JOIN_CAM.items() if _node(cid) and _node(cid)[2] is n[1]}
+    state["files"] = [f for f in state["files"] if f not in gone]
+    if state["current"] in gone:
+        state["current"] = None
+    out["closed"] = len(gone)
+
+
+def _org_reset_project(b, org, out, act):
+    """undo every decision on every recording in the project"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    _refresh_joins()
+    k = 0
+    for p in _scan_paths(n[1]["id"]):
+        try:
+            r = rec(p)
+        except UserError:
+            continue
+        if r.state.get("events") or r.state.get("comments"):
+            r.start_over(delete_comments=bool(b.get("delete_comments")), reset_level=False)
+            k += 1
+    out["reset"] = k
+
+
+def _org_save_project(b, org, out, act):
+    """everything is saved as you go; this also writes a project file to keep or share"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    out["file"] = _write_project_file(n[1])
+
+
+def _org_open_project_file(b, org, out, act):
+    out.update(_read_project_file(b.get("path") or ""))
+
+
+def _org_join(b, org, out, act):
+    """read a camera's consecutive recordings as one (or separately again)"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "camera":
+        raise UserError("That camera no longer exists")
+    if b.get("on"):
+        n[1]["joined"] = True
+    else:
+        n[1].pop("joined", None)
+    _save_org()
+    rows = _refresh_joins()
+    vp = CAM_JOIN.get(n[1]["id"])
+    if vp:
+        try:
+            j = rec(vp)
+        except UserError:
+            n[1].pop("joined", None)
+            _save_org()
+            _refresh_joins()
+            raise
+        if not any(len(x.get("points") or []) >= 3 for x in j.rois):   # start from a member's ROIs
+            donor = next((rec(p) for p in JOINS[vp] if any(len(x.get("points") or []) >= 3 for x in rec(p).rois)), None)
+            if donor is not None:
+                j.copy_rois_from(donor)
+        out["opened"] = vp
+
+
+def _org_list_projects(b, org, out, act):
+    """every saved project, listed or not"""
+    cams_of = {}
+    for path, cid in org["of"].items():
+        cams_of.setdefault(cid, []).append(path)
+    out["projects"] = []
+    for pj in org["projects"]:
+        paths = [x for sv in pj["surveys"] for c in sv["cameras"] for x in cams_of.get(c["id"], [])]
+        out["projects"].append({"id": pj["id"], "name": pj["name"], "surveys": len(pj["surveys"]),
+                                "cameras": sum(len(sv["cameras"]) for sv in pj["surveys"]),
+                                "recordings": len(paths), "missing": sum(1 for x in paths if not os.path.exists(x)),
+                                "listed": sum(1 for x in paths if x in state["files"]),
+                                "dates": sorted({sv["date"] for sv in pj["surveys"] if sv.get("date")})})
+
+
+def _org_open_project(b, org, out, act):
+    """list every recording saved in a project"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    if b.get("replace"):
+        state["files"] = []
+    cids = {c["id"] for sv in n[1]["surveys"] for c in sv["cameras"]}
+    found = sorted((x for x, c in org["of"].items() if c in cids and os.path.exists(x)), key=lambda x: (x.lower()))
+    for x in found:
+        if x not in state["files"]:
+            state["files"].append(x)
+    out["first"] = next((x for c in [c for sv in sorted(n[1]["surveys"], key=lambda s: s["no"]) for c in sorted(sv["cameras"], key=lambda c: c["no"])]
+                         for x in found if org["of"].get(x) == c["id"]), None)
+    out["opened"] = len(found)
+
+
+def _org_move_camera(b, org, out, act):
+    n, t = _node(b.get("id")), _node(b.get("survey"))
+    if not n or n[0] != "camera" or not t or t[0] != "survey":
+        raise UserError("That camera or survey no longer exists")
+    cam, src, dst = n[1], n[3], t[1]
+    if src is not dst:
+        if cam.get("name") and any((c.get("name") or "").lower() == cam["name"].lower() for c in dst["cameras"]):
+            raise UserError(f"Survey {dst['no']} already has a camera called {cam['name']}. Rename one of them first.")
+        src["cameras"].remove(cam)
+        cam["no"] = max([c["no"] for c in dst["cameras"]] or [0]) + 1
+        dst["cameras"].append(cam)
+
+
+_ORG_ACTIONS = {
+    "new_project": _org_new_project,
+    "new_survey": _org_new_survey,
+    "new_camera": _org_new_camera,
+    "rename": _org_rename,
+    "set_date": _org_set_date,
+    "delete": _org_delete,
+    "move": _org_move,
+    "set_site": _org_set_site,
+    "set_camera_map": _org_set_camera_map,
+    "set_info": _org_set_info,
+    "add_detector": _org_add_detector,
+    "set_detector": _org_set_detector,
+    "delete_detector": _org_set_detector,
+    "save_template": _org_save_template,
+    "clear_template": _org_clear_template,
+    "close_project": _org_close_project,
+    "reset_project": _org_reset_project,
+    "save_project": _org_save_project,
+    "open_project_file": _org_open_project_file,
+    "join": _org_join,
+    "list_projects": _org_list_projects,
+    "open_project": _org_open_project,
+    "move_camera": _org_move_camera,
+}
+
+
 @app.post("/api/org")
 def organise():
     """Organise recordings into projects, surveys and cameras.
@@ -849,258 +831,10 @@ def organise():
       move_camera {id, survey}: a camera and its recordings into another survey"""
     b = request.json or {}
     org, act, out = _org(), b.get("action"), {}
-    if act == "new_project":
-        pj = _new_project(b.get("name", ""))
-        sv = _new_survey(pj)
-        out["created"] = _new_camera(sv)["id"]
-    elif act == "new_survey":
-        n = _node(b.get("project"))
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        sv = _new_survey(n[1], b.get("date", ""))
-        tpl = n[1].get("template") if b.get("template", True) else None
-        if tpl:   # the site plan: the same cameras, names, positions and lenses as before
-            import copy
-            for t in tpl:
-                c = _new_camera(sv, t.get("name", ""))
-                if t.get("map"):
-                    c["map"] = copy.deepcopy(t["map"])
-                if t.get("surveyor"):
-                    c["surveyor"] = t["surveyor"]
-            for d in n[1].get("template_detectors") or []:
-                sv.setdefault("detectors", []).append({**copy.deepcopy(d), "id": _nid("d")})
-            out["from_template"] = True
-            out["created"] = sv["cameras"][0]["id"]
-        else:
-            out["created"] = _new_camera(sv)["id"]
-    elif act == "new_camera":
-        n = _node(b.get("survey"))
-        if not n or n[0] != "survey":
-            raise UserError("That survey no longer exists")
-        out["created"] = _new_camera(n[1], b.get("name", ""))["id"]
-    elif act == "rename":
-        n = _node(b.get("id"))
-        if not n:
-            raise UserError("That no longer exists")
-        name = (b.get("name") or "").strip()[:40]
-        if n[0] == "project":
-            if not name:
-                raise UserError("Give the project a name")
-            if any(pj is not n[1] and pj["name"].lower() == name.lower() for pj in org["projects"]):
-                raise UserError(f"There's already a project called {name}")
-            n[1]["name"] = name
-        elif n[0] == "camera":
-            if name and any(c is not n[1] and (c.get("name") or "").lower() == name.lower() for c in n[3]["cameras"]):
-                raise UserError(f"Survey {n[3]['no']} already has a camera called {name}")
-            n[1]["name"] = name   # blank: just "Camera 2"
-        else:
-            raise UserError("Surveys are numbered; you can set their date")
-    elif act == "set_date":
-        n = _node(b.get("id"))
-        if not n or n[0] != "survey":
-            raise UserError("That survey no longer exists")
-        n[1]["date"] = _clean_date(b.get("date", ""))
-    elif act == "delete":
-        n = _node(b.get("id"))
-        if not n:
-            raise UserError("That no longer exists")
-        kind, node, pj, sv = n
-        gone = ({node["id"]} if kind == "camera" else {c["id"] for c in node["cameras"]} if kind == "survey"
-                else {c["id"] for s_ in node["surveys"] for c in s_["cameras"]})
-        for p in [p for p, c in org["of"].items() if c in gone]:
-            org["of"].pop(p)
-        if kind == "camera":
-            sv["cameras"].remove(node)
-        elif kind == "survey":
-            pj["surveys"].remove(node)
-        else:
-            org["projects"].remove(node)
-    elif act == "move":
-        cid = b.get("camera") or ""
-        if cid:
-            n = _node(cid)
-            if not n or n[0] != "camera":
-                raise UserError("That camera no longer exists")
-        for p in b.get("paths") or []:
-            if p not in state["files"]:
-                continue
-            if cid:
-                org["of"][p] = cid
-            else:
-                org["of"].pop(p, None)
-    elif act == "set_site":   # the project's site on the map: {lat, lon, zoom}, or null to clear
-        n = _node(b.get("id"))
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        site = b.get("site")
-        if site:
-            n[1]["site"] = {"lat": _num_in(site.get("lat"), -90, 90), "lon": _num_in(site.get("lon"), -180, 180),
-                            "zoom": int(_num_in(site.get("zoom", 17), 1, 21))}
-        else:
-            n[1].pop("site", None)
-    elif act == "set_camera_map":   # where a camera stood and where it looked
-        n = _node(b.get("id"))
-        if not n or n[0] != "camera":
-            raise UserError("That camera no longer exists")
-        m = b.get("map")
-        if m:
-            n[1]["map"] = {"lat": _num_in(m.get("lat"), -90, 90), "lon": _num_in(m.get("lon"), -180, 180),
-                           "bearing": _num_in(m.get("bearing", 0), -360, 720) % 360, "range": _num_in(m.get("range", 30), 1, 2000),
-                           "fov": _num_in(m.get("fov", 51), 1, 180), "model": str(m.get("model") or "")[:30],
-                           "lens": str(m.get("lens") or "")[:30]}
-        else:
-            n[1].pop("map", None)
-    elif act == "set_info":   # surveyor names: {id: survey or camera, surveyor}
-        n = _node(b.get("id"))
-        if not n or n[0] not in ("survey", "camera"):
-            raise UserError("That no longer exists")
-        v = str(b.get("surveyor") or "").strip()[:80]
-        if v:
-            n[1]["surveyor"] = v
-        else:
-            n[1].pop("surveyor", None)
-    elif act == "add_detector":   # an acoustic bat detector in a survey
-        n = _node(b.get("survey"))
-        if not n or n[0] != "survey":
-            raise UserError("That survey no longer exists")
-        ds = n[1].setdefault("detectors", [])
-        no = max([d.get("no", 0) for d in ds] or [0]) + 1
-        d = {"id": _nid("d"), "no": no, "name": f"Detector {no}", "surveyor": "", "model": "", "serial": "", "notes": "",
-             "range": 20.0, "map": None}
-        ds.append(d)
-        out["created"] = d["id"]
-    elif act in ("set_detector", "delete_detector"):
-        found = None
-        for pj, sv in ((pj, sv) for pj in org["projects"] for sv in pj["surveys"]):
-            for d in sv.get("detectors") or []:
-                if d["id"] == b.get("id"):
-                    found = (sv, d)
-        if not found:
-            raise UserError("That detector no longer exists")
-        sv, d = found
-        if act == "delete_detector":
-            sv["detectors"].remove(d)
-        else:
-            f = b.get("fields") or {}
-            for k in ("name", "surveyor", "model", "serial", "notes"):
-                if k in f:
-                    d[k] = str(f[k] or "").strip()[:200 if k == "notes" else 80]
-            if "range" in f:
-                d["range"] = _num_in(f["range"], 0, 500)
-            if "map" in f:
-                m = f["map"]
-                d["map"] = {"lat": _num_in(m["lat"], -90, 90), "lon": _num_in(m["lon"], -180, 180)} if m else None
-    elif act == "save_template":   # a survey's cameras become the plan for the project's later surveys
-        n = _node(b.get("survey"))
-        if not n or n[0] != "survey":
-            raise UserError("That survey no longer exists")
-        import copy
-        n[2]["template"] = [{"name": c.get("name") or "", "map": copy.deepcopy(c.get("map")), "surveyor": c.get("surveyor") or ""}
-                            for c in sorted(n[1]["cameras"], key=lambda c: c["no"])]
-        n[2]["template_detectors"] = [{k: copy.deepcopy(v) for k, v in d.items() if k != "id"} for d in n[1].get("detectors") or []]
-        out["template"] = len(n[2]["template"])
-    elif act == "clear_template":
-        n = _node(b.get("project"))
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        n[1].pop("template", None)
-        n[1].pop("template_detectors", None)
-    elif act == "close_project":   # take its recordings off the list (the project stays saved)
-        n = _node(b.get("id"))
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        gone = set(_paths_under(n[1]["id"]))
-        _refresh_joins()
-        gone |= {vp for vp, cid in JOIN_CAM.items() if _node(cid) and _node(cid)[2] is n[1]}
-        state["files"] = [f for f in state["files"] if f not in gone]
-        if state["current"] in gone:
-            state["current"] = None
-        out["closed"] = len(gone)
-    elif act == "reset_project":   # undo every decision on every recording in the project
-        n = _node(b.get("id"))
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        _refresh_joins()
-        k = 0
-        for p in _scan_paths(n[1]["id"]):
-            try:
-                r = rec(p)
-            except UserError:
-                continue
-            if r.state.get("events") or r.state.get("comments"):
-                r.start_over(delete_comments=bool(b.get("delete_comments")), reset_level=False)
-                k += 1
-        out["reset"] = k
-    elif act == "save_project":   # everything is saved as you go; this also writes a project file to keep or share
-        n = _node(b.get("id"))
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        out["file"] = _write_project_file(n[1])
-    elif act == "open_project_file":
-        out.update(_read_project_file(b.get("path") or ""))
-    elif act == "join":   # read a camera's consecutive recordings as one (or separately again)
-        n = _node(b.get("id"))
-        if not n or n[0] != "camera":
-            raise UserError("That camera no longer exists")
-        if b.get("on"):
-            n[1]["joined"] = True
-        else:
-            n[1].pop("joined", None)
-        _save_org()
-        rows = _refresh_joins()
-        vp = CAM_JOIN.get(n[1]["id"])
-        if vp:
-            try:
-                j = rec(vp)
-            except UserError:
-                n[1].pop("joined", None)
-                _save_org()
-                _refresh_joins()
-                raise
-            if not any(len(x.get("points") or []) >= 3 for x in j.rois):   # start from a member's ROIs
-                donor = next((rec(p) for p in JOINS[vp] if any(len(x.get("points") or []) >= 3 for x in rec(p).rois)), None)
-                if donor is not None:
-                    j.copy_rois_from(donor)
-            out["opened"] = vp
-    elif act == "list_projects":   # every saved project, listed or not
-        cams_of = {}
-        for path, cid in org["of"].items():
-            cams_of.setdefault(cid, []).append(path)
-        out["projects"] = []
-        for pj in org["projects"]:
-            paths = [x for sv in pj["surveys"] for c in sv["cameras"] for x in cams_of.get(c["id"], [])]
-            out["projects"].append({"id": pj["id"], "name": pj["name"], "surveys": len(pj["surveys"]),
-                                    "cameras": sum(len(sv["cameras"]) for sv in pj["surveys"]),
-                                    "recordings": len(paths), "missing": sum(1 for x in paths if not os.path.exists(x)),
-                                    "listed": sum(1 for x in paths if x in state["files"]),
-                                    "dates": sorted({sv["date"] for sv in pj["surveys"] if sv.get("date")})})
-    elif act == "open_project":   # list every recording saved in a project
-        n = _node(b.get("id"))
-        if not n or n[0] != "project":
-            raise UserError("That project no longer exists")
-        if b.get("replace"):
-            state["files"] = []
-        cids = {c["id"] for sv in n[1]["surveys"] for c in sv["cameras"]}
-        found = sorted((x for x, c in org["of"].items() if c in cids and os.path.exists(x)), key=lambda x: (x.lower()))
-        for x in found:
-            if x not in state["files"]:
-                state["files"].append(x)
-        out["first"] = next((x for c in [c for sv in sorted(n[1]["surveys"], key=lambda s: s["no"]) for c in sorted(sv["cameras"], key=lambda c: c["no"])]
-                             for x in found if org["of"].get(x) == c["id"]), None)
-        out["opened"] = len(found)
-    elif act == "move_camera":
-        n, t = _node(b.get("id")), _node(b.get("survey"))
-        if not n or n[0] != "camera" or not t or t[0] != "survey":
-            raise UserError("That camera or survey no longer exists")
-        cam, src, dst = n[1], n[3], t[1]
-        if src is not dst:
-            if cam.get("name") and any((c.get("name") or "").lower() == cam["name"].lower() for c in dst["cameras"]):
-                raise UserError(f"Survey {dst['no']} already has a camera called {cam['name']}. Rename one of them first.")
-            src["cameras"].remove(cam)
-            cam["no"] = max([c["no"] for c in dst["cameras"]] or [0]) + 1
-            dst["cameras"].append(cam)
-    else:
+    fn = _ORG_ACTIONS.get(act)
+    if fn is None:
         raise UserError("Unknown action")
+    fn(b, org, out, act)
     _save_org()
     return jsonify({**_files_payload(), **out})
 
@@ -1132,27 +866,6 @@ def frame_times():
                     headers={"Cache-Control": "no-store"})
 
 
-@app.post("/api/fps")
-def set_fps():
-    """Set the frame rate by hand (body: fps), or fps 0 to go back to the
-    file's own timing."""
-    r = rec()
-    v = float((request.json or {}).get("fps") or 0)
-    if v > 0:
-        r.src.fps, r.src.fps_source, r.src.fps_user = v, "set by you", True
-        r.state["fps_set"] = True
-        r.save()
-    else:
-        r.state.pop("fps_set", None)
-        r.save()
-        recs.pop(r.path, None)   # reopen: the file's own timing again
-        r = rec(r.path)
-    for k in [k for k in _TIMES if k[0] == r.path]:
-        _TIMES.pop(k)
-    return jsonify(r.summary())
-
-
-# ------------------------------------------------------------------ frames
 @app.get("/api/frame")
 def frame():
     r = rec()

@@ -54,7 +54,6 @@ function fmtDur(s) { const m = Math.floor(s / 60); return `${m}:${String(Math.ro
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 // ------------------------------------------------------------ recordings list
-function parentName(p) { const parts = p.split(/[\\/]/); return parts.slice(-3, -1).join(" › "); }
 // Recordings are organised Project > Survey > Camera. Added recordings go in
 // the Unassigned box unless the Add dialog puts them in a camera; they can be
 // dragged between cameras afterwards.
@@ -500,22 +499,6 @@ async function openRec(path) {
     loadTimes(S.rec.path);   // exact frame times, in the background
   } catch (e) { setEmpty("Could not open this file.", true); err(e); }
 }
-// Frame rate: read from the file's own frame clock where it has one. Typing
-// a value overrides it; "Auto" goes back to the file's timing.
-function showFps() {
-  if (!$("#fps")) return;
-  const src = S.rec.fps_source || "";
-  $("#fps").value = Math.round(S.rec.fps * 100) / 100;
-  $("#fps-src").textContent = src === "frame clock" ? "from file" : src === "set by you" ? "set by you" : src.startsWith("estimated") ? "estimated" : "assumed";
-  $("#fps-src").className = "small " + (src === "frame clock" ? "muted" : "warn");
-  $("#fps-auto").hidden = src !== "set by you";
-  $("#fps-wrap").title = src === "frame clock" ? "Frame rate read from the time stamp the camera put on every frame. Times are exact."
-    : src === "set by you" ? "You set this frame rate. Click Auto to use the file's own timing again."
-    : src.startsWith("estimated") ? "This file has no per-frame time stamps, so the frame rate is estimated from when the file finished recording. Type the camera's frame rate if you know it."
-    : "This file has no per-frame time stamps and the frame rate couldn't be estimated. Type the camera's frame rate.";
-}
-async function setFps(v) { try { S.rec = await api("/api/fps", { fps: v }); S.times = null; loadTimes(S.rec.path); showFps(); refreshFiles(); setCrumbMeta(); renderEvents(); await loadActivity(true); showFrame(); } catch (e) { err(e); } }
-if ($("#fps")) { $("#fps").onchange = () => setFps(+$("#fps").value); $("#fps-auto").onclick = () => setFps(0); }
 
 // ------------------------------------------------------------ frames
 const img = $("#view");
@@ -888,7 +871,7 @@ svg.addEventListener("pointerdown", (e) => {
   const t = e.target, p = toImg(e);
   if (t.dataset.h) S.drag = { kind: t.dataset.h, p0: p, b0: { ...S.box } };
   else if (t.dataset.body) S.drag = { kind: "move", p0: p, b0: { ...S.box } };
-  else { S.drag = { kind: "new", p0: p, b0: { x0: p[0], y0: p[1], x1: p[0], y1: p[1] } }; S.box = { ...S.drag.b0 }; }   // drag out a new shape
+  else { S.drag = { kind: "new", p0: p, b0: { x0: p[0], y0: p[1], x1: p[0], y1: p[1] }, prev: S.box && { ...S.box } }; S.box = { ...S.drag.b0 }; }   // drag out a new shape
   svg.setPointerCapture(e.pointerId); e.preventDefault();
 });
 svg.addEventListener("pointermove", (e) => {
@@ -912,7 +895,7 @@ svg.addEventListener("pointerup", (e) => {
   {   // a click (no drag) once the shape has been drawn sets the ROI
     const b0 = svg.getBoundingClientRect(), sc = b0.width / img.naturalWidth, p = toImg(e);
     const moved = Math.hypot(p[0] - S.drag.p0[0], p[1] - S.drag.p0[1]) * sc;
-    if (moved < 4 && S.shapeDragged) { S.box = S.drag.b0; S.drag = null; drawRoi(); finishRoi(); return; }
+    if (moved < 4 && S.shapeDragged) { S.box = S.drag.kind === "new" ? S.drag.prev : S.drag.b0; S.drag = null; drawRoi(); finishRoi(); return; }
     if (moved >= 4) S.shapeDragged = true;
   }
   const b = S.box;   // keep edges in order and the shape a sensible size
@@ -1078,14 +1061,6 @@ $("#btn-roi-pick").onclick = (e) => { e.stopPropagation(); closeMenus("roi"); to
 $("#roi-menu").addEventListener("click", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------ scan, jobs
-async function startScan(all, lim) {
-  if (!S.rec && !all) return;
-  try {
-    const r = await api("/api/scan", lim ? { all: false, a: lim[0], b: lim[1] } : { all });
-    if (!r.jobs.length) return toast("Draw an ROI first. Tick 'Use for every file from this camera' to share it.");
-    toast(lim ? `Scanning ${fmtTime(lim[0])} → ${fmtTime(lim[1])}…` : `Scanning ${r.jobs.length} recording${r.jobs.length > 1 ? "s" : ""}…`); pollJobs();
-  } catch (e) { err(e); }
-}
 $("#btn-cancel").onclick = () => api("/api/jobs/cancel", {}).catch(err);
 $("#btn-export-camera").onclick = () => {
   if (!S.rec) return;
@@ -2034,10 +2009,6 @@ $("#cf-view").onclick = async () => {
 };
 
 // ------------------------------------------------------------ settings
-function setCrumbMeta() {
-  if (!$("#crumb-meta")) return;
-  $("#crumb-meta").textContent = `· ${S.rec.camera} · ${S.rec.start ? "starts " + fmtStamp(0) + " · " : ""}${fmtDur(S.rec.duration_s)} · ${S.rec.frames.toLocaleString()} frames · ${S.rec.units}`;
-}
 function winPad() { return Math.round(((S.cfg && S.cfg.detect.window_s) ?? 3) * (S.rec ? S.rec.fps : 16)); }
 function exportDefaults() {   // the export dialog opens with the defaults from Settings > Exports
   const ex = (S.cfg || {}).export || {};
@@ -2167,7 +2138,6 @@ async function saveSettings(body, msg) {
       if (S.sel) { const e = evById(S.sel), pad = winPad(); S.ws = Math.max(0, e.f0 - pad); S.we = Math.min(S.rec.frames - 1, e.f1 + pad); }
       if (S.rec.scanned) await loadActivity(true);
       renderEvents(); renderComments(); updateLevelInputs(); refreshFiles(); showFrame();
-      setCrumbMeta();
     }
     api("/api/filters").then((f) => { S.filters = f.filters; renderFilters(); }).catch(() => {});
     $("#dlg-settings").close(); toast(msg || "Settings saved. They'll be used next time too.", 5000);
@@ -2247,7 +2217,6 @@ function viewW(m) { return 2 * m.range * Math.tan(m.fov * Math.PI / 360); }     
 function viewH(m) { return 2 * m.range * Math.tan(vfov(m) * Math.PI / 360); }     // metres high at the range
 function pixW(m) { return viewW(m) / SENSOR_PX * 1000; }                           // mm
 function pixH(m) { return viewH(m) / SENSOR_PY * 1000; }
-function ifovMm(m) { return pixW(m); }
 function targetPx(m, size = 0.1) { return Math.PI / 4 * (size * 1000 / pixW(m)) * (size * 1000 / pixH(m)); }   // pixels on a round target
 const camIcon = (no, sel) => L.divIcon({ className: "cam-pin" + (sel ? " sel" : ""), html: `<span>${no}</span>`, iconSize: [26, 30], iconAnchor: [13, 30] });
 const tipIcon = L.divIcon({ className: "cone-tip", iconSize: [14, 14], iconAnchor: [7, 7] });

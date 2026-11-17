@@ -70,9 +70,6 @@ class JoinedSource:
         b = self.blocks[bisect.bisect_right(self._starts, i) - 1]
         return b, i - b[0]
 
-    def in_gap(self, i: int) -> bool:
-        return self._block(i)[0][1] == "gap"
-
     @property
     def gap_mask(self) -> np.ndarray:
         m = np.zeros(self.n_frames, bool)

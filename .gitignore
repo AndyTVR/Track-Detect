@@ -22,3 +22,6 @@ window/
 *.mp4
 exports/
 *.times.npz
+.test-data/
+.pytest_cache/
+*.tdproject

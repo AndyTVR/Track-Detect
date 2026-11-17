@@ -294,7 +294,8 @@ The **Viewing Mode** bar has four modes (keys `1`–`4`):
 - **Default**: the plain thermal picture, with no filters.
 - **Tracking**: the whole route is built up in one image.
 - **Detection**: the thermal picture with moving animals shown as bright
-  trails, in the current palette. Choose how to mix them with **Blend**:
+  trails, in the current palette. Its ▾ menu holds **Frames**, **Blend** and
+  **Opacity**. Blend sets how the two are mixed:
   - **Overlay**: the trails are laid over the thermal picture, and the rest
     stays thermal. Opacity sets how solid the trails are.
   - **Crossfade**: the two whole pictures are mixed. 0% is thermal only and

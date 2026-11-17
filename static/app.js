@@ -500,7 +500,6 @@ function setMode(m) {
   S.mode = m;
   document.querySelectorAll(".mode[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
   $("#btn-persist").classList.toggle("on", m === "blend");
-  $("#opacity-wrap").hidden = m !== "blend";
   $("#custom-wrap").hidden = m !== "custom";
   if (m === "custom") renderCustomPick();
   syncEnh();
@@ -762,7 +761,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.17-join";
+const APP_VERSION = "2026.11.17-menu";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

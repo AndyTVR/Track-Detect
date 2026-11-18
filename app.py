@@ -504,7 +504,9 @@ def _num_in(v, lo, hi):
 # Each action of /api/org: (body, the organisation, the reply to fill in, the action's name)
 def _org_new_project(b, org, out, act):
     pj = _new_project(b.get("name", ""))
-    sv = _new_survey(pj)
+    if b.get("pre_survey"):
+        pj["pre_survey"] = True   # planned before the survey: a site plan of where the cameras will go
+    sv = _new_survey(pj, b.get("date", ""))
     out["created"] = _new_camera(sv)["id"]
 
 
@@ -774,6 +776,8 @@ def _org_list_projects(b, org, out, act):
                                 "cameras": sum(len(sv["cameras"]) for sv in pj["surveys"]),
                                 "recordings": len(paths), "missing": sum(1 for x in paths if not os.path.exists(x)),
                                 "listed": sum(1 for x in paths if x in state["files"]),
+                                "pre_survey": bool(pj.get("pre_survey")), "template": len(pj.get("template") or []),
+                                "placed": sum(1 for sv in pj["surveys"] for c in sv["cameras"] if c.get("map")),
                                 "dates": sorted({sv["date"] for sv in pj["surveys"] if sv.get("date")})})
 
 
@@ -913,7 +917,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-joins"   # must match static/app.js
+APP_VERSION = "2026.11.18-start"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -1249,7 +1253,7 @@ def test_scan():
                          "from": r.src.time_label(a), "to": r.src.time_label(bb), "date": r.src.date_label(a),
                          "units": r.src.units, "rois": out}}
 
-    j = jobs.submit(f"Test scan of {os.path.basename(p)}", work, path=p, kind="test")
+    j = jobs.submit(f"Test ROI scan of {os.path.basename(p)}", work, path=p, kind="test")
     return jsonify(job=j)
 
 

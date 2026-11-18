@@ -43,10 +43,22 @@ Double-click the **Track and Detect** desktop shortcut, or **Run Track and
 Detect.bat**. The app opens in its own window. Closing that window, or
 clicking **Quit** in the top bar, closes it.
 
+A start window asks what you'd like to do: **Open existing analysis
+project**, **New analysis project**, **Open existing pre-survey template**
+or **New pre-survey template**. **Skip** carries on with whatever is listed.
+
+A **pre-survey template** is a project planned before the survey: its Site
+Plan opens straight away, so you can find the site and place the cameras
+and acoustic detectors where they will go. Each time the Site Plan is
+closed, it's saved as the project's site plan template. On the night, add
+the recordings to its cameras, or start a new survey from the template.
+
 1. **Add recordings.** Click the folder button in the top bar. It offers:
-   - **New project…**: name a project (and Survey 1's date if you like),
+   - **New analysis project…**: name a project (and Survey 1's date if you like),
      then add recordings straight into it;
-   - **Open project…**: every project you've made, with its surveys,
+   - **New pre-survey template…** and **Open pre-survey template…**, as in
+     the start window;
+   - **Open analysis project…**: every project you've made, with its surveys,
      cameras and recordings. **Open** lists all its recordings again (any
      that have been moved or deleted are skipped);
    - **Add files…**, also on the **Add Recording** button in the middle of
@@ -89,7 +101,7 @@ clicking **Quit** in the top bar, closes it.
    - A project name can only be used once. If you type the name of a
      project that already exists, the dialog says so straight away and
      won't add until you pick the existing project or change the name.
-     **Open project** shows **Already open** for a project whose recordings
+     **Open analysis project** shows **Already open** for a project whose recordings
      are all listed.
    - **+ Project** (at the top of the list) starts a project with Survey 1
      and Camera 1. **+ Survey** and **+ Camera** add more.
@@ -208,7 +220,7 @@ clicking **Quit** in the top bar, closes it.
    - In the ROI menu (the button with the coloured dot), tick **Scan** for
      each ROI to include. All the ticked ROIs are scanned in one pass, so
      extra ROIs barely add time.
-   - **Test scan** (on each camera) scans one randomly chosen minute of one
+   - **Test ROI Scan** (on each camera) scans one randomly chosen minute of one
      of the camera's recordings, with its ROIs, counts the rises of more
      than 0.2 °C above that minute's background (the test level), and rates the background noise there: a quick scan can check if the ROI is affected by background
      movement without scanning the full recording. Nothing is saved. **View
@@ -280,7 +292,7 @@ clicking **Quit** in the top bar, closes it.
    | Lock Play Limits to Current Event | Keep playback inside the selected event's window |
    | Speed | ¼× to 4× |
    | ‹ Prev event / Next event › | Step through the events |
-   | ‹ Prev camera / Next camera › | The same moment on the other cameras of this survey: the picture stays at the same clock time, and play limits you've set move with it. Cameras with no recording at that time are skipped. The camera you're on is named between the buttons. |
+   | ‹ Prev camera / Next camera › | The same moment on the other cameras of this survey: the picture stays at the same clock time, and play limits you've set move with it. Cameras with no recording at that time are skipped. The camera you're on is named between the buttons: click its name (or the camera at the top of the Event Log) to choose any camera, from any survey or project with recordings listed. It opens at the same moment if that camera was recording then, otherwise at the start. |
 
    **Play limits**: the two blue markers under the progress bar set where
    playback starts and stops. Drag them to play any stretch you like; the

@@ -38,9 +38,12 @@
     <span class="open-wrap"><button id="btn-open" class="btn icon-btn" title="Projects and recordings" aria-label="Projects and recordings" aria-haspopup="true" aria-expanded="false" aria-controls="open-menu">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1"/><path d="M3 7v10a2 2 0 0 0 2 2h13.5a2 2 0 0 0 1.9-1.4L22.5 12a1.5 1.5 0 0 0-1.4-2H8.2a2 2 0 0 0-1.9 1.4L3.5 19"/></svg></button>
       <div id="open-menu" class="persist-menu open-menu" role="menu" hidden>
-        <button type="button" class="menu-item" id="om-new" role="menuitem">New project…</button>
-        <button type="button" class="menu-item" id="om-open" role="menuitem">Open project…</button>
+        <button type="button" class="menu-item" id="om-new" role="menuitem">New analysis project…</button>
+        <button type="button" class="menu-item" id="om-open" role="menuitem">Open analysis project…</button>
         <button type="button" class="menu-item" id="om-add" role="menuitem">Add files…</button>
+        <hr class="menu-sep">
+        <button type="button" class="menu-item" id="om-tnew" role="menuitem">New pre-survey template…</button>
+        <button type="button" class="menu-item" id="om-topen" role="menuitem">Open pre-survey template…</button>
       </div></span>
     <button id="btn-quit" class="btn" title="Close Track &amp; Detect">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
@@ -197,7 +200,7 @@
           </div>
           <div class="tgroup cam-cycle" role="group" aria-label="Cameras">
             <button id="btn-cam-prev" class="btn sm" disabled title="The same moment on the previous camera of this survey">‹ Prev camera</button>
-            <span id="cam-now" class="small muted cam-now"></span>
+            <label class="cam-now-wrap" title="Choose which camera to show"><span id="cam-now" class="small muted cam-now"></span><select id="cam-now-pick" class="cam-pick" aria-label="Camera to show"></select></label>
             <button id="btn-cam-next" class="btn sm" disabled title="The same moment on the next camera of this survey">Next camera ›</button>
           </div>
         </div>
@@ -340,13 +343,33 @@
   </form>
 </dialog>
 
+<dialog id="dlg-start" class="start-dlg">
+  <form method="dialog" class="dlg wide">
+    <h2>Track &amp; Detect</h2>
+    <p class="small muted">What would you like to do?</p>
+    <div class="start-grid">
+      <div class="start-col">
+        <h3 class="small strong">Analysis project</h3>
+        <button type="button" id="sd-open" class="start-btn"><b>Open existing analysis project</b><span class="small muted">Carry on with recordings already in a project</span></button>
+        <button type="button" id="sd-new" class="start-btn"><b>New analysis project</b><span class="small muted">Start a project and add recordings to it</span></button>
+      </div>
+      <div class="start-col">
+        <h3 class="small strong">Pre-survey template</h3>
+        <button type="button" id="sd-topen" class="start-btn"><b>Open existing pre-survey template</b><span class="small muted">The site plan of where the cameras and detectors go</span></button>
+        <button type="button" id="sd-tnew" class="start-btn"><b>New pre-survey template</b><span class="small muted">Plan camera and detector positions on the map before the survey</span></button>
+      </div>
+    </div>
+    <div class="row wrap between"><span id="sd-note" class="small muted"></span><button value="cancel" class="btn" id="sd-skip">Skip</button></div>
+  </form>
+</dialog>
+
 <dialog id="dlg-newproj">
   <form method="dialog" class="dlg">
-    <h2>New project</h2>
+    <h2 id="np-title">New project</h2>
     <label>Project name <input id="np-name" type="text" maxlength="40" placeholder="e.g. St Fagans"></label>
     <span id="np-warn" class="small err" hidden></span>
     <label>Survey 1 date (optional) <input id="np-date" type="date"></label>
-    <p class="small muted">The project starts with Survey 1 and Camera 1. Next you can add recordings to it.</p>
+    <p id="np-help" class="small muted">The project starts with Survey 1 and Camera 1. Next you can add recordings to it.</p>
     <p id="np-msg" class="small err" hidden></p>
     <div class="row wrap end"><button value="cancel" class="btn">Cancel</button><button id="np-go" value="ok" class="btn primary">Create and add files</button></div>
   </form>
@@ -354,11 +377,11 @@
 
 <dialog id="dlg-openproj">
   <form method="dialog" class="dlg wide">
-    <h2>Open project</h2>
-    <p class="small muted">Lists every recording saved in the project. Recordings that have been moved or deleted since are skipped.</p>
+    <h2 id="op-title">Open project</h2>
+    <p id="op-help" class="small muted">Lists every recording saved in the project. Recordings that have been moved or deleted since are skipped.</p>
     <div id="op-list" class="op-list"></div>
-    <div class="row wrap"><button id="op-file" type="button" class="btn sm">Open a project file…</button><span class="small muted">A .tdproject file saved with Save project, for example from another computer.</span></div>
-    <label class="check"><input id="op-replace" type="checkbox"> Clear the current list first</label>
+    <div class="row wrap" id="op-file-row"><button id="op-file" type="button" class="btn sm">Open a project file…</button><span class="small muted">A .tdproject file saved with Save project, for example from another computer.</span></div>
+    <label class="check" id="op-replace-row"><input id="op-replace" type="checkbox"> Clear the current list first</label>
     <div class="row wrap end"><button value="cancel" class="btn">Close</button></div>
   </form>
 </dialog>
@@ -380,7 +403,7 @@
 
 <dialog id="dlg-test">
   <form method="dialog" class="dlg wide">
-    <h2>Test scan</h2>
+    <h2>Test ROI Scan</h2>
     <p id="ts-sub" class="small muted"></p>
     <div id="ts-body" class="ts-body"></div>
     <div class="row wrap end">

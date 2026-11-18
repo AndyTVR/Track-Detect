@@ -12,6 +12,14 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   p.on("response", (r) => { if (r.status() >= 400 && r.url().startsWith(URL)) errs.push(`HTTP ${r.status()} ${r.url().slice(URL.length, URL.length + 60)}`); });
   p.on("dialog", (d) => d.accept());
   await p.goto(URL); await p.waitForTimeout(1000);
+  check("start window shows on opening", await p.isVisible("#dlg-start"));
+  // new pre-survey template: opens the site plan; closing saves the template once a camera is placed
+  await p.click("#sd-tnew"); await p.fill("#np-name", "Plan A"); await p.click("#np-go"); await p.waitForTimeout(800);
+  check("pre-survey template opens the site plan", await p.isVisible("#dlg-map"));
+  await p.click("#map-close"); await p.waitForTimeout(500);
+  await p.click("#btn-open"); await p.click("#om-topen"); await p.waitForTimeout(500);
+  check("template listed under Open pre-survey template", /Plan A/.test(await p.textContent("#op-list")));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(200);
   check("top bar has four buttons", (await p.$$(".actions > button, .actions .open-wrap > button")).length === 4);
   // new project, add files sorted by name
   await p.click("#btn-open"); await p.click("#om-new"); await p.fill("#np-name", "Smoke"); await p.click("#np-go"); await p.waitForTimeout(500);
@@ -64,7 +72,7 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   // tree, fold, site plan, project menu
   await p.click("#btn-tree"); await p.waitForTimeout(300); check("tree lists recordings", (await p.$$(".tree-file")).length >= 4); await p.keyboard.press("Escape");
   await p.click("#btn-fold-all"); await p.waitForTimeout(150); await p.click("#btn-fold-all"); await p.waitForTimeout(150);
-  await p.getByRole("button", { name: "Site Plan", exact: true }).click(); await p.waitForTimeout(600);
+  await p.locator(".map-btn[title*=\"of Smoke\"]").click(); await p.waitForTimeout(600);
   await p.locator("#map-cams .mc").first().getByRole("button", { name: "Place on map" }).click(); await p.waitForTimeout(400);
   await p.click("#map-add-det"); await p.waitForTimeout(400);
   check("site plan has a camera and a detector", (await p.$$(".cam-pin")).length === 1 && (await p.$$("#map-dets .mc")).length === 1);

@@ -141,11 +141,20 @@ function addTarget() {
 $("#btn-open").onclick = (e) => { e.stopPropagation(); closeMenus("open"); toggleMenu("#open-menu", "#btn-open"); };
 $("#open-menu").addEventListener("click", (e) => e.stopPropagation());
 $("#om-add").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openAdd(); };
-$("#om-new").onclick = () => {
-  toggleMenu("#open-menu", "#btn-open", false);
+// New project, or a new pre-survey template (a project planned on the site
+// plan before the survey: where the cameras and detectors will go)
+let NP_PLAN = false;
+function newProject(plan) {
+  NP_PLAN = !!plan;
+  $("#np-title").textContent = plan ? "New pre-survey template" : "New analysis project";
+  $("#np-help").textContent = plan ? "Next, the site plan opens: find the site, then place the cameras and acoustic detectors where they will go. It's saved as the template for the survey."
+    : "The project starts with Survey 1 and Camera 1. Next you can add recordings to it.";
+  $("#np-go").textContent = plan ? "Create and open site plan" : "Create and add files";
   $("#np-name").value = ""; $("#np-date").value = ""; $("#np-msg").hidden = true; $("#np-warn").hidden = true; $("#np-go").disabled = false;
   loadProjectNames(); $("#dlg-newproj").showModal(); $("#np-name").focus();
-};
+}
+$("#om-new").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); newProject(false); };
+$("#om-tnew").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); newProject(true); };
 $("#np-name").addEventListener("input", () => {
   const c = projClash($("#np-name").value);
   $("#np-warn").hidden = !c; $("#np-go").disabled = !!c;
@@ -155,10 +164,10 @@ $("#np-go").onclick = async (ev) => {
   ev.preventDefault();
   const name = $("#np-name").value.trim();
   try {
-    const r = await org({ action: "new_project", name });
+    const r = await org({ action: "new_project", name, date: $("#np-date").value, pre_survey: NP_PLAN });
+    $("#dlg-newproj").close();
     const at = findCam(r.created);
-    if (at && $("#np-date").value) await org({ action: "set_date", id: at.survey.id, date: $("#np-date").value });
-    $("#dlg-newproj").close(); openAdd(r.created);
+    if (NP_PLAN) { if (at) openMap(at.project.id); } else openAdd(r.created);
   } catch (e) { $("#np-msg").hidden = false; $("#np-msg").textContent = e.message || String(e); }
 };
 $("#op-file").onclick = async () => {
@@ -169,13 +178,34 @@ $("#op-file").onclick = async () => {
     toast(`Project opened: ${plural(r.opened, "recording")} listed${r.missing ? `, ${r.missing} not found` : ""}.`, 7000);
   } catch (e) { err(e); }
 };
-$("#om-open").onclick = async () => {
-  toggleMenu("#open-menu", "#btn-open", false);
+// Open project (plan: open a pre-survey template's site plan instead)
+async function openProjectList(plan) {
   try {
     const r = await api("/api/org", { action: "list_projects" });
     const box = $("#op-list");
-    box.innerHTML = r.projects.length ? "" : '<p class="small muted">No projects saved yet. Use New project, or Add files and assign them to a project.</p>';
-    for (const p of r.projects) {
+    $("#op-title").textContent = plan ? "Open pre-survey template" : "Open analysis project";
+    $("#op-help").textContent = plan ? "Projects with a site plan template, or made as a pre-survey template. Opening one shows its site plan."
+      : "Lists every recording saved in the project. Recordings that have been moved or deleted since are skipped.";
+    $("#op-file-row").hidden = $("#op-replace-row").hidden = !!plan;
+    const list = plan ? r.projects.filter((p) => p.pre_survey || p.template) : r.projects;
+    box.innerHTML = list.length ? "" : plan ? '<p class="small muted">No pre-survey templates yet. Use New pre-survey template, or open a project\'s Site Plan and click Save as site plan template.</p>'
+      : '<p class="small muted">No projects saved yet. Use New project, or Add files and assign them to a project.</p>';
+    if (plan) {
+      for (const p of list) {
+        const row = el("div", "op-row");
+        row.innerHTML = `<div><b>${esc(p.name)}</b><br><span class="small muted">${p.template ? `Template: ${plural(p.template, "camera")}` : `${plural(p.placed, "camera")} placed`} · ${plural(p.surveys, "survey")}${p.recordings ? ` · ${plural(p.recordings, "recording")}` : ""}</span></div>`;
+        row.appendChild(smallBtn("Open site plan", `Open the site plan of ${p.name}`, async () => {
+          try {
+            if (p.recordings && p.listed < p.recordings - p.missing) setFiles(await api("/api/org", { action: "open_project", id: p.id }));
+            else await refreshFiles();
+            $("#dlg-openproj").close(); openMap(p.id);
+          } catch (e) { err(e); }
+        }, "primary"));
+        box.appendChild(row);
+      }
+      $("#dlg-openproj").showModal(); return;
+    }
+    for (const p of list) {
       const row = el("div", "op-row");
       const dates = p.dates.length ? " · " + p.dates.map((d) => d.split("-").reverse().join("/")).join(", ") : "";
       row.innerHTML = `<div><b>${esc(p.name)}</b><br><span class="small muted">${plural(p.surveys, "survey")} · ${plural(p.cameras, "camera")} · ${plural(p.recordings, "recording")}${dates}${p.missing ? ` · ${p.missing} not found` : ""}${p.listed ? ` · ${p.listed} already listed` : ""}</span></div>`;
@@ -193,7 +223,19 @@ $("#om-open").onclick = async () => {
     }
     $("#op-replace").checked = false; $("#dlg-openproj").showModal();
   } catch (e) { err(e); }
-};
+}
+$("#om-open").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openProjectList(false); };
+$("#om-topen").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openProjectList(true); };
+// the start window: shown when the program opens
+for (const [id, go] of [["#sd-open", () => openProjectList(false)], ["#sd-new", () => newProject(false)],
+                        ["#sd-topen", () => openProjectList(true)], ["#sd-tnew", () => newProject(true)]])
+  $(id).onclick = () => { $("#dlg-start").close(); go(); };
+function showStart() {
+  const n = (S.files || []).length;
+  $("#sd-note").textContent = n ? `${plural(n, "recording")} still listed from last time. Skip to carry on with them.` : "";
+  try { if (sessionStorage.getItem("td-started")) return; sessionStorage.setItem("td-started", "1"); } catch (e) {}
+  $("#dlg-start").showModal();
+}
 $("#btn-empty-add").onclick = () => openAdd();
 function setEmpty(msg, button) { $("#empty-msg").textContent = msg; $("#btn-empty-add").hidden = !button; }
 async function browse(kind) {
@@ -351,7 +393,7 @@ function renderFiles() {
         const cb = el("span", "row-btns");
         cb.append(smallBtn("+ Add files", `Add recordings to Camera ${cam.no}`, () => openAdd(cam.id)));
         if (cam.paths.length) {
-          const tb = smallBtn("Test scan", TEST_TIP, () => testScan(cam.id, `Camera ${cam.no}`), "test-btn");
+          const tb = smallBtn("Test ROI Scan", TEST_TIP, () => testScan(cam.id, `Camera ${cam.no}`), "test-btn");
           tb.setAttribute("aria-description", TEST_TIP); cb.append(tb);
         }
         if (cam.paths.length) cb.append(smallBtn("Scan camera", `Scan every recording from Camera ${cam.no}`, () => scanGroup(cam.id, `Camera ${cam.no}`), "cam-scan scan-btn"));
@@ -391,7 +433,7 @@ async function testScan(node, what) {
   try {
     const r = await api("/api/test-scan", { node });
     S.testNode = { node, what }; (S.watch = S.watch || new Set()).add(r.job.id);   // show the result even if it finishes before the next check
-    toast(`Test scan of ${what}: scanning a random minute of ${r.job.label.replace(/^Test scan of /, "")}…`, 4000); pollJobs();
+    toast(`Test ROI Scan of ${what}: scanning a random minute of ${r.job.label.replace(/^Test (ROI )?scan of /, "")}…`, 4000); pollJobs();
   } catch (e) { err(e); }
 }
 function showTestResult(t) {
@@ -807,7 +849,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-joins";
+const APP_VERSION = "2026.11.18-start";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1656,7 +1698,12 @@ async function cycleCamera(dir) {
 }
 // ---- the camera chip at the top of the Event Log: choose any camera to show
 function fillCamPick(sc) {
-  const sel = $("#log-cam-pick"), here = sc ? sc.at.camera.id : "";
+  fillCamSelect($("#log-cam-pick"), sc);
+  fillCamSelect($("#cam-now-pick"), sc);
+  $("#cam-now-pick").disabled = !sc;
+}
+function fillCamSelect(sel, sc) {
+  const here = sc ? sc.at.camera.id : "";
   let h = sc ? "" : `<option value="" selected>Unassigned · ${esc(S.rec.name)}</option>`;
   for (const pj of S.tree || []) for (const sv of pj.surveys) {
     const cams = sv.cameras.filter((c) => c.paths.length);
@@ -1664,7 +1711,7 @@ function fillCamPick(sc) {
   }
   sel.innerHTML = h;
 }
-$("#log-cam-pick").onchange = async (e) => {
+$("#log-cam-pick").onchange = $("#cam-now-pick").onchange = async (e) => {
   const at = findCam(e.target.value); if (!at) return;
   const sc = surveyCams(); if (sc && sc.at.camera.id === at.camera.id) return;
   const c = at.camera, m = nowMoment(), hit = m && camHit(c, m.t);
@@ -2202,7 +2249,7 @@ $("#st-import-file").onchange = async () => {
   try { const r = await api("/api/settings"); ST.saved = r.settings; await loadPalettes(); applySettings(r.settings, true); } catch (e) {}
   await checkBeta();
   setInterval(checkBeta, 3600e3);   // the trial can end while the program is open
-  refreshFiles().then(() => api("/api/files").then((r) => { if (r.current) openRec(r.current); })).catch(() => {});
+  refreshFiles().then(() => api("/api/files").then((r) => { if (r.current) openRec(r.current); })).catch(() => {}).finally(showStart);
 })();
 syncLock(); drawLimits();
 pollJobs();
@@ -2463,7 +2510,14 @@ $("#map-survey").onchange = () => { MAPS.sv = $("#map-survey").value; MAPS.sel =
 $("#map-surveyor").onchange = async () => { const sv = mapSurvey(); if (!sv) return; sv.surveyor = $("#map-surveyor").value.trim();
   try { await api("/api/org", { action: "set_info", id: sv.id, surveyor: sv.surveyor }); } catch (e) { err(e); } };
 $("#map-close").onclick = () => $("#dlg-map").close();
-$("#dlg-map").addEventListener("close", () => refreshFiles());
+$("#dlg-map").addEventListener("close", async () => {
+  // a pre-survey template: the plan is saved as the template each time it's closed
+  const pj = mapProject(), sv = mapSurvey();
+  if (pj && pj.pre_survey && sv && sv.cameras.some((c) => c.map)) {
+    try { await api("/api/org", { action: "save_template", survey: sv.id }); toast(`${pj.name}: pre-survey template saved (${plural(sv.cameras.length, "camera")}).`, 5000); } catch (e) { err(e); }
+  }
+  refreshFiles();
+});
 $("#map-search").onsubmit = async (e) => {
   e.preventDefault();
   const q = $("#map-q").value.trim(); if (!q) return;

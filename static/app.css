@@ -506,7 +506,19 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .log-cam-wrap{position:relative;display:inline-flex;cursor:pointer}
 .log-cam-wrap .log-cam::after{content:"▾";margin-left:2px;color:var(--muted)}
 .log-cam-wrap:hover .log-cam,.log-cam-wrap:focus-within .log-cam{border-color:var(--accent)}
-#log-cam-pick{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:14px}
+#log-cam-pick,.cam-pick{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:14px}
+.cam-now-wrap{position:relative;display:inline-flex;cursor:pointer;border-radius:6px;padding:2px 4px}
+.cam-now-wrap .cam-now:not(:empty)::after{content:" ▾"}
+.cam-now-wrap:hover,.cam-now-wrap:focus-within{background:var(--panel2)}
+.cam-now-wrap:has(select:disabled){cursor:default;pointer-events:none}
+.cam-now-wrap:has(select:disabled) .cam-now::after{content:""}
+/* start window */
+.start-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0 14px}
+@media (max-width:640px){.start-grid{grid-template-columns:1fr}}
+.start-col{display:flex;flex-direction:column;gap:8px}
+.start-col h3{margin:0 0 2px}
+.start-btn{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;font:inherit}
+.start-btn:hover,.start-btn:focus-visible{border-color:var(--accent);outline:none}
 .rec-head .row-btns{flex-wrap:nowrap}
 .rec-head h2{margin:0;white-space:nowrap}
 .btn.icon-xs{padding:0 6px}

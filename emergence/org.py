@@ -383,7 +383,7 @@ def org_tree(rows):
             surveys.append({"id": sv["id"], "no": sv["no"], "date": sv.get("date") or "", "label": survey_label(sv), "cameras": cams,
                             "surveyor": sv.get("surveyor") or "", "detectors": sv.get("detectors") or [],
                             "paths": [p for c in cams for p in c["paths"]]})
-        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"), "template": len(pj.get("template") or []),
+        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"), "template": len(pj.get("template") or []), "pre_survey": bool(pj.get("pre_survey")),
                      "paths": [p for sv in surveys for p in sv["paths"]]})
     unassigned = sorted([r for r in rows if not r["camera_id"]], key=lambda r: (os.path.dirname(r["path"]), r["start"] or "", r["name"]))
     return tree, [r["path"] for r in unassigned if r["path"] in listed]

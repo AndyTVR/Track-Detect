@@ -292,7 +292,7 @@ the recordings to its cameras, or start a new survey from the template.
    | Lock Play Limits to Current Event | Keep playback inside the selected event's window |
    | Speed | ¼× to 4× |
    | ‹ Prev event / Next event › | Step through the events |
-   | ‹ Prev camera / Next camera › | The same moment on the other cameras of this survey: the picture stays at the same clock time, and play limits you've set move with it. Cameras with no recording at that time are skipped. The camera you're on is named between the buttons: click its name (or the camera at the top of the Event Log) to choose any camera, from any survey or project with recordings listed. It opens at the same moment if that camera was recording then, otherwise at the start. |
+   | ‹ Prev camera / Next camera › | The same moment on the other cameras of this survey: the picture stays at the same clock time, and play limits you've set move with it. Cameras with no recording at that time are skipped. The camera you're on is named between the buttons: click its name (or the camera at the top of the Event Log) to choose any camera. Clicking a camera's box in the Recordings list also shows it, even when its files are folded away; the camera showing is outlined. The list offers any camera from any survey or project with recordings listed. It opens at the same moment if that camera was recording then, otherwise at the start. |
 
    **Play limits**: the two blue markers under the progress bar set where
    playback starts and stops. Drag them to play any stretch you like; the

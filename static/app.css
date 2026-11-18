@@ -367,6 +367,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 /* Recordings grouped by camera */
 .cam-group{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .cam-head{display:flex;align-items:center;gap:6px;color:var(--soft)}
+.cam-group.pickable>.cam-head,.cam-group.pickable>.cam-sub{cursor:pointer}
+.cam-group.pickable:hover{border-color:var(--accent)}
+.cam-group.showing{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
 .cam-name{flex:1;min-width:0;height:28px;padding:0 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-weight:700;font-size:13px}
 .cam-name:hover,.cam-name:focus{border-color:var(--line);background:var(--panel)}
 .cam-warn{border:1px solid var(--warn);background:var(--warn-bg);color:var(--warn-text);border-radius:8px;padding:6px 8px;line-height:1.35}

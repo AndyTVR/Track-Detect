@@ -417,6 +417,15 @@ function renderFiles() {
         }
         for (const path of cam.paths) { const f = fileRow(path); if (f) g.appendChild(fileCard(f, cam.id, { member: !!cam.joined })); }
         dropZone(g, cam.id);
+        // a click anywhere on the camera's box (not its buttons, boxes or recordings) shows that camera
+        if (cam.paths.length) {
+          g.classList.add("pickable");
+          if (S.rec && (cam.paths.includes(S.rec.path) || cam.joined === S.rec.path)) g.classList.add("showing");
+          g.addEventListener("click", (e) => {
+            if (e.target.closest("button, input, select, textarea, a, label, .file, .file-wrap")) return;
+            openCamera(cam.id);
+          });
+        }
         sg.appendChild(g);
       }
       pg.appendChild(sg);
@@ -849,7 +858,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-start";
+const APP_VERSION = "2026.11.18-campick";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1711,14 +1720,15 @@ function fillCamSelect(sel, sc) {
   }
   sel.innerHTML = h;
 }
-$("#log-cam-pick").onchange = $("#cam-now-pick").onchange = async (e) => {
-  const at = findCam(e.target.value); if (!at) return;
+$("#log-cam-pick").onchange = $("#cam-now-pick").onchange = (e) => openCamera(e.target.value);
+async function openCamera(id) {
+  const at = findCam(id); if (!at || !at.camera.paths.length) return;
   const sc = surveyCams(); if (sc && sc.at.camera.id === at.camera.id) return;
   const c = at.camera, m = nowMoment(), hit = m && camHit(c, m.t);
   if (hit && await openAtMoment(hit, m)) return;
   try { await openRec(c.joined || c.paths[0]); } catch (er) { err(er); }
   if (m && S.rec) toast(`${c.label} wasn't recording at ${clockAt(m.t)}, so it opens at the start.`, 5000);
-};
+}
 $("#btn-cam-prev").onclick = () => cycleCamera(-1);
 $("#btn-cam-next").onclick = () => cycleCamera(1);
 // ---- background noise between spikes, for each ROI

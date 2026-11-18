@@ -34,6 +34,16 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   const before = await p.evaluate(() => S.rec.path);
   await p.selectOption("#log-cam-pick", opts.find((v) => v && v !== opts[0]) || opts[1]); await p.waitForTimeout(1500);
   check("camera chosen from the Event Log chip", (await p.evaluate(() => S.rec.path)) !== before, opts.join(","));
+  {  // fold a camera that isn't showing, then click its box: that camera shows
+    const other = p.locator(".cam-group.pickable:not(.showing)").first();
+    const cid = await other.getAttribute("data-cam");
+    await other.locator(".fold").first().click(); await p.waitForTimeout(200);
+    await other.locator(".cam-no").click(); await p.waitForTimeout(1500);
+    const on = await p.evaluate((id) => { const at = findCam(id); return !!(S.rec && at && (at.camera.paths.includes(S.rec.path) || at.camera.joined === S.rec.path)); }, cid);
+    check("clicking a folded camera's box shows that camera", on);
+    check("the camera showing is highlighted", await p.locator(`.cam-group.showing[data-cam="${cid}"]`).count() === 1);
+    await p.locator(`.cam-group[data-cam="${cid}"] .fold`).first().click();
+  }
   // open synthetic, draw a rectangle, set it with a click
   await p.locator(".file", { hasText: "synthetic" }).click(); await p.waitForTimeout(1200);
   await p.click("[data-shape=rect]"); await p.waitForTimeout(200);

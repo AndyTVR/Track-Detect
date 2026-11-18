@@ -397,8 +397,9 @@ class Recording:
           - the end: a very large spike (cameras often write a few very hot
             frames as they stop), and the final frame (_cut);
           - in a joined recording, the same end spike at the end of every file,
-            the first few frames of each file after the first (the scan filters
-            compare them with the file before), and the gaps between files."""
+            and the gaps between files.
+        Each rule only takes what is certainly the camera: a false event is
+        better than a missed bat."""
         n = len(act)
         fps, units = self.src.fps, self.src.units
         pre = Pipeline(**mode_cfg("scan")).preroll
@@ -406,15 +407,13 @@ class Recording:
         ign[self._cut(act):] = True
         if hasattr(self.src, "gap_mask"):
             ign |= self.src.gap_mask[:n]
-            for k, (a, b) in enumerate(self.src.part_ranges):
+            for a, b in self.src.part_ranges:
                 if a >= n:
                     continue
                 b = min(b, n - 1)
                 seg = act[a:b + 1]
                 s = end_spike(seg, fps, units)
                 ign[(a + s) if s is not None else b:b + 1] = True
-                if k:
-                    ign[a:a + pre] = True
         return ign
 
     def shown(self, act):

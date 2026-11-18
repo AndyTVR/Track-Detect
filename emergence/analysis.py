@@ -206,7 +206,9 @@ def end_spike(activity: np.ndarray, fps: float, units: str = "°C") -> int | Non
     Returns the frame where that final spike starts, or None if there isn't one.
 
     It must be the last rise above the noise, run to within 2 s of the end, and
-    be at least 3x taller than any other spike in the recording."""
+    be at least 3x taller than any other spike in the recording. Only the huge
+    frames themselves are cut (above a quarter of the spike's height, plus 2
+    frames): anything smaller just before them, which could be a bat, stays."""
     n = len(activity)
     if n < fps * 10:
         return None
@@ -229,30 +231,50 @@ def end_spike(activity: np.ndarray, fps: float, units: str = "°C") -> int | Non
     other_h = float(rest.max()) - base if len(rest) else 0.0
     if tail_h < 3 * max(other_h, thr - base) or a < n * 0.5:
         return None
-    return max(0, a - int(fps))           # a second of margin before it
+    huge = activity > base + 0.25 * tail_h
+    s = n - 1 - int(np.argmax(huge[::-1]))   # the last huge frame, then back over the huge run
+    while s > 0 and huge[max(0, s - 3):s].any():
+        s = max(0, s - 3) + int(np.flatnonzero(huge[max(0, s - 3):s])[0])
+    return max(0, s - 2)
 
 
 def frozen_mask(activity: np.ndarray, preroll: int = 5, min_run: int = 3) -> np.ndarray:
-    """Frames where the camera's picture froze, and the few frames after.
+    """Frames where the camera's picture froze, and the jump just after.
 
     FLIR cameras recalibrate every few minutes (the shutter closes, a NUC):
     the picture stays exactly the same for about a second, so the activity is
     flat at zero, then jumps when it moves again. The scan filters compare each
     frame with one `preroll` frames before, so that jump shows as a block of
-    `preroll` equal values, which can look like an event. A bat can't be seen
-    while the picture is frozen, so the freeze and those frames are left out."""
+    `preroll` nearly equal values, then drops straight back to the background.
+
+    The frozen frames are left out (nothing can be seen in them). The block
+    after is left out only when it has exactly that shape: nearly level, and
+    back to the background right after. If anything else is going on there,
+    such as a bat passing as the picture comes back, it's kept: a false event
+    is better than a missed bat."""
     n = len(activity)
     out = np.zeros(n, bool)
     if n < 10:
         return out
+    p = int(preroll)
     base = float(np.median(activity))
     tiny = max(1e-4, 0.02 * abs(base))
     z = np.abs(activity) < tiny
     d = np.diff(np.r_[0, z.astype(np.int8), 0])
     for a, b in zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)):
-        if b - a >= min_run:
-            out[a:min(n, b + int(preroll) + 1)] = True
+        if b - a < min_run:
+            continue
+        out[a:b] = True
+        blk, after = activity[b:b + p], activity[b + p:b + p + 4]
+        if p <= 0 or len(blk) < p or len(after) < 2:
+            continue
+        rise = float(blk.mean()) - base
+        level_block = float(blk.max() - blk.min()) <= max(0.05, 0.25 * abs(rise))
+        back = abs(float(np.median(after)) - base) <= max(0.5 * abs(rise), 3 * tiny)
+        if level_block and back:
+            out[b:b + p] = True
     return out
+
 
 
 def detect_events(activity: np.ndarray, fps: float, level: float | None = None,

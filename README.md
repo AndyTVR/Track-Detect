@@ -259,15 +259,20 @@ the recordings to its cameras, or start a new survey from the template.
    analysis. This is typically someone walking up to the camera, or the
    camera being moved or switched off. The spike has to run to within 2 s of
    the end and be at least 3 times taller than anything else in the
-   recording. It never becomes an event, and it doesn't affect the suggested
+   recording. Only the huge frames themselves are cut (above a quarter of the
+   spike's height), so a bat just before them still counts. It never becomes an event, and it doesn't affect the suggested
    level or set the plot's height. It's shaded grey on the plot and noted in
    the PDF report. The final frame of every recording is never used either.
    In a joined recording the same goes for the spike at the end of each file.
    **Camera recalibrations** are left out too: every few minutes a FLIR
    camera's picture freezes for about a second while its shutter
    recalibrates, then jumps when it moves again, which the scan filters can
-   turn into a short flat "event". The freeze and the 5 frames after it are
-   left out (no bat can be seen while the picture is frozen). On the plot
+   turn into a short flat "event". The frozen frames are left out (no bat can
+   be seen while the picture is frozen), and so are the 5 frames after, but
+   only when they have exactly that shape: nearly level, then straight back
+   to the background. If anything else is happening as the picture comes
+   back, those frames are kept. Each of these rules errs towards keeping
+   activity: a false event is better than a missed bat. On the plot
    and in reports, the frames left out are drawn at the background level, so
    a huge end spike doesn't flatten the rest of the trace.
 4. **Set the detection level.** The level box, with **Suggested**, is at

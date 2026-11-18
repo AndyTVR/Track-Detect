@@ -19,6 +19,13 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   await p.click("#map-add-cam"); await p.waitForTimeout(800);
   await p.keyboard.type("Rear"); await p.keyboard.press("Enter"); await p.waitForTimeout(600);
   check("Site Plan adds a camera, placed and named", await p.evaluate(() => { const sv = mapSurvey(); return sv.cameras.length === 2 && !!sv.cameras[1].map && sv.cameras[1].name === "Rear"; }));
+  {  // details fold: the new (picked) camera is open, the other folded; its fold button closes it
+    const st = () => p.evaluate(() => [...document.querySelectorAll("#map-cams .mc")].map((r) => r.classList.contains("folded")));
+    const a = await st();
+    check("Site Plan details fold, the picked one open", a.length === 2 && a[0] === true && a[1] === false, JSON.stringify(a));
+    await p.locator("#map-cams .mc").nth(1).locator(".fold").click(); await p.waitForTimeout(200);
+    check("Site Plan details collapse with ▾", (await st())[1] === true);
+  }
   await p.click("#map-close"); await p.waitForTimeout(500);
   await p.click("#btn-open"); await p.click("#om-topen"); await p.waitForTimeout(500);
   check("template listed under Open pre-survey template", /Plan A/.test(await p.textContent("#op-list")));

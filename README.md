@@ -162,7 +162,9 @@ the recordings to its cameras, or start a new survey from the template.
      **Surveyor(s)**.
      - **Cameras**: **+ Add camera** adds a camera to the survey and puts it
        on the map (handy when planning before a survey); the box beside each
-       camera's number names it. **Place on map** each camera, drag its numbered pin to
+       camera's number names it. Each camera's and detector's details fold to
+       one summary line with its ▸ / ▾ button; picking one on the map opens it.
+       **Place on map** each camera, drag its numbered pin to
        where it stood, and drag the white dot at the end of its cone to turn
        it and set how far it reaches (or type the facing in degrees and the
        range in metres). Choose the camera and lens (FLIR A70 29°, 51° or

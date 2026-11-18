@@ -866,7 +866,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-mapcam";
+const APP_VERSION = "2026.11.18-mapfold";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2365,6 +2365,10 @@ function saveCamMap(cam, m) {
 }
 function drawMap() {
   const sv = mapSurvey(), pj = mapProject(); if (!MAPS.map || !pj) return;
+  if (MAPS.sel && MAPS.sel !== MAPS.lastSel) {   // picked on the map or in the list: open its details
+    MAPS.open.add(MAPS.sel); try { localStorage.setItem("td-map-open", JSON.stringify([...MAPS.open])); } catch (e) {}
+  }
+  MAPS.lastSel = MAPS.sel;
   MAPS.layer.clearLayers();
   if (pj.site) {
     const sm = L.marker([pj.site.lat, pj.site.lon], { draggable: true, title: "Site" }).addTo(MAPS.layer).bindTooltip(pj.name);
@@ -2399,6 +2403,20 @@ function drawMap() {
   }
   renderMapCams();
 }
+// each camera and detector in the Site Plan folds to one line; the one picked
+// on the map opens, and the program remembers which are open
+MAPS.open = (() => { try { return new Set(JSON.parse(localStorage.getItem("td-map-open") || "[]")); } catch (e) { return new Set(); } })();
+function mapFold(row, id, what, summary) {
+  const open = () => MAPS.open.has(id);
+  const b = el("button", "fold"); b.type = "button";
+  const set = () => { row.classList.toggle("folded", !open()); b.textContent = open() ? "▾" : "▸";
+    b.setAttribute("aria-expanded", String(open())); b.title = `${open() ? "Collapse" : "Expand"} ${what}`; b.setAttribute("aria-label", b.title); };
+  b.onclick = (e) => { e.stopPropagation(); if (open()) MAPS.open.delete(id); else MAPS.open.add(id);
+    try { localStorage.setItem("td-map-open", JSON.stringify([...MAPS.open])); } catch (er) {} set(); };
+  const head = row.querySelector(".mc-head"); head.prepend(b);
+  head.insertAdjacentHTML("afterend", `<div class="mc-sum small muted">${summary}</div>`);
+  set();
+}
 function renderMapCams(quiet) {
   const sv = mapSurvey(), box = $("#map-cams");
   if (!quiet) { if (document.activeElement !== $("#map-surveyor")) $("#map-surveyor").value = sv ? sv.surveyor || "" : ""; renderDets(); }
@@ -2413,12 +2431,13 @@ function renderMapCams(quiet) {
   for (const cam of sv.cameras) {
     const m = cam.map, row = el("div", "mc" + (MAPS.sel === cam.id ? " sel" : "")); row.dataset.mc = cam.id;
     row.innerHTML = `<div class="mc-head"><span class="cam-pin-s">${cam.no}</span><b>Camera ${cam.no}</b><input class="mc-name" type="text" maxlength="40" placeholder="Add a name" aria-label="Camera ${cam.no} name" value="${esc(cam.name || "")}"></div>`;
+    mapFold(row, cam.id, cam.label, m ? `${esc(m.model)} ${m.fov}° · facing ${Math.round(m.bearing)}° · ${Math.round(m.range)} m · pixel ${pixW(m).toFixed(1)} mm` : "Not on the map yet");
     row.querySelector(".mc-name").onchange = async (e) => {
       const v = e.target.value.trim();
       try { await api("/api/org", { action: "rename", id: cam.id, name: v }); cam.name = v; cam.label = v ? `Camera ${cam.no}: ${v}` : `Camera ${cam.no}`; drawMap(); } catch (er) { err(er); }
     };
     if (!m) {
-      row.appendChild(smallBtn("Place on map", `Put ${cam.label} in the middle of the map`, () => { const d = camDefaults(cam); MAPS.sel = cam.id; saveCamMap(cam, d); drawMap(); }, "primary"));
+      row.appendChild(smallBtn("Place on map", `Put ${cam.label} in the middle of the map`, () => { const d = camDefaults(cam); MAPS.sel = cam.id; saveCamMap(cam, d); drawMap(); }, "primary mc-place"));
     } else {
       const lenses = LENSES[m.model] || [];
       row.insertAdjacentHTML("beforeend", `<div class="mc-grid">
@@ -2466,6 +2485,7 @@ function renderDets() {
         <label>Range m <input data-d="range" type="number" min="0" max="500" step="1" value="${Math.round(d.range ?? 20)}" title="Rough detection range, drawn as a dashed circle (0 for none)"></label>
         <label class="span2">Other info <textarea data-d="notes" rows="2" maxlength="200" placeholder="Settings, height, mounting…">${esc(d.notes || "")}</textarea></label>
       </div>${d.map ? `<div class="mc-stats small muted">${d.map.lat.toFixed(6)}, ${d.map.lon.toFixed(6)}</div>` : ""}`;
+    mapFold(row, d.id, d.name, [d.model, d.surveyor, d.range ? `${Math.round(d.range)} m range` : "", d.map ? "" : "Not on the map yet"].filter(Boolean).map(esc).join(" · ") || "No details yet");
     row.querySelectorAll("[data-d]").forEach((i) => (i.onchange = () => {
       const k = i.dataset.d; d[k] = k === "range" ? Math.max(0, +i.value || 0) : i.value.trim();
       saveDet(d, { [k]: d[k] }); if (k === "name" || k === "range") drawMap();

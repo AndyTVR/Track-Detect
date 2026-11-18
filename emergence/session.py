@@ -83,7 +83,14 @@ class Recording:
         self._sync_units()
         if self.acts and self.state.get("scanned"):   # the suggestion follows the current rule (0.2 °C above the background)
             try:
+                old_sugg = self.state.get("suggested_level")
                 self.state["suggested_level"] = self._suggest_scanned()
+                lv = self.state.get("level")
+                if lv is None or (old_sugg is not None and abs(lv - old_sugg) < 1e-6):
+                    lv = self.state["suggested_level"]
+                # events follow the current rules (camera freezes and end spikes
+                # left out); decisions already made carry over
+                self.redetect(lv)
             except Exception:
                 pass
 

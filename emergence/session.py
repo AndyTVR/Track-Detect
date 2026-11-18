@@ -24,7 +24,9 @@ SETTINGS = {"filters": clean_filters()}
 
 
 def _sidecar(path, ext):
-    return path + ext
+    """A recording's own file: in its project's folder (see fsutil.side_path)."""
+    from .fsutil import side_path
+    return side_path(path, ext)
 
 
 def _merge_ranges(rs):
@@ -625,8 +627,9 @@ class Recording:
         ev = self.event(n)
         if not ev.get("tracks") and "entry_frames" in opts.get("items", []):
             ev = self.track_event(n)
-        folder = (opts.get("folder") or cfg.get("export", "folder")
-                  or os.path.join(os.path.dirname(self.path), "exports"))
+        if not opts.get("folder"):
+            from .org import project_subfolder
+        folder = opts.get("folder") or project_subfolder(self.path, "Exports")
         stem = os.path.splitext(os.path.basename(self.path))[0]
         site = os.path.basename(os.path.dirname(self.path))
         opts = {"naming": cfg.get("export", "naming"), "slowmo": cfg.get("export", "slowmo"),
@@ -679,7 +682,15 @@ class Recording:
                 "end_spike": self.end_spike_frame,
                 "unscanned": self.unscanned_ranges,
                 "noise": self.noise(),
-                "comments": sorted(self.state.get("comments", []), key=lambda c: c["frame"])}
+                "comments": sorted(self.state.get("comments", []), key=lambda c: c["frame"]),
+                "exports_folder": self._exports_folder()}
+
+    def _exports_folder(self):
+        try:
+            from .org import project_subfolder
+            return project_subfolder(self.path, "Exports")
+        except Exception:
+            return os.path.join(os.path.dirname(self.path), "exports")
 
 
 class Jobs:

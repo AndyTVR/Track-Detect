@@ -81,3 +81,45 @@ def read_json(path: str):
         except OSError:
             pass
         return None
+
+
+# ---- where a recording's own files go (analysis, activity, caches)
+# Set by the program to its project-folder rule (see org.analysis_dir); left
+# unset, files sit beside the recording as they always used to. Files found in
+# an older place (beside the recording, or in another project's folder) are
+# moved to the new one the first time they're used.
+SIDE = {"dir": None, "others": None}
+
+
+def side_path(path: str, ext: str) -> str:
+    rule = SIDE["dir"]
+    legacy = path + ext
+    if rule is None:
+        return legacy
+    try:
+        d = rule(path)
+    except Exception:
+        return legacy
+    if not d:
+        return legacy
+    new = os.path.join(d, os.path.basename(path) + ext)
+    if os.path.exists(new):
+        return new
+    olds = [legacy]
+    try:
+        olds += [os.path.join(o, os.path.basename(path) + ext) for o in (SIDE["others"](path) if SIDE["others"] else [])]
+    except Exception:
+        pass
+    for o in olds:
+        if os.path.normcase(os.path.abspath(o)) != os.path.normcase(os.path.abspath(new)) and os.path.exists(o):
+            try:
+                os.makedirs(d, exist_ok=True)
+                shutil.move(o, new)
+                return new
+            except OSError:
+                return o   # couldn't move it (in use, say): carry on with it where it is
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return legacy
+    return new

@@ -362,6 +362,8 @@
     <label>Project name <input id="np-name" type="text" maxlength="40" placeholder="e.g. St Fagans"></label>
     <span id="np-warn" class="small err" hidden></span>
     <label>Survey 1 date (optional) <input id="np-date" type="date"></label>
+    <label>Project folder <span class="row"><input id="np-folder" type="text"><button type="button" id="np-folder-pick" class="btn sm">Choose…</button></span></label>
+    <p class="small muted">Everything made for the project (analysis, exports, reports, project file) is saved here, away from the recordings.</p>
     <p id="np-help" class="small muted">The project starts with Survey 1 and Camera 1. Next you can add recordings to it.</p>
     <p id="np-msg" class="small err" hidden></p>
     <div class="row wrap end"><button value="cancel" class="btn">Cancel</button><button id="np-go" value="ok" class="btn primary">Create and add files</button></div>
@@ -389,7 +391,14 @@
     </fieldset>
     <label class="check"><input id="cv-roi" type="checkbox" checked> Show the ROI</label>
     <label class="check"><input id="cv-time" type="checkbox" checked> Show the date and time</label>
-    <p class="small muted">Uses the palette and image clean-up showing now. Long recordings take a while: roughly as long as the footage itself, often less. You can keep working; progress shows over the Event Log.</p>
+    <div class="row wrap">
+      <label class="small">Speed <select id="cv-speed">
+        <option value="1">1× (real time)</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select></label>
+      <label class="small">File size <select id="cv-quality">
+        <option value="90">Larger (best quality)</option><option value="75" selected>Standard (recommended)</option><option value="60">Smaller</option></select></label>
+    </div>
+    <p id="cv-time-note" class="small muted"></p>
+    <p class="small muted">Uses the palette and image clean-up showing now. A faster speed plays the night quicker and is quicker to make (2× takes about half the time); every frame's time stays right. Detection takes about three times as long to make as Default. You can keep working: progress shows in the jobs panel at the bottom right.</p>
     <div class="row wrap end"><button value="cancel" class="btn">Cancel</button><button id="cv-go" value="ok" class="btn primary">Export</button></div>
   </form>
 </dialog>
@@ -612,8 +621,9 @@
 
         <section data-pane="exports" hidden>
           <h3>Exports</h3>
-          <label>Default export folder
-            <span class="row"><input id="st-folder" type="text" placeholder="Blank = an 'exports' folder beside each recording"><button type="button" id="st-folder-pick" class="btn sm">Choose…</button></span></label>
+          <label>Folder for new projects
+            <span class="row"><input id="st-folder" type="text" placeholder="Blank = Documents\Track and Detect Projects"><button type="button" id="st-folder-pick" class="btn sm">Choose…</button></span></label>
+          <p class="small muted">Each project gets its own folder here, holding everything made for it: its analysis, exports (event packs, camera videos), reports and project file, away from the recordings. A project's folder can be changed from its ⚙ menu.</p>
           <fieldset class="st-items"><legend>Ticked by default in the export dialog</legend>
             <label class="check"><input type="checkbox" name="st-items" value="path_still"> Tracking still</label>
             <label class="check"><input type="checkbox" name="st-items" value="path_clip"> Tracking clip</label>

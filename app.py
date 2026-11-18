@@ -103,7 +103,7 @@ def _file_row(p):
         st = r.status()
     else:
         st = "Not analysed"
-        side = p + ".analysis.json"
+        side = _fsutil.side_path(p, ".analysis.json")
         if os.path.exists(side):
             try:
                 import json
@@ -124,6 +124,8 @@ from emergence.org import (_CTX, JOIN_CAM, CAM_JOIN, configure, _ORG, _GENERIC_S
     org_tree)  # noqa: E402,F401  projects, surveys, cameras: emergence/org.py
 from emergence import org as org_mod  # noqa: E402
 org_mod.configure(lambda: DATA, lambda: state["files"])
+from emergence import fsutil as _fsutil   # noqa: E402
+_fsutil.SIDE["dir"], _fsutil.SIDE["others"] = org_mod.analysis_dir, org_mod.analysis_dirs_all   # recordings' files go in their project folder
 
 
 _TIMES = {}
@@ -382,10 +384,11 @@ def _joined_row(vp, rows):
     mem = [r for r in rows if r["path"] in JOINS.get(vp, [])]
     r = recs.get(vp)
     st = r.status() if r is not None else "Not analysed"
-    if r is None and os.path.exists(vp + ".analysis.json"):
+    side = _fsutil.side_path(vp, ".analysis.json")
+    if r is None and os.path.exists(side):
         try:
             import json
-            d = json.load(open(vp + ".analysis.json", encoding="utf-8"))
+            d = json.load(open(side, encoding="utf-8"))
             if d.get("scanned") and d.get("members") == [os.path.basename(m["path"]) for m in mem]:
                 st = "In review" if any(e["status"] == "todo" for e in d.get("events", [])) else "Reviewed"
         except (OSError, ValueError):
@@ -440,13 +443,14 @@ def files():
 
 
 def _write_project_file(pj):
-    """<project>.tdproject beside its recordings (or in the settings folder):
-    the project's surveys, cameras, site plan and which recording is where."""
+    """<project>.tdproject in the project's folder: the project's surveys,
+    cameras, site plan and which recording is where."""
     import json
     from emergence.render import safe_name
     cids = {c["id"] for sv in pj["surveys"] for c in sv["cameras"]}
     of = {p: c for p, c in _org()["of"].items() if c in cids}
-    folder = os.path.dirname(sorted(of)[0]) if of else DATA
+    folder = org_mod.project_folder(pj)
+    os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, safe_name(pj["name"]) + ".tdproject")
     data = {"v": 1, "app": "Track & Detect", "saved": time.strftime("%Y-%m-%d %H:%M:%S"), "project": pj, "of": of}
     try:
@@ -509,6 +513,8 @@ def _num_in(v, lo, hi):
 # Each action of /api/org: (body, the organisation, the reply to fill in, the action's name)
 def _org_new_project(b, org, out, act):
     pj = _new_project(b.get("name", ""))
+    if (b.get("folder") or "").strip():   # a folder of the user's own choosing
+        pj["folder"] = os.path.normpath(os.path.expanduser(b["folder"].strip()))
     if b.get("pre_survey"):
         pj["pre_survey"] = True   # planned before the survey: a site plan of where the cameras will go
     sv = _new_survey(pj, b.get("date", ""))
@@ -746,6 +752,35 @@ def _org_save_project(b, org, out, act):
     out["file"] = _write_project_file(n[1])
 
 
+def _org_project_folder(b, org, out, act):
+    """the project's folder: {id} tells it; {id, folder} moves it there"""
+    n = _node(b.get("id"))
+    if not n or n[0] != "project":
+        raise UserError("That project no longer exists")
+    pj = n[1]
+    old = org_mod.project_folder(pj)
+    new = (b.get("folder") or "").strip()
+    if new:
+        new = os.path.normpath(os.path.expanduser(new))
+        if os.path.normcase(new) != os.path.normcase(old):
+            if os.path.isdir(old) and os.listdir(old):
+                if os.path.exists(new) and os.listdir(new):   # into a folder already in use: move each item in
+                    import shutil
+                    for name in os.listdir(old):
+                        if not os.path.exists(os.path.join(new, name)):
+                            shutil.move(os.path.join(old, name), os.path.join(new, name))
+                else:
+                    import shutil
+                    os.makedirs(os.path.dirname(new) or ".", exist_ok=True)
+                    if os.path.exists(new):
+                        os.rmdir(new)
+                    shutil.move(old, new)
+            pj["folder"] = new
+            for r in list(recs.values()):   # open recordings write to the new place from now on
+                r.save()
+    out["folder"] = pj["folder"]
+
+
 def _org_open_project_file(b, org, out, act):
     out.update(_read_project_file(b.get("path") or ""))
 
@@ -819,6 +854,7 @@ def _org_list_projects(b, org, out, act):
     for path, cid in org["of"].items():
         cams_of.setdefault(cid, []).append(path)
     out["projects"] = []
+    out["root"] = org_mod.projects_root()
     for pj in org["projects"]:
         paths = [x for sv in pj["surveys"] for c in sv["cameras"] for x in cams_of.get(c["id"], [])]
         out["projects"].append({"id": pj["id"], "name": pj["name"], "surveys": len(pj["surveys"]),
@@ -889,6 +925,7 @@ _ORG_ACTIONS = {
     "reset_project": _org_reset_project,
     "save_project": _org_save_project,
     "open_project_file": _org_open_project_file,
+    "project_folder": _org_project_folder,
     "join": _org_join,
     "list_projects": _org_list_projects,
     "open_project": _org_open_project,
@@ -976,7 +1013,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-jobs"   # must match static/app.js
+APP_VERSION = "2026.11.18-projfolder"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -1184,7 +1221,7 @@ def report_defaults():
     out = {k: saved.get(k, "") for k in ("company", "contact", "analyst", "camera")}
     out["camera"] = out["camera"] or r.src.camera or ""
     out["location"] = r.state.get("report_location") or (_place(r.path) or [{"name": os.path.basename(os.path.dirname(r.path))}])[0]["name"]   # the project name to start with
-    out["folder"] = cfg.get("export", "folder") or os.path.join(os.path.dirname(r.path), "exports")
+    out["folder"] = org_mod.project_subfolder(r.path, "Reports")
     out["reviewed"] = all(e["status"] != "todo" for e in r.state.get("events", []))
     return jsonify(out)
 
@@ -1210,8 +1247,7 @@ def make_report():
     _save_settings()   # report details are remembered as soon as a report is made
     r.state["report_location"] = opts["location"]
     r.save()
-    folder = ((b.get("folder") or "").strip() or cfg.get("export", "folder")
-              or os.path.join(os.path.dirname(r.path), "exports"))
+    folder = (b.get("folder") or "").strip() or org_mod.project_subfolder(r.path, "Reports")
     os.makedirs(folder, exist_ok=True)
     stem = os.path.splitext(os.path.basename(r.path))[0]
     fmt = "docx" if b.get("format") == "docx" else "pdf"
@@ -1342,7 +1378,7 @@ def export_camera():
         if not cur:
             raise UserError("Open a recording first")
         paths, name = [cur], os.path.splitext(os.path.basename(cur))[0]
-    folder = (b.get("folder") or cfg_mod().get("export", "folder") or os.path.join(os.path.dirname(paths[0]), "exports"))
+    folder = b.get("folder") or org_mod.project_subfolder(cur, "Exports")
     os.makedirs(folder, exist_ok=True)
     out = os.path.join(folder, safe_name(name) + ("_detection" if b.get("mode") == "blend" else "") + ".mp4")
     recs_ = [rec(p) for p in paths]
@@ -1409,7 +1445,9 @@ def events_csv():
                 return e["n"]
         return ""
 
-    p = stem + "_events.csv"
+    folder = org_mod.project_subfolder(r.path, "Exports")   # with the project's other files, not the recordings
+    os.makedirs(folder, exist_ok=True)
+    p = os.path.join(folder, os.path.basename(stem) + "_events.csv")
     with open(p, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         zone = r.src.zone_of(0) or "elapsed"
@@ -1421,7 +1459,7 @@ def events_csv():
                         round(e["peak"], 2), r.src.units, e["status"], e.get("cls", ""), " | ".join(mine)])
     files = [p]
     if comments:
-        pc = stem + "_comments.csv"
+        pc = os.path.join(folder, os.path.basename(stem) + "_comments.csv")
         with open(pc, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
             w.writerow(["date", f"time ({r.src.zone_of(0) or 'elapsed'})", "frame", "event", "comment", "added"])
@@ -1444,7 +1482,10 @@ def job_cancel():
 
 @app.post("/api/open-path")
 def open_path():
-    p = (request.json or {}).get("path")
+    b = request.json or {}
+    p = b.get("path")
+    if p and b.get("make"):
+        os.makedirs(p, exist_ok=True)
     if p and os.path.exists(p) and sys.platform.startswith("win"):
         os.startfile(p)  # noqa: opens Explorer / default viewer on Windows
     return jsonify(ok=True)

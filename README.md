@@ -43,6 +43,18 @@ Double-click the **Track and Detect** desktop shortcut, or **Run Track and
 Detect.bat**. The app opens in its own window. Closing that window, or
 clicking **Quit** in the top bar, closes it.
 
+**Project folders.** Everything Track & Detect makes for a project goes in
+one folder, away from the recordings: by default
+`Documents\Track and Detect Projects\<project name>`, with the project file,
+`Analysis` (decisions, activity and caches, by recording folder), `Exports`
+(event packs and camera videos) and `Reports`. Choose another folder when
+making a project, change a project's folder from its ⚙ menu (**Change
+project folder…** moves everything there; **Open project folder** opens
+it), or change where new projects go in Settings > Exports > **Folder for
+new projects**. Analysis saved beside recordings by earlier versions moves
+into the project folder the first time the recording is opened. Recordings
+not in a project use an `Unassigned recordings` folder there.
+
 The program opens with nothing loaded: no project and no recordings. A
 start window asks what you'd like to do: **Open existing analysis
 project**, **New analysis project**, **Open existing pre-survey template**,
@@ -152,9 +164,9 @@ the recordings to its cameras, or start a new survey from the template.
    - The save icon beside PROJECT saves the project; the **⚙** next to it
      holds the project's options: **Save project**
      (everything is saved as you go; this also writes `<project>.tdproject`
-     beside its recordings, a project file to keep or share), **Rename**,
+     in the project folder, a project file to keep or share), **Rename**,
      **Site plan**, **New survey** (from the site plan, if there is
-     one), **Open recordings folder**, **Close project** (takes its
+     one), **Open project folder**, **Change project folder…**, **Open recordings folder**, **Close project** (takes its
      recordings off the list; reopen it from the folder button > Open
      project), **Reset all decisions** and **Delete project** (its
      recordings move to Unassigned; no files are deleted). Open project also
@@ -358,8 +370,8 @@ the recordings to its cameras, or start a new survey from the template.
    press Ctrl + Enter). The comment is pinned to the current moment, or to
    the start of the event if you're outside its window. Click a comment to
    jump to it, or × to delete it.
-7. **Export event pack.** One click saves these files to `exports\`
-   beside the recording:
+7. **Export event pack.** One click saves these files to the project's
+   `Exports` folder:
    - the tracking still
    - the tracking clip
    - the trails clip (the moving-animal trails on their own)
@@ -373,10 +385,14 @@ the recordings to its cameras, or start a new survey from the template.
    camera, joined in time order, as one MP4 (just this recording if it isn't
    in a camera). Choose the Default thermal picture or Detection (with the
    blend and opacity showing now), and whether to show the ROI and the date
-   and time. It uses the current palette and image clean-up, and goes to the
-   exports folder, named after the project, survey and camera. Long
-   recordings take a while, roughly as long as the footage or less;
-   progress shows over the Event Log.
+   and time, the **Speed** (1×, 1.5×, 2×, 4× or 8×: a faster video is also
+   quicker to make, 2× takes about half the time, and every frame's time
+   stays right) and the **File size** (Standard is recommended; Smaller saves
+   about a further 25 % with a little softening; Larger is for the best
+   quality). The dialog says roughly how long the video will be and how long
+   it takes to make. Detection takes about three times as long to make as
+   Default. It uses the current palette and image clean-up, and goes to the
+   project's Exports folder, named after the project, survey and camera.
 
    **Jobs panel**: at the bottom of the right-hand side, every export, report
    and scan started in this window is listed while it runs, with a progress
@@ -515,8 +531,8 @@ never changed.
 
 ## If a save file is damaged
 
-Decisions, ROIs and scans are saved beside each recording
-(`<name>.ats.analysis.json` and `.activity.npz`); projects, cameras and site
+Decisions, ROIs and scans are saved in the project folder's `Analysis`
+folder (`<name>.ats.analysis.json` and `.activity.npz`); projects, cameras and site
 plans in `cameras.json`; settings in `settings.json`. If one of these can't be
 read (for example it was half-written, or half-synced by Dropbox), the
 program doesn't overwrite it: it keeps it as `<file>.damaged-<date-time>`,

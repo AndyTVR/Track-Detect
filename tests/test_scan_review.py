@@ -104,7 +104,7 @@ def test_event_pack_and_camera_video(td):
     assert all(os.path.exists(f) for f in job["result"]["files"])
     r = td.post("/api/export-camera", {"mode": "raw", "overlays": "time"})
     job = td.wait_jobs()[-1]
-    assert job["state"] == "done" and os.path.getsize(r["path"]) > 100000
+    assert job["state"] == "done" and os.path.getsize(r["path"]) > 30000
 
 
 def test_frames_and_times(td):

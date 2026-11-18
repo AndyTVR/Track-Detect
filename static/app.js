@@ -98,8 +98,19 @@ function fillAddPlace(want) {   // want: {project, survey, camera} ids to presel
 // opened from the top bar or the empty viewer: Unassigned; from a camera's "+ Add files": that camera
 // every saved project's name, so a new one can't repeat it
 async function loadProjectNames() {
-  try { S.allProj = (await api("/api/org", { action: "list_projects" })).projects; } catch (e) { S.allProj = S.allProj || []; }
+  try { const r = await api("/api/org", { action: "list_projects" }); S.allProj = r.projects; S.projRoot = r.root; } catch (e) { S.allProj = S.allProj || []; }
 }
+// the New project dialog's folder: <folder for new projects>\<project name>, unless one is chosen
+function npFolderAuto() {
+  const f = $("#np-folder"); if (f.dataset.custom) return;
+  const root = S.projRoot || "", sep = root.includes("\\") ? "\\" : "/";
+  const name = ($("#np-name").value.trim() || "New project").replace(/[^A-Za-z0-9 \-_.()]/g, "_").replace(/^[ .]+|[ .]+$/g, "") || "Project";
+  f.value = root ? root + sep + name : "";
+}
+$("#np-folder").addEventListener("input", () => { $("#np-folder").dataset.custom = "1"; });
+$("#np-folder-pick").onclick = async () => {
+  try { const r = await api("/api/pick", { kind: "folder" }); if (r.paths.length) { $("#np-folder").value = r.paths[0]; $("#np-folder").dataset.custom = "1"; } } catch (e) { err(e); }
+};
 function projClash(name) {
   const n = (name || "").trim().toLowerCase(); if (!n) return null;
   return (S.allProj || []).find((p) => p.name.toLowerCase() === n) || (S.tree || []).find((p) => p.name.toLowerCase() === n) || null;
@@ -149,10 +160,12 @@ function newProject(plan) {
     : "The project starts with Survey 1 and Camera 1. Next you can add recordings to it.";
   $("#np-go").textContent = plan ? "Create and open site plan" : "Create and add files";
   $("#np-name").value = ""; $("#np-date").value = ""; $("#np-msg").hidden = true; $("#np-warn").hidden = true; $("#np-go").disabled = false;
-  loadProjectNames(); $("#dlg-newproj").showModal(); $("#np-name").focus();
+  delete $("#np-folder").dataset.custom; $("#np-folder").value = "";
+  loadProjectNames().then(npFolderAuto); $("#dlg-newproj").showModal(); $("#np-name").focus();
 }
 
 $("#np-name").addEventListener("input", () => {
+  npFolderAuto();
   const c = projClash($("#np-name").value);
   $("#np-warn").hidden = !c; $("#np-go").disabled = !!c;
   if (c) $("#np-warn").textContent = `There's already a project called ${c.name}. Use Open project to open it, or choose another name.`;
@@ -161,7 +174,8 @@ $("#np-go").onclick = async (ev) => {
   ev.preventDefault();
   const name = $("#np-name").value.trim();
   try {
-    const r = await org({ action: "new_project", name, date: $("#np-date").value, pre_survey: NP_PLAN });
+    const r = await org({ action: "new_project", name, date: $("#np-date").value, pre_survey: NP_PLAN,
+                          folder: $("#np-folder").dataset.custom ? $("#np-folder").value.trim() : "" });
     $("#dlg-newproj").close();
     const at = findCam(r.created);
     if (NP_PLAN) { if (at) openMap(at.project.id); } else openAdd(r.created);
@@ -492,6 +506,11 @@ function projMenu(pj) {
   item(pj.template ? `New survey from site plan (${plural(pj.template, "camera")})` : "New survey", async () => {
     const r = await org({ action: "new_survey", project: pj.id }); if (r.from_template) toast("New survey made from the site plan: the same cameras, positions and lenses.", 6000); });
   if (pj.template) item("Stop using the site plan template", () => org({ action: "clear_template", project: pj.id }));
+  item("Open project folder", async () => { const r = await api("/api/org", { action: "project_folder", id: pj.id }); await api("/api/open-path", { path: r.folder, make: true }); });
+  item("Change project folder…", async () => {
+    const p = await api("/api/pick", { kind: "folder" }); if (!p.paths.length) return;
+    if (!confirm(`Move ${pj.name}'s project folder (its analysis, exports, reports and project file) to ${p.paths[0]}?`)) return;
+    const r = await org({ action: "project_folder", id: pj.id, folder: p.paths[0] }); toast(`${pj.name}'s files are now in ${r.folder}`, 7000); });
   const first = pj.paths[0];
   if (first) item("Open recordings folder", () => api("/api/open-path", { path: first.replace(/[\\/][^\\/]*$/, "") }));
   item("Close project", async () => { const r = await org({ action: "close_project", id: pj.id }); if (S.rec && !fileRow(S.rec.path)) location.reload(); toast(`${pj.name} closed (${plural(r.closed, "recording")} taken off the list). Open it again from the folder button > Open existing analysis project.`, 7000); });
@@ -863,7 +882,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-jobs";
+const APP_VERSION = "2026.11.18-projfolder";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1128,14 +1147,29 @@ $("#btn-export-camera").onclick = () => {
   $("#cv-sub").textContent = at ? `${at.project.name} › ${at.survey.label} › ${at.camera.label}: ${plural(rows.length, "recording")}${rows.length > 1 ? ", joined in time order" : ""}, as one MP4.`
     : `${S.rec.name} isn't in a camera, so just this recording, as one MP4.`;
   $("#cv-blend").textContent = `(${$("#blend").value === "crossfade" ? "crossfade" : "overlay"} at ${Math.round(+$("#opacity").value * 100)}%)`;
-  $("#dlg-camvid").showModal();
+  const fps = (S.rec && S.rec.fps) || 19;   // frames to make: from each recording's start and end times
+  S.cvFrames = rows.reduce((t, r) => t + (r.start && r.end ? (Date.parse(r.end) - Date.parse(r.start)) / 1000 * fps : 0), 0) || (S.rec ? S.rec.frames : 0);
+  cvNote(); $("#dlg-camvid").showModal();
 };
+// a rough idea of how long the video will be, and how long it takes to make
+// (about 130 frames a second for Default, 45 for Detection, on a typical PC)
+function cvNote() {
+  const n = S.cvFrames || 0, fps = (S.rec && S.rec.fps) || 19, sp = +$("#cv-speed").value || 1;
+  const det = ((document.querySelector("[name=cv-mode]:checked") || {}).value || "raw") === "blend";
+  if (!n) { $("#cv-time-note").textContent = ""; return; }
+  const len = n / fps / sp, make = n / ((det ? 45 : 130) * Math.min(sp, det ? 2.5 : sp));
+  const t = (s) => s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
+  $("#cv-time-note").textContent = `Video about ${t(len)} long; roughly ${t(make)} to make (more if the recordings are on a slow or cloud drive).`;
+}
+$("#cv-speed").onchange = cvNote;
+document.querySelectorAll("[name=cv-mode]").forEach((r) => (r.onchange = cvNote));
 $("#cv-go").onclick = async (ev) => {
   ev.preventDefault(); $("#dlg-camvid").close();
   const mode = (document.querySelector("[name=cv-mode]:checked") || {}).value || "raw";
   const overlays = $("#cv-roi").checked ? "roi+time" : $("#cv-time").checked ? "time" : "none";
   try {
-    const r = await api("/api/export-camera", { mode, overlays, palette: S.pal, blend: $("#blend").value, opacity: +$("#opacity").value, enh: enhVals() });
+    const r = await api("/api/export-camera", { mode, overlays, palette: S.pal, blend: $("#blend").value, opacity: +$("#opacity").value, enh: enhVals(),
+                                                speed: +$("#cv-speed").value, quality: +$("#cv-quality").value });
     (S.watch = S.watch || new Set()).add(r.job.id);
     toast(`Exporting ${plural(r.recordings, "recording")} to ${r.path}…`, 6000); pollJobs();
   } catch (e) { err(e); }
@@ -1172,13 +1206,16 @@ function showJobProgress(all, active) {
   const ov = $("#job-overlay");
   const fails = all.filter((j) => j.state === "error" && !(S.seenErr || (S.seenErr = new Set())).has(j.id));
   for (const j of fails) { S.seenErr.add(j.id); if (S.watch && S.watch.has(j.id)) toast(`${j.label} failed: ${j.error}`, 9000); }
-  const run = active.find((j) => j.state === "running") || active[0];
+  // over the plot: scans only (the plot fills in as they go); exports, reports
+  // and the rest show in the jobs panel at the bottom of the right-hand side
+  const scans = active.filter((j) => j.kind === "scan" || j.kind === "test");
+  const run = scans.find((j) => j.state === "running") || scans[0];
   if (!run) { ov.hidden = true; S.liveScan = false; return; }
   const pct = Math.round(100 * run.done / Math.max(1, run.total));
   ov.hidden = false;
   $("#job-pct").textContent = run.state === "queued" ? "…" : pct + "%";
   $("#job-label").textContent = run.label;
-  $("#job-more").textContent = active.length > 1 ? `${active.length - 1} more waiting` : "";
+  $("#job-more").textContent = scans.length > 1 ? `${scans.length - 1} more waiting` : "";
   $("#job-bar").style.width = pct + "%";
   const mine = run.kind === "scan" && S.rec && run.path === S.rec.path && run.state === "running";
   ov.classList.toggle("live", mine);
@@ -1248,7 +1285,7 @@ function pollJobs() {
         S.watch.delete(j.id);
         if (j.result.test) showTestResult(j.result.test);
         else if (j.result.report) { toast("Report saved: " + j.result.report, 8000); api("/api/open-path", { path: j.result.report }).catch(() => {}); }
-        else if (j.result.files) toast(j.kind === "export" && j.result.files.length === 1 ? `Saved ${j.result.files[0]}` : `Saved ${j.result.files.length} files to the exports folder.`, 7000);
+        else if (j.result.files) toast(j.kind === "export" && j.result.files.length === 1 ? `Saved ${j.result.files[0]}` : `Saved ${j.result.files.length} files to the project's Exports folder.`, 7000);
       }
       if (S.rec) { try { const rec = await api("/api/recording"); const sigOf = (x) => JSON.stringify([x.scanned, x.level, x.suggested_level, (x.events || []).map((e) => [e.f0, e.f1, e.status])]);
             const changed = sigOf(rec) !== sigOf(S.rec) || JSON.stringify(rec.rois) !== JSON.stringify(S.rec.rois); S.rec = rec; renderFilters(); if (changed) { renderRois(); await loadActivity(true); renderEvents(); } } catch (e) {} }
@@ -2180,8 +2217,7 @@ function exportDefaults() {   // the export dialog opens with the defaults from 
   if (ex.overlays) $("#exp-overlays").value = ex.overlays;
   if (ex.quality) $("#exp-quality").value = ex.quality;
   $("#exp-pad").value = (S.cfg && S.cfg.detect.window_s) ?? 3;
-  const sep = S.rec.path.includes("\\") ? "\\" : "/";
-  $("#exp-folder").value = ex.folder || S.rec.path.replace(/[\\/][^\\/]+$/, "") + sep + "exports";
+  $("#exp-folder").value = S.rec.exports_folder || "";   // the project's Exports folder
 }
 function applyViewDefaults(v) {   // start the Viewing Mode bar from the saved defaults
   if ([...$("#palette").options].some((o) => o.value === v.palette)) $("#palette").value = v.palette;

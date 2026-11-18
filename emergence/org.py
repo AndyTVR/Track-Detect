@@ -164,6 +164,69 @@ def _place(p):
     return n[2], n[3], n[1]
 
 
+# ---- the project folder: everything the program makes for a project goes in
+# one folder, away from the recordings:
+#   <project folder>/<Project>.tdproject     the project file
+#   <project folder>/Analysis/<recording folder>/   decisions, activity, caches
+#   <project folder>/Exports/                event packs and camera videos
+#   <project folder>/Reports/                PDF and Word reports
+# By default Documents\Track and Detect Projects\<project name> (Settings can
+# change where new projects go); each project's folder can be changed.
+# Recordings not in a project use an "Unassigned recordings" folder there.
+def _safe(s):
+    return "".join(c if c.isalnum() or c in " -_.()" else "_" for c in (s or "")).strip(" .") or "Project"
+
+
+def projects_root():
+    try:
+        from . import settings as cfg
+        chosen = (cfg.CURRENT.get("export") or {}).get("folder") or ""
+    except Exception:
+        chosen = ""
+    if chosen:
+        return chosen
+    if os.environ.get("TD_PROJECTS"):
+        return os.environ["TD_PROJECTS"]
+    if os.environ.get("TD_DATA") and _CTX.get("data"):
+        return os.path.join(_CTX["data"](), "Projects")
+    docs = os.path.join(os.path.expanduser("~"), "Documents")
+    return os.path.join(docs if os.path.isdir(docs) else os.path.expanduser("~"), "Track and Detect Projects")
+
+
+def project_folder(pj):
+    """The project's folder, fixed the first time it's needed."""
+    if not pj.get("folder"):
+        pj["folder"] = os.path.join(projects_root(), _safe(pj["name"]))
+        try:
+            _save_org()
+        except Exception:
+            pass
+    return pj["folder"]
+
+
+def project_subfolder(path, kind):
+    """Exports or Reports for a recording's project (or for unassigned ones)."""
+    pl = _place(path)
+    base = project_folder(pl[0]) if pl else os.path.join(projects_root(), "Unassigned recordings")
+    return os.path.join(base, kind)
+
+
+def analysis_dir(path):
+    """Where a recording's analysis and caches go."""
+    sub = _safe(os.path.basename(os.path.dirname(path))) or "recordings"
+    return os.path.join(project_subfolder(path, "Analysis"), sub)
+
+
+def analysis_dirs_all(path):
+    """Everywhere an older copy of a recording's analysis might be."""
+    sub = _safe(os.path.basename(os.path.dirname(path))) or "recordings"
+    out = [os.path.join(projects_root(), "Unassigned recordings", "Analysis", sub)]
+    for pj in _org()["projects"]:
+        if pj.get("folder"):
+            out.append(os.path.join(pj["folder"], "Analysis", sub))
+    return out
+
+
 def _paths_under(nid):
     """Listed recordings under a project, survey or camera ("unassigned" for those in none)."""
     if nid == "unassigned":
@@ -189,6 +252,7 @@ def _new_project(name=""):
             k += 1
         name = f"Project {k}"
     pj = {"id": _nid("p"), "name": name, "surveys": []}
+    project_folder(pj)
     _org()["projects"].append(pj)
     OPEN.add(pj["id"])
     return pj
@@ -386,7 +450,7 @@ def org_tree(rows):
             surveys.append({"id": sv["id"], "no": sv["no"], "date": sv.get("date") or "", "label": survey_label(sv), "cameras": cams,
                             "surveyor": sv.get("surveyor") or "", "detectors": sv.get("detectors") or [],
                             "paths": [p for c in cams for p in c["paths"]]})
-        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"), "template": len(pj.get("template") or []), "pre_survey": bool(pj.get("pre_survey")),
+        tree.append({"id": pj["id"], "name": pj["name"], "surveys": surveys, "site": pj.get("site"), "folder": project_folder(pj), "template": len(pj.get("template") or []), "pre_survey": bool(pj.get("pre_survey")),
                      "paths": [p for sv in surveys for p in sv["paths"]]})
     unassigned = sorted([r for r in rows if not r["camera_id"]], key=lambda r: (os.path.dirname(r["path"]), r["start"] or "", r["name"]))
     return tree, [r["path"] for r in unassigned if r["path"] in listed]

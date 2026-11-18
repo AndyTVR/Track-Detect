@@ -94,11 +94,11 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
       check("after Confirm: next event selected and in view", vis);
     }
   }
-  // a longer job: progress shows over the plot, then goes
+  // a longer job (camera video): progress in the jobs panel on the right, not over the plot
   await p.click("#btn-export-camera"); await p.waitForTimeout(200); await p.click("#cv-go");
-  check("progress shows over the plot", await p.waitForSelector("#job-overlay", { state: "visible", timeout: 8000 }).then(() => true, () => false));
-  check("jobs panel shows the export running", await p.isVisible("#jobs-dock") && /Camera video/.test(await p.textContent("#jobs-dock")));
-  check("progress goes when done", await p.waitForSelector("#job-overlay", { state: "hidden", timeout: 120000 }).then(() => true, () => false));
+  check("jobs panel shows the export running", await p.waitForSelector("#jobs-dock", { state: "visible", timeout: 8000 }).then(() => true, () => false) && /Camera video/.test(await p.textContent("#jobs-dock")));
+  check("export progress isn't over the plot", !(await p.isVisible("#job-overlay")));
+  check("export finishes", await p.waitForFunction(() => /Saved: /.test($("#jobs-dock").textContent), null, { timeout: 120000 }).then(() => true, () => false));
   await p.waitForTimeout(900);
   check("jobs panel says the video is saved, with Show in folder", /Saved: .*\.mp4/.test(await p.textContent("#jobs-dock")) && await p.locator("[data-jd-open]").count() >= 1, await p.textContent("#jobs-dock"));
   // viewing modes and the Detection menu

@@ -247,7 +247,8 @@ class ATSFile:
 
     # ------------------------------------------------------------------ layout
     def _sidecar(self) -> str:
-        return self.path + ".layout.json"
+        from .fsutil import side_path
+        return side_path(self.path, ".layout.json")
 
     def _load_or_detect_layout(self, w: int, h: int) -> Layout:
         try:
@@ -396,7 +397,8 @@ class ATSFile:
             return None
         if getattr(self, "_times", None) is not None:
             return self._times
-        side = self.path + ".times.npz"
+        from .fsutil import side_path
+        side = side_path(self.path, ".times.npz")
         key = np.array([self.size, self._clock["offset"], self._clock["t0"]], dtype=np.float64)
         try:
             with np.load(side) as z:

@@ -224,3 +224,33 @@ def test_new_window_starts_empty_and_close_hides_empty_project(td):
     assert [p["name"] for p in r["tree"]] == ["Empty"]
     r = td.org(action="close_project", id=empty["id"])
     assert r["tree"] == []
+
+
+def test_project_files_go_in_the_project_folder(td):
+    """Everything made for a project goes in its own folder, away from the
+    recordings: analysis, exports and the project file. Analysis made before
+    (beside the recording) moves there; a custom folder can be chosen, and the
+    folder can be moved later."""
+    import app as td_app
+    from emergence.fsutil import side_path
+    a = td.path("rhino front 1.ats")
+    old = a + ".analysis.json"
+    with open(old, "w") as f:
+        json.dump({"events": [], "comments": [{"frame": 3, "text": "from before"}]}, f)
+    custom = os.path.join(td.folder, "My projects", "Site A")
+    cid = td.org(action="new_project", name="Site A", folder=custom)["created"]
+    td.add(a, target={"camera": cid})
+    td.post("/api/open", {"path": a})
+    side = side_path(a, ".analysis.json")
+    assert side.startswith(os.path.join(custom, "Analysis")) and not os.path.exists(old)
+    assert json.load(open(side))["comments"][0]["text"] == "from before"
+    assert td.get("/api/recording")["exports_folder"] == os.path.join(custom, "Exports")
+    pid = [p for p in td.files()["tree"] if p["name"] == "Site A"][0]["id"]
+    f = td.org(action="save_project", id=pid)["file"]
+    assert f == os.path.join(custom, "Site_A.tdproject")
+    moved = os.path.join(td.folder, "Elsewhere", "Site A")
+    assert td.org(action="project_folder", id=pid, folder=moved)["folder"] == moved
+    assert os.path.exists(os.path.join(moved, "Site_A.tdproject")) and not os.path.exists(custom)
+    assert side_path(a, ".analysis.json").startswith(moved)
+    # beside the recording: only the recording
+    assert sorted(os.listdir(os.path.dirname(a))) == ["rhino front 1.ats"]

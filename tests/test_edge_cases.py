@@ -16,6 +16,10 @@ def test_damaged_analysis_file_is_kept_not_overwritten(td):
     td.add(p)
     td.post("/api/open", {"path": p})
     td.post("/api/roi", {"id": td.get("/api/recording")["rois"][0]["id"], "points": ROI})   # saves
+    from emergence.fsutil import side_path
+    assert not os.path.exists(side)            # moved from beside the recording into the project folder
+    side = side_path(p, ".analysis.json")
+    assert os.path.dirname(side) != os.path.dirname(p)
     kept = glob.glob(side + ".damaged-*")
     assert len(kept) == 1 and open(kept[0]).read().startswith('{"events"')
     assert json.load(open(side))["rois"][0]["points"]   # the new save is good
@@ -49,9 +53,11 @@ def test_saves_at_the_same_moment(td):
     [t.start() for t in ts]
     [t.join() for t in ts]
     assert not errors
-    saved = json.load(open(p + ".analysis.json"))
+    from emergence.fsutil import side_path
+    side = side_path(p, ".analysis.json")
+    saved = json.load(open(side))
     assert len(saved["comments"]) == 120
-    assert not glob.glob(p + ".analysis.json.*tmp")
+    assert not glob.glob(side + ".*tmp")
 
 
 def test_recording_that_disappears(td):

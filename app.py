@@ -964,7 +964,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-mapfold"   # must match static/app.js
+APP_VERSION = "2026.11.18-pixel"   # must match static/app.js
 
 
 @app.get("/api/version")

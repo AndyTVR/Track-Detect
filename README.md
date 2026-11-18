@@ -171,9 +171,9 @@ the recordings to its cameras, or start a new survey from the template.
        95°; FLIR A700 14°, 24°, 42° or 80°; or another angle) and who set it
        up. Each camera shows its **pixel size** at that range, by
        trigonometry: the lens sees 2 × range × tan(angle ÷ 2) across,
-       shared between 640 pixels (and the vertical angle between 480), with
-       the view's width and height and the pixels covering a round 0.1 m
-       target.
+       shared between 640 pixels. Pixels are square, so the view is 480/640
+       of that high. Also shown: the view's width and height, and the pixels
+       covering a round 0.1 m target.
      - **Acoustic detectors**: **+ Add detector** for each one, with its
        name, surveyor, model (common models are suggested as you type),
        serial number, a rough detection range (drawn as a dashed circle) and

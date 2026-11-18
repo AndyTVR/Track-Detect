@@ -866,7 +866,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-mapfold";
+const APP_VERSION = "2026.11.18-pixel";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2306,14 +2306,14 @@ function conePoints(m) {
 }
 // Pixel size at the range: the lens sees 2 × range × tan(angle ÷ 2) across, shared
 // between 640 pixels (480 down). The vertical angle comes from FLIR's lens figures.
-const LENS_V = { 29: 22, 51: 39, 95: 74, 14: 10, 24: 18, 42: 32, 80: 63 };
 const SENSOR_PY = 480;
-function vfov(m) { return LENS_V[m.fov] ?? 2 * Math.atan(Math.tan(m.fov * Math.PI / 360) * SENSOR_PY / SENSOR_PX) * 180 / Math.PI; }
+// Pixel size from the lens's field of view and the 640 × 480 resolution alone:
+// the view is 2 × range × tan(FOV ÷ 2) across, shared between 640 pixels;
+// pixels are square, so the view is 480/640 of that high.
 function viewW(m) { return 2 * m.range * Math.tan(m.fov * Math.PI / 360); }       // metres across at the range
-function viewH(m) { return 2 * m.range * Math.tan(vfov(m) * Math.PI / 360); }     // metres high at the range
-function pixW(m) { return viewW(m) / SENSOR_PX * 1000; }                           // mm
-function pixH(m) { return viewH(m) / SENSOR_PY * 1000; }
-function targetPx(m, size = 0.1) { return Math.PI / 4 * (size * 1000 / pixW(m)) * (size * 1000 / pixH(m)); }   // pixels on a round target
+function viewH(m) { return viewW(m) * SENSOR_PY / SENSOR_PX; }                    // metres high at the range
+function pixSize(m) { return viewW(m) / SENSOR_PX * 1000; }                       // mm, one pixel (square)
+function targetPx(m, size = 0.1) { return Math.PI / 4 * (size * 1000 / pixSize(m)) ** 2; }   // pixels on a round target
 const camIcon = (no, sel) => L.divIcon({ className: "cam-pin" + (sel ? " sel" : ""), html: `<span>${no}</span>`, iconSize: [26, 30], iconAnchor: [13, 30] });
 const tipIcon = L.divIcon({ className: "cone-tip", iconSize: [14, 14], iconAnchor: [7, 7] });
 
@@ -2431,7 +2431,7 @@ function renderMapCams(quiet) {
   for (const cam of sv.cameras) {
     const m = cam.map, row = el("div", "mc" + (MAPS.sel === cam.id ? " sel" : "")); row.dataset.mc = cam.id;
     row.innerHTML = `<div class="mc-head"><span class="cam-pin-s">${cam.no}</span><b>Camera ${cam.no}</b><input class="mc-name" type="text" maxlength="40" placeholder="Add a name" aria-label="Camera ${cam.no} name" value="${esc(cam.name || "")}"></div>`;
-    mapFold(row, cam.id, cam.label, m ? `${esc(m.model)} ${m.fov}° · facing ${Math.round(m.bearing)}° · ${Math.round(m.range)} m · pixel ${pixW(m).toFixed(1)} mm` : "Not on the map yet");
+    mapFold(row, cam.id, cam.label, m ? `${esc(m.model)} ${m.fov}° · facing ${Math.round(m.bearing)}° · ${Math.round(m.range)} m · pixel ${pixSize(m).toFixed(1)} mm` : "Not on the map yet");
     row.querySelector(".mc-name").onchange = async (e) => {
       const v = e.target.value.trim();
       try { await api("/api/org", { action: "rename", id: cam.id, name: v }); cam.name = v; cam.label = v ? `Camera ${cam.no}: ${v}` : `Camera ${cam.no}`; drawMap(); } catch (er) { err(er); }
@@ -2520,7 +2520,7 @@ $("#map-add-det").onclick = async () => {
     (sv.detectors = sv.detectors || []).push(d); MAPS.sel = d.id; drawMap(); } catch (e) { err(e); }
 };
 function camStats(m) {
-  return `<b>Pixel size ${pixW(m).toFixed(1)} × ${pixH(m).toFixed(1)} mm</b> at ${Math.round(m.range)} m · view ${viewW(m).toFixed(1)} × ${viewH(m).toFixed(1)} m · ${targetPx(m).toFixed(1)} px on a 0.1 m target · ${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}`;
+  return `<b>Pixel size ${pixSize(m).toFixed(1)} mm</b> at ${Math.round(m.range)} m · view ${viewW(m).toFixed(1)} × ${viewH(m).toFixed(1)} m · ${targetPx(m).toFixed(1)} px on a 0.1 m target · ${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}`;
 }
 async function setSite(ll) {
   try {
@@ -2541,7 +2541,7 @@ $("#map-template").onclick = async () => {
 $("#map-print").onclick = () => {
   const pj = mapProject(), sv = mapSurvey(); if (!pj) return;
   const cams = (sv ? sv.cameras : []).filter((c) => c.map);
-  const rows = cams.map((c) => { const m = c.map; return `<tr><td>${c.no}</td><td>${esc(c.label)}</td><td>${esc(m.model)} ${m.fov}°</td><td>${Math.round(m.bearing)}°</td><td>${Math.round(m.range)} m</td><td>${pixW(m).toFixed(1)} × ${pixH(m).toFixed(1)} mm</td><td>${targetPx(m).toFixed(2)} px</td><td>${esc(c.surveyor || "")}</td><td>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</td></tr>`; }).join("");
+  const rows = cams.map((c) => { const m = c.map; return `<tr><td>${c.no}</td><td>${esc(c.label)}</td><td>${esc(m.model)} ${m.fov}°</td><td>${Math.round(m.bearing)}°</td><td>${Math.round(m.range)} m</td><td>${pixSize(m).toFixed(1)} mm</td><td>${targetPx(m).toFixed(2)} px</td><td>${esc(c.surveyor || "")}</td><td>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</td></tr>`; }).join("");
   const dets = (sv ? sv.detectors || [] : []);
   const drows = dets.map((d) => `<tr><td>A${d.no}</td><td>${esc(d.name)}</td><td>${esc(d.model)}</td><td>${esc(d.serial)}</td><td>${esc(d.surveyor)}</td><td>${d.range ? Math.round(d.range) + " m" : ""}</td><td>${esc(d.notes)}</td><td>${d.map ? d.map.lat.toFixed(6) + ", " + d.map.lon.toFixed(6) : "not placed"}</td></tr>`).join("");
   const d = new Date();

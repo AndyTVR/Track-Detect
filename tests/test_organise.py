@@ -181,3 +181,27 @@ def test_remaining_actions(td):
     assert len(tree(td)[0]["surveys"]) == 1
     td.org(action="delete", id=pj["id"])
     assert tree(td) == []
+
+
+def test_adding_several_files_to_one_camera_joins_them(td):
+    """Recordings added to one camera are joined automatically, unless the
+    camera's files were separated by hand."""
+    a, b = td.path("rhino front 1.ats"), td.path("rhino front 2.ats")
+    cid = td.org(action="new_project", name="AutoJoin")["created"]
+    cam = lambda r: [c for pj in r["tree"] for sv in pj["surveys"] for c in sv["cameras"] if c["id"] == cid][0]
+    r = td.add(a, b, target={"camera": cid})
+    assert cam(r)["join"] and cam(r)["joined"] and r["joined"] == 1
+    assert r["first"] == cam(r)["joined"]
+    td.org(action="join", id=cid, on=False)          # separated by hand
+    r = td.add(a, target={"camera": cid})
+    assert not cam(r)["join"]
+
+
+def test_dragging_a_second_file_onto_a_camera_joins_them(td):
+    a, b = td.path("rhino front 1.ats"), td.path("rhino front 2.ats")
+    cid = td.org(action="new_project", name="DragJoin")["created"]
+    td.add(a, target={"camera": cid})
+    td.add(b)                                           # unassigned
+    r = td.org(action="move", paths=[b], camera=cid)
+    c = [c for pj in r["tree"] for sv in pj["surveys"] for c in sv["cameras"] if c["id"] == cid][0]
+    assert r.get("joined") == 1 and c["join"] and c["joined"]

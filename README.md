@@ -117,7 +117,9 @@ the recordings to its cameras, or start a new survey from the template.
    - **Scan project**, **Scan survey** and **Scan camera** scan every
      recording in it; **Scan unassigned** scans the unassigned ones. Each
      uses its own ROIs.
-   - **Join files** (on a camera with two or more recordings) stitches the
+   - A camera's recordings are **joined automatically** as soon as it has
+     two or more (added with the Add dialog, or dragged onto it). **Join
+     files** does the same by hand; it stitches the
      camera's consecutive recordings into one: they play, scan, plot and are
      reviewed as one continuous recording, in time order, shown at the top
      of the camera as **Joined**, with the files it's made from listed
@@ -130,13 +132,17 @@ the recordings to its cameras, or start a new survey from the template.
      "No recording here". Times stay true throughout. Scan camera, survey and
      project scan the joined recording instead of the separate files, and the
      camera buttons and "View this time on" use it too. **Separate files**
-     goes back to the separate recordings (their own scans are kept). Adding
+     goes back to the separate recordings (their own scans are kept), and
+     that camera then isn't joined again automatically. A large spike at the
+     end of each file (cameras often write a few very hot frames as they
+     stop) is left out, as at the end of a single recording. Adding
      or removing a file from a joined camera starts its joined scan afresh,
      because the frames no longer line up. Files of different picture sizes
      can't be joined.
    - The **▾** beside a project, survey or camera folds it up (▸ opens it
-     again); the button beside **Tree** folds or opens everything. The
-     program remembers what's folded.
+     again); the button beside **Tree** folds or opens everything. Cameras
+     start folded, showing just their buttons: click a camera's box to show
+     it. The program remembers what you've opened or folded.
    - The Event Log names the camera you're looking at (camera, survey,
      project), or "Unassigned".
    - The **⚙** beside PROJECT holds the project's options: **Save project**

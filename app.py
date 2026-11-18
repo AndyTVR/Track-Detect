@@ -319,7 +319,11 @@ def add():
         _file_into(added, target)
     _save_org()
     first = next((f for f in added if os.path.exists(f)), None)
-    return jsonify(_files_payload(problems=problems, added=added, first=first))
+    joined = _auto_join({org_mod._org()["of"].get(f) for f in added} - {None}, problems)
+    if joined and first:   # open the joined recording of the first file's camera
+        cid = org_mod._org()["of"].get(first)
+        first = CAM_JOIN.get(cid, first)
+    return jsonify(_files_payload(problems=problems, added=added, first=first, joined=len(joined)))
 
 
 @app.post("/api/remove")
@@ -595,6 +599,13 @@ def _org_move(b, org, out, act):
             org["of"][p] = cid
         else:
             org["of"].pop(p, None)
+    if cid:   # dragged onto a camera: joined as soon as it has two or more
+        _save_org()
+        problems = []
+        if _auto_join({cid}, problems):
+            out["joined"] = 1
+        if problems:
+            out["problems"] = problems
 
 
 def _org_set_site(b, org, out, act):
@@ -737,6 +748,51 @@ def _org_open_project_file(b, org, out, act):
     out.update(_read_project_file(b.get("path") or ""))
 
 
+def _open_join(cam):
+    """open a camera's joined recording (its ROIs start from a member's);
+    if the files can't be joined, the camera goes back to separate files"""
+    vp = CAM_JOIN.get(cam["id"])
+    if not vp:
+        return None
+    try:
+        j = rec(vp)
+    except UserError:
+        cam.pop("joined", None)
+        _save_org()
+        _refresh_joins()
+        raise
+    if not any(len(x.get("points") or []) >= 3 for x in j.rois):   # start from a member's ROIs
+        donor = next((rec(p) for p in JOINS[vp] if any(len(x.get("points") or []) >= 3 for x in rec(p).rois)), None)
+        if donor is not None:
+            j.copy_rois_from(donor)
+    return vp
+
+
+def _auto_join(cids, problems):
+    """Recordings added to a camera are joined into one as soon as it has two
+    or more, unless its files were separated by hand (Separate files)."""
+    out = []
+    want = []
+    for cid in cids:
+        n = _node(cid)
+        if n and n[0] == "camera" and not n[1].get("joined") and not n[1].get("separate"):
+            if sum(1 for p, c in org_mod._org()["of"].items() if c == cid and p in state["files"] and os.path.exists(p)) >= 2:
+                n[1]["joined"] = True
+                want.append(n)
+    if not want:
+        return out
+    _save_org()
+    _refresh_joins()
+    for n in want:
+        try:
+            vp = _open_join(n[1])
+            if vp:
+                out.append(vp)
+        except UserError as e:
+            problems.append(f"{camera_label(n[1])}: {e} They're kept as separate files.")
+    return out
+
+
 def _org_join(b, org, out, act):
     """read a camera's consecutive recordings as one (or separately again)"""
     n = _node(b.get("id"))
@@ -744,23 +800,14 @@ def _org_join(b, org, out, act):
         raise UserError("That camera no longer exists")
     if b.get("on"):
         n[1]["joined"] = True
+        n[1].pop("separate", None)
     else:
         n[1].pop("joined", None)
+        n[1]["separate"] = True   # chosen by hand: adding more files won't join them again
     _save_org()
-    rows = _refresh_joins()
-    vp = CAM_JOIN.get(n[1]["id"])
+    _refresh_joins()
+    vp = _open_join(n[1])
     if vp:
-        try:
-            j = rec(vp)
-        except UserError:
-            n[1].pop("joined", None)
-            _save_org()
-            _refresh_joins()
-            raise
-        if not any(len(x.get("points") or []) >= 3 for x in j.rois):   # start from a member's ROIs
-            donor = next((rec(p) for p in JOINS[vp] if any(len(x.get("points") or []) >= 3 for x in rec(p).rois)), None)
-            if donor is not None:
-                j.copy_rois_from(donor)
         out["opened"] = vp
 
 
@@ -917,7 +964,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-campick"   # must match static/app.js
+APP_VERSION = "2026.11.18-autojoin"   # must match static/app.js
 
 
 @app.get("/api/version")

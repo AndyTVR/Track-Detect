@@ -265,9 +265,14 @@ $("#dlg-folder").addEventListener("close", async () => {
     const r = await api("/api/add", { paths, replace: $("#add-replace").checked, target: t });
     setFiles(r);
     if (r.problems && r.problems.length) toast(r.problems.join("; "), 7000);
+    else if (r.joined) toast(`Each camera's recordings are joined into one continuous recording. To review them one by one, click Separate files on the camera.`, 7000);
     if (r.first) openRec(r.first);   // show the first recording added
   } catch (e) { err(e); }
 });
+function movedNote(r) {
+  if (r.problems && r.problems.length) toast(r.problems.join("; "), 7000);
+  else if (r.joined) toast("The camera's recordings are joined into one continuous recording. To review them one by one, click Separate files on the camera.", 7000);
+}
 function setFiles(r) {
   S.files = r.files || []; S.tree = r.tree || []; S.unassigned = r.unassigned || []; renderFiles();
   if (r.damaged && r.damaged.length) toast(`Couldn't read ${r.damaged.join(", ")}: it may have been damaged (for example while syncing). It's been kept as a copy ending ".damaged-…" beside it, and that information starts again. Details are in error_log.txt.`, 12000);
@@ -296,7 +301,7 @@ function dropZone(box, cameraId) {
     e.preventDefault(); e.stopPropagation(); box.classList.remove("drop");
     const p = S.dragPath; S.dragPath = null; if (!p) return;
     const f = fileRow(p); if (f && f.camera_id === cameraId) return;
-    try { await org({ action: "move", paths: [p], camera: cameraId }); } catch (er) { err(er); }
+    try { movedNote(await org({ action: "move", paths: [p], camera: cameraId })); } catch (er) { err(er); }
   });
 }
 function fileCard(f, cameraId, opt = {}) {
@@ -314,7 +319,7 @@ function fileCard(f, cameraId, opt = {}) {
   const mv = el("select", "cam-move"); mv.setAttribute("aria-label", `Move ${f.name} to another camera`); mv.title = "Move to another camera";
   mv.innerHTML = `<option value="" selected disabled>Move recording to…</option>` + (cameraId ? '<option value="__none">Unassigned</option>' : "")
     + (S.tree || []).map((pj) => pj.surveys.map((sv) => `<optgroup label="${esc(pj.name)} › ${esc(sv.label)}">${sv.cameras.filter((c) => c.id !== cameraId).map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join("")}</optgroup>`).join("")).join("");
-  mv.onchange = async () => { try { await org({ action: "move", paths: [f.path], camera: mv.value === "__none" ? "" : mv.value }); } catch (e) { err(e); } };
+  mv.onchange = async () => { try { movedNote(await org({ action: "move", paths: [f.path], camera: mv.value === "__none" ? "" : mv.value })); } catch (e) { err(e); } };
   const x = el("button", "rm", "×"); x.type = "button";
   x.setAttribute("aria-label", `Remove ${f.name} from the list`); x.title = "Remove from the list (the file isn't deleted)";
   x.onclick = async () => { try { const r = await api("/api/remove", { path: f.path }); if (S.rec && S.rec.path === f.path) location.reload(); setFiles(r); } catch (e) { err(e); } };
@@ -323,12 +328,16 @@ function fileCard(f, cameraId, opt = {}) {
 }
 // Projects, surveys and cameras fold up: the ▸/▾ beside each name. Remembered on this computer.
 S.folded = (() => { try { return new Set(JSON.parse(localStorage.getItem("td-folded") || "[]")); } catch (e) { return new Set(); } })();
-function foldBtn(id, what, box) {
-  const b = el("button", "fold", S.folded.has(id) ? "▸" : "▾"); b.type = "button";
-  const set = () => { const f = S.folded.has(id); box.classList.toggle("folded", f); b.textContent = f ? "▸" : "▾";
+// Projects and surveys start open; cameras start folded (their files hidden),
+// so for a camera what's remembered is that it was opened ("open:<id>").
+function isFolded(id, cam) { return cam ? !S.folded.has("open:" + id) : S.folded.has(id); }
+function setFolded(id, cam, f) { const k = cam ? "open:" + id : id; if (cam ? !f : f) S.folded.add(k); else S.folded.delete(k); }
+function saveFolded() { try { localStorage.setItem("td-folded", JSON.stringify([...S.folded])); } catch (er) {} }
+function foldBtn(id, what, box, cam = false) {
+  const b = el("button", "fold", isFolded(id, cam) ? "▸" : "▾"); b.type = "button";
+  const set = () => { const f = isFolded(id, cam); box.classList.toggle("folded", f); b.textContent = f ? "▸" : "▾";
     b.setAttribute("aria-expanded", String(!f)); b.title = `${f ? "Expand" : "Collapse"} ${what}`; b.setAttribute("aria-label", b.title); };
-  b.onclick = (e) => { e.stopPropagation(); if (S.folded.has(id)) S.folded.delete(id); else S.folded.add(id);
-    try { localStorage.setItem("td-folded", JSON.stringify([...S.folded])); } catch (er) {} set(); };
+  b.onclick = (e) => { e.stopPropagation(); setFolded(id, cam, !isFolded(id, cam)); saveFolded(); set(); };
   set(); return b;
 }
 function renderFiles() {
@@ -378,7 +387,7 @@ function renderFiles() {
       for (const cam of sv.cameras) {
         const g = el("div", "cam-group"); g.dataset.cam = cam.id;
         const head = el("div", "cam-head", ICON_CAM + `<span class="cam-no">Camera ${cam.no}</span>`);
-        head.prepend(foldBtn(cam.id, `Camera ${cam.no}`, g));
+        head.prepend(foldBtn(cam.id, `Camera ${cam.no}`, g, true));
         head.appendChild(nameBox("cam-name", cam.name, `Camera ${cam.no} name`, (v) => org({ action: "rename", id: cam.id, name: v }), "Add a name"));
         const others = tree.flatMap((p) => p.surveys.filter((s) => s.id !== sv.id).map((s) => [s.id, `${p.name} › ${s.label}`]));
         head.appendChild(binBtn(`Camera ${cam.no}`, () => org({ action: "delete", id: cam.id }).catch(err)));
@@ -526,11 +535,10 @@ function renderTree() {
 }
 $("#btn-tree").onclick = () => { renderTree(); $("#dlg-tree").showModal(); };
 $("#btn-fold-all").onclick = () => {
-  const ids = (S.tree || []).flatMap((p) => [p.id, ...p.surveys.flatMap((s) => [s.id, ...s.cameras.map((c) => c.id)])]);
-  const anyOpen = ids.some((i) => !S.folded.has(i));
-  S.folded = new Set(anyOpen ? ids : []);
-  try { localStorage.setItem("td-folded", JSON.stringify([...S.folded])); } catch (e) {}
-  renderFiles();
+  const ids = (S.tree || []).flatMap((p) => [[p.id, false], ...p.surveys.flatMap((s) => [[s.id, false], ...s.cameras.map((c) => [c.id, true])])]);
+  const anyOpen = ids.some(([i, cam]) => !isFolded(i, cam));
+  for (const [i, cam] of ids) setFolded(i, cam, anyOpen);
+  saveFolded(); renderFiles();
 };
 $("#tree-expand").onclick = () => $("#tree-body").querySelectorAll("details").forEach((d) => (d.open = true));
 $("#tree-collapse").onclick = () => $("#tree-body").querySelectorAll("details").forEach((d) => (d.open = false));
@@ -858,7 +866,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-campick";
+const APP_VERSION = "2026.11.18-autojoin";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}

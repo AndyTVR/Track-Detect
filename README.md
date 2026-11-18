@@ -410,6 +410,13 @@ the recordings to its cameras, or start a new survey from the template.
    decision, classification, comments and stills. Choose **PDF** (ready to
    send) or **Word document (.docx)** (to edit before sending).
 
+**Zoom**: the **+** and **−** at the bottom left of the picture zoom in
+(up to 8×) and out; the percentage between them goes back to the whole
+picture (keys `+`, `−` and `0` too). When zoomed in, drag the picture to move
+round it; while drawing an ROI, drag with the middle mouse button instead.
+ROIs drawn while zoomed in are just as accurate. Opening another recording
+goes back to the whole picture.
+
 The **Viewing Mode** bar has four modes (keys `1`–`4`):
 - **Default**: the plain thermal picture, with no filters.
 - **Tracking**: the whole route is built up in one image.

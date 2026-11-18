@@ -96,7 +96,16 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400}
 .rm:hover{border-color:var(--line);color:var(--text)}
 .viewer{padding:0;overflow:hidden;gap:0}
 .stage{position:relative;background:#000;display:flex;justify-content:center;align-items:center;min-height:300px;padding-right:92px}
-.stage img{display:block;max-width:100%;max-height:62vh;user-select:none}
+.stage img{display:block;max-width:100%;max-height:62vh;user-select:none;-webkit-user-drag:none}
+/* zoom and pan the picture */
+.stage{overflow:hidden}
+.stage.zoomed img{cursor:grab}
+.stage.panning img,.stage.panning #roi-svg{cursor:grabbing!important}
+.zoom-ctl{position:absolute;left:12px;bottom:12px;z-index:4;display:flex;align-items:center;border-radius:9px;overflow:hidden;border:1px solid rgba(255,255,255,.18);background:rgba(14,16,20,.85)}
+.zoom-ctl button{all:unset;cursor:pointer;min-width:34px;height:32px;padding:0 6px;text-align:center;color:#E9EEE7;font-size:18px;line-height:32px}
+.zoom-ctl #zoom-reset{font-size:12px;min-width:48px;border-left:1px solid rgba(255,255,255,.14);border-right:1px solid rgba(255,255,255,.14)}
+.zoom-ctl button:hover,.zoom-ctl button:focus-visible{background:rgba(255,255,255,.12)}
+.zoom-ctl button:disabled{opacity:.4;cursor:default}
 .stage.drawing #roi-svg{pointer-events:auto;cursor:crosshair}
 .badges{position:absolute;top:12px;left:12px;display:flex;gap:8px;flex-wrap:wrap}
 .badge{background:rgba(14,16,20,.85);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px}

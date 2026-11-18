@@ -562,6 +562,7 @@ async function refreshFiles() { try { setFiles(await api("/api/files")); } catch
 
 async function openRec(path) {
   stopPlay();
+  if (!S.rec || S.rec.path !== path) { Z.z = 1; Z.x = Z.y = 0; img.style.transform = ""; $("#stage").classList.remove("zoomed"); }
   setEmpty("Opening…", false);
   try {
     S.rec = await api("/api/open", { path });
@@ -572,7 +573,7 @@ async function openRec(path) {
     ["#btn-roi-clear", "#btn-roi-pick"].forEach((s) => ($(s).disabled = false));
     document.querySelectorAll(".shape-btn").forEach((b) => (b.disabled = false));
     S.roiHidden = new Set(); S.roiActive = (S.rec.rois[0] || {}).id; renderRois();
-    $("#empty").hidden = true;
+    $("#empty").hidden = true; $("#zoom-ctl").hidden = false;
     renderFiles(); updateRoiStatus(); await loadActivity(); renderEvents(); renderComments(); renderFilters(); showFrame();
     loadTimes(S.rec.path);   // exact frame times, in the background
   } catch (e) { setEmpty("Could not open this file.", true); err(e); }
@@ -882,7 +883,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-projfolder";
+const APP_VERSION = "2026.11.18-zoom";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -893,6 +894,46 @@ const APP_VERSION = "2026.11.18-projfolder";
 // Shapes: "poly" (click points), "rect" and "ellipse" (drag the middle to
 // move, drag an edge or corner handle to resize). All are saved as outlines.
 const svg = $("#roi-svg");
+// ---- zoom (+ / −) and pan (drag the picture) in the main viewer
+// The picture is scaled and moved with a CSS transform; the ROI drawing layer
+// follows it (drawRoi places it over the picture as shown), so drawing an ROI
+// while zoomed in is just as accurate. Pan with a left-drag on the picture,
+// or a middle-button drag at any time (also while drawing an ROI).
+const Z = { z: 1, x: 0, y: 0, steps: [1, 1.5, 2, 3, 4, 6, 8] };
+function applyZoom() {
+  const w = img.offsetWidth, h = img.offsetHeight;
+  const mx = (w * Z.z - w) / 2, my = (h * Z.z - h) / 2;   // keep the picture covering its own box
+  Z.x = Math.max(-mx, Math.min(mx, Z.x)); Z.y = Math.max(-my, Math.min(my, Z.y));
+  img.style.transform = Z.z > 1 ? `translate(${Z.x}px, ${Z.y}px) scale(${Z.z})` : "";
+  $("#stage").classList.toggle("zoomed", Z.z > 1);
+  $("#zoom-reset").textContent = Math.round(Z.z * 100) + "%";
+  $("#zoom-out").disabled = Z.z <= 1; $("#zoom-in").disabled = Z.z >= Z.steps[Z.steps.length - 1];
+  drawRoi();
+}
+function zoomTo(z) {
+  z = Math.max(1, Math.min(Z.steps[Z.steps.length - 1], z));
+  const f = z / Z.z; Z.x *= f; Z.y *= f; Z.z = z;   // about the middle of what's showing
+  if (z === 1) { Z.x = 0; Z.y = 0; }
+  applyZoom();
+}
+function zoomStep(dir) {
+  const next = dir > 0 ? Z.steps.find((s) => s > Z.z + 1e-6) : [...Z.steps].reverse().find((s) => s < Z.z - 1e-6);
+  zoomTo(next ?? (dir > 0 ? Z.steps[Z.steps.length - 1] : 1));
+}
+$("#zoom-in").onclick = () => zoomStep(1);
+$("#zoom-out").onclick = () => zoomStep(-1);
+$("#zoom-reset").onclick = () => zoomTo(1);
+function startPan(e) {
+  const x0 = e.clientX, y0 = e.clientY, a = Z.x, b = Z.y, st = $("#stage");
+  st.classList.add("panning"); e.preventDefault();
+  const move = (ev) => { Z.x = a + ev.clientX - x0; Z.y = b + ev.clientY - y0; applyZoom(); };
+  const up = () => { st.classList.remove("panning"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+}
+img.addEventListener("pointerdown", (e) => { if (Z.z > 1 && (e.button === 0 || e.button === 1)) startPan(e); });
+svg.addEventListener("pointerdown", (e) => { if (Z.z > 1 && e.button === 1) { e.stopImmediatePropagation(); startPan(e); } }, true);
+$("#stage").addEventListener("auxclick", (e) => { if (e.button === 1) e.preventDefault(); });
+window.addEventListener("resize", () => { if (Z.z > 1) applyZoom(); });
 S.shape = "poly"; S.hover = null; S.box = null; S.drag = null;
 function imgRect() { const r = img.getBoundingClientRect(), s = $("#stage").getBoundingClientRect(); return { x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height }; }
 function toImg(e) {
@@ -2032,6 +2073,9 @@ document.addEventListener("keydown", (e) => {
   else if (k === "Home") { e.preventDefault(); $("#btn-start").click(); }
   else if (k === "End") { e.preventDefault(); $("#btn-end").click(); }
   else if (k === "n") stepEvent(1); else if (k === "p") stepEvent(-1);
+  else if (S.rec && (k === "+" || k === "=")) zoomStep(1);
+  else if (S.rec && (k === "-" || k === "_")) zoomStep(-1);
+  else if (S.rec && k === "0") zoomTo(1);
   else return;
 });
 

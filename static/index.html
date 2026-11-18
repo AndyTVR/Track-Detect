@@ -150,8 +150,13 @@
       </div>
       <div class="stage" id="stage">
         <div id="gap-badge" class="gap-badge" hidden>No recording here: the gap between two joined files</div>
-        <img id="view" alt="Current frame">
+        <img id="view" alt="Current frame" draggable="false">
         <svg id="roi-svg" aria-hidden="true"></svg>
+        <div class="zoom-ctl" id="zoom-ctl" role="group" aria-label="Zoom the picture" hidden>
+          <button id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
+          <button id="zoom-reset" type="button" title="Back to the whole picture (0)">100%</button>
+          <button id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
+        </div>
         <div class="badges">
           <span id="badge-frame" class="badge mono"></span>
         </div>
@@ -687,6 +692,7 @@
             <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Go to the start / end play limit</td></tr>
             <tr><td><kbd>n</kbd> <kbd>p</kbd></td><td>Next / previous event</td></tr>
             <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>Default, Tracking, Detection, Custom viewing modes</td></tr>
+            <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></td><td>Zoom the picture in / out / back to the whole picture (drag to move round when zoomed in; a middle-button drag works while drawing an ROI too)</td></tr>
             <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Add the comment you're typing</td></tr>
             <tr><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> / <kbd>Esc</kbd></td><td>While drawing an ROI: finish / remove last point / cancel (right-click also finishes a polygon)</td></tr>
           </table>

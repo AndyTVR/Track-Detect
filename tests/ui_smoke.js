@@ -65,6 +65,16 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   }
   await p.click("#btn-fold-all"); await p.waitForTimeout(150); await p.click("#btn-fold-all"); await p.waitForTimeout(300);   // fold all, then open all
   check("open all shows the camera files", (await p.locator(".cam-group.folded").count()) === 0);
+  {  // zoom in with +, drag to pan, back to 100%
+    await p.click("#zoom-in"); await p.click("#zoom-in"); await p.waitForTimeout(150);
+    const z = await p.evaluate(() => Z.z);
+    const bx = await p.locator("#view").boundingBox();
+    await p.mouse.move(bx.x + bx.width / 2, bx.y + bx.height / 2); await p.mouse.down(); await p.mouse.move(bx.x + bx.width / 2 + 60, bx.y + bx.height / 2 + 30, { steps: 5 }); await p.mouse.up();
+    const pan = await p.evaluate(() => [Z.x, Z.y]);
+    check("zoom in with + and pan by dragging", z === 2 && pan[0] > 20 && pan[1] > 10, JSON.stringify([z, pan]));
+    await p.click("#zoom-reset"); await p.waitForTimeout(100);
+    check("back to the whole picture", (await p.evaluate(() => [Z.z, Z.x, img.style.transform])).join() === "1,0,");
+  }
   // open synthetic, draw a rectangle, set it with a click
   await p.locator(".file", { hasText: "synthetic" }).click(); await p.waitForTimeout(1200);
   await p.click("[data-shape=rect]"); await p.waitForTimeout(200);

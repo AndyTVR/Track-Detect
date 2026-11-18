@@ -863,7 +863,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-strict";
+const APP_VERSION = "2026.11.18-glide";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1603,6 +1603,19 @@ $("#btn-level-reset").onclick = () => setLevel(null, true);
 
 // ------------------------------------------------------------ events
 function evById(n) { return S.rec.events.find((e) => e.n === n); }
+// a smooth scroll of our own (about half a second, easing out), so it glides
+// the same on every computer whatever the browser's smooth-scroll setting
+function glideTo(box, to, ms = 550) {
+  const from = box.scrollTop, t0 = performance.now();
+  if (Math.abs(to - from) < 2) return;
+  cancelAnimationFrame(box._glide);
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / ms), ease = 1 - Math.pow(1 - k, 3);
+    box.scrollTop = from + (to - from) * ease;
+    if (k < 1) box._glide = requestAnimationFrame(step);
+  };
+  box._glide = requestAnimationFrame(step);
+}
 // After Confirm or Reject moves on: scroll the list smoothly so the event just
 // decided (with its new status, briefly highlighted) is at the top and the next
 // one is in full view below it.
@@ -1614,18 +1627,18 @@ function showAdvance(prevN, nextN) {
   let y = pc && top(pc) < top(nc) ? top(pc) - 4 : top(nc) - 4;
   const nBottom = top(nc) + nc.offsetHeight + 4;
   if (nBottom - y > box.clientHeight) y = nBottom - box.clientHeight;   // the next event must be fully in view
-  box.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+  glideTo(box, Math.max(0, Math.min(y, box.scrollHeight - box.clientHeight)));
   // the list may be below the fold on a small screen: bring the next event into the window too
-  const r = nc.getBoundingClientRect();
-  if (r.bottom > window.innerHeight || r.top < 0) nc.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  setTimeout(() => { const r = nc.getBoundingClientRect();
+    if (r.bottom > window.innerHeight || r.top < 0) nc.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, 600);
 }
-async function selectEvent(n) {
+async function selectEvent(n, glide) {
   stopPlay(); S.sel = n; const e = evById(n);
   const pad = winPad();
   S.ws = Math.max(0, e.f0 - pad); S.we = Math.min(S.rec.frames - 1, e.f1 + pad);
   S.frame = e.f0;
   renderEvents(); drawPlot(); showFrame(); renderComments();
-  const card = document.querySelector(`[data-ev="${n}"]`); card && card.scrollIntoView({ block: "nearest" });
+  const card = document.querySelector(`[data-ev="${n}"]`); if (card && !glide) card.scrollIntoView({ block: "nearest" });
   if (S.cfg && S.cfg.review.auto_play) { $("#in-window").checked = true; S.frame = S.ws; startPlay(1); }
 }
 async function decide(n, body) {
@@ -1635,7 +1648,7 @@ async function decide(n, body) {
     if (S.cfg && S.cfg.review.auto_advance && (body.status === "confirmed" || body.status === "rejected")) {
       const evs = S.rec.events, i = evs.findIndex((e) => e.n === n);
       const next = [...evs.slice(i + 1), ...evs.slice(0, i)].find((e) => e.status === "todo");
-      if (next) { await selectEvent(next.n); showAdvance(n, next.n); } else toast("All events reviewed.");
+      if (next) { await selectEvent(next.n, true); showAdvance(n, next.n); } else toast("All events reviewed.");
     }
   } catch (e) { err(e); }
 }
@@ -1779,6 +1792,7 @@ function renderEvents() {
   renderNoise();
   if (!S.rec.scanned) { box.innerHTML = '<p class="muted small">Draw an ROI, then use Scan camera or Scan project in the recordings list.</p>'; return; }
   if (!evs.length) { box.innerHTML = '<p class="muted small">No spikes reach the detection level. Drag the blue line lower on the plot.</p>'; return; }
+  const keepTop = box.scrollTop;   // rebuilding the list mustn't jump its scroll position
   box.innerHTML = "";
   for (const e of evs) {
     const d = document.createElement("div"); d.className = "ev" + (S.sel === e.n ? " sel" : ""); d.dataset.ev = e.n;
@@ -1839,6 +1853,7 @@ function renderEvents() {
     }
     box.appendChild(d);
   }
+  box.scrollTop = keepTop;
 }
 $("#btn-prev").onclick = () => stepEvent(-1);
 $("#btn-next").onclick = () => stepEvent(1);

@@ -866,7 +866,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-autojoin";
+const APP_VERSION = "2026.11.18-mapcam";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2412,7 +2412,11 @@ function renderMapCams(quiet) {
   box.innerHTML = "";
   for (const cam of sv.cameras) {
     const m = cam.map, row = el("div", "mc" + (MAPS.sel === cam.id ? " sel" : "")); row.dataset.mc = cam.id;
-    row.innerHTML = `<div class="mc-head"><span class="cam-pin-s">${cam.no}</span><b>${esc(cam.label)}</b></div>`;
+    row.innerHTML = `<div class="mc-head"><span class="cam-pin-s">${cam.no}</span><b>Camera ${cam.no}</b><input class="mc-name" type="text" maxlength="40" placeholder="Add a name" aria-label="Camera ${cam.no} name" value="${esc(cam.name || "")}"></div>`;
+    row.querySelector(".mc-name").onchange = async (e) => {
+      const v = e.target.value.trim();
+      try { await api("/api/org", { action: "rename", id: cam.id, name: v }); cam.name = v; cam.label = v ? `Camera ${cam.no}: ${v}` : `Camera ${cam.no}`; drawMap(); } catch (er) { err(er); }
+    };
     if (!m) {
       row.appendChild(smallBtn("Place on map", `Put ${cam.label} in the middle of the map`, () => { const d = camDefaults(cam); MAPS.sel = cam.id; saveCamMap(cam, d); drawMap(); }, "primary"));
     } else {
@@ -2479,6 +2483,16 @@ function renderDets() {
     box.appendChild(row);
   }
 }
+$("#map-add-cam").onclick = async () => {
+  const sv = mapSurvey(); if (!sv) return;
+  try {
+    const r = await api("/api/org", { action: "new_camera", survey: sv.id });
+    const cam = (r.tree || []).flatMap((p) => p.surveys).find((s) => s.id === sv.id).cameras.find((c) => c.id === r.created);
+    sv.cameras.push(cam); MAPS.sel = cam.id;
+    saveCamMap(cam, camDefaults(cam)); drawMap();
+    const inp = $(`#map-cams [data-mc="${cam.id}"] .mc-name`); if (inp) { inp.scrollIntoView({ block: "nearest" }); inp.focus(); }
+  } catch (e) { err(e); }
+};
 $("#map-add-det").onclick = async () => {
   const sv = mapSurvey(); if (!sv) return;
   try { const r = await api("/api/org", { action: "add_detector", survey: sv.id });

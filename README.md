@@ -160,7 +160,9 @@ the recordings to its cameras, or start a new survey from the template.
      Search for a place or postcode (or type latitude, longitude), then
      **Set site here** to pin the site. Pick a survey and enter its
      **Surveyor(s)**.
-     - **Cameras**: **Place on map** each camera, drag its numbered pin to
+     - **Cameras**: **+ Add camera** adds a camera to the survey and puts it
+       on the map (handy when planning before a survey); the box beside each
+       camera's number names it. **Place on map** each camera, drag its numbered pin to
        where it stood, and drag the white dot at the end of its cone to turn
        it and set how far it reaches (or type the facing in degrees and the
        range in metres). Choose the camera and lens (FLIR A70 29°, 51° or

@@ -964,7 +964,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-autojoin"   # must match static/app.js
+APP_VERSION = "2026.11.18-mapcam"   # must match static/app.js
 
 
 @app.get("/api/version")

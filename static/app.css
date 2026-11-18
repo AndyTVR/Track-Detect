@@ -546,6 +546,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .mc{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:pointer}
 .mc.sel{border-color:#2bb7c8;box-shadow:0 0 0 1px #2bb7c8 inset}
 .mc-head{display:flex;align-items:center;gap:8px}
+.mc-name{flex:1;min-width:0;padding:3px 6px;font-size:13px}
 .mc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;font-size:12px}
 .mc-grid [hidden]{display:none}
 .mc-stats{font-size:11px;line-height:1.4}

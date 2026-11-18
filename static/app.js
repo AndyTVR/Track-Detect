@@ -866,7 +866,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-pixel";
+const APP_VERSION = "2026.11.18-pixwarn";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -2304,15 +2304,31 @@ function conePoints(m) {
   for (let k = 0; k <= n; k++) pts.push(geoDest(m.lat, m.lon, m.bearing - m.fov / 2 + m.fov * k / n, m.range));
   return pts;
 }
-// Pixel size at the range: the lens sees 2 × range × tan(angle ÷ 2) across, shared
-// between 640 pixels (480 down). The vertical angle comes from FLIR's lens figures.
 const SENSOR_PY = 480;
-// Pixel size from the lens's field of view and the 640 × 480 resolution alone:
-// the view is 2 × range × tan(FOV ÷ 2) across, shared between 640 pixels;
-// pixels are square, so the view is 480/640 of that high.
+// Pixel size as FLIR's FOV calculator works it out: the lens's spatial
+// resolution (IFOV, mrad per pixel, from FLIR's datasheets for 640 × 480)
+// × the distance. 1 mrad at 1 m is 1 mm. Wide lenses aren't simple
+// trigonometry (the 95° lens is 2.9 mrad at the centre, not 3.4), so
+// FLIR's own figure is used; an "other" lens falls back to the angle ÷ 640.
+const LENS_IFOV = {   // mrad per pixel, at 640 × 480
+  "FLIR A70": { 29: 0.84, 51: 1.5, 95: 2.9 },
+  "FLIR A700": { 14: 0.38, 24: 0.67, 42: 1.2, 80: 2.6 },
+};
+const LENS_V = { 29: 22, 51: 39, 95: 74, 14: 10, 24: 18, 42: 32, 80: 63 };   // FLIR's vertical field of view, degrees
+function ifov(m) { return (m.lens !== "custom" && (LENS_IFOV[m.model] || {})[m.fov]) || 2 * Math.tan(m.fov * Math.PI / 360) / SENSOR_PX * 1000; }
+function vfov(m) { return (m.lens !== "custom" && LENS_V[m.fov]) || 2 * Math.atan(Math.tan(m.fov * Math.PI / 360) * SENSOR_PY / SENSOR_PX) * 180 / Math.PI; }
 function viewW(m) { return 2 * m.range * Math.tan(m.fov * Math.PI / 360); }       // metres across at the range
-function viewH(m) { return viewW(m) * SENSOR_PY / SENSOR_PX; }                    // metres high at the range
-function pixSize(m) { return viewW(m) / SENSOR_PX * 1000; }                       // mm, one pixel (square)
+function viewH(m) { return 2 * m.range * Math.tan(vfov(m) * Math.PI / 360); }     // metres high at the range
+function pixSize(m) { return ifov(m) * m.range; }                                  // mm, one pixel at the range
+const PIX_LIMIT_MM = 100;   // above 10 cm a pixel is larger than a bat: detection can't be guaranteed
+function pixOver(m) { return pixSize(m) > PIX_LIMIT_MM; }
+function cmPix(m) { return `${(pixSize(m) / 10).toFixed(1)} cm per pixel`; }
+function coneStyle(m, sel) { const c = pixOver(m) ? "#e5484d" : "#2bb7c8"; return { color: c, weight: 1.5, fillColor: c, fillOpacity: sel ? 0.42 : 0.28 }; }
+function mapWarn() {   // the warning along the bottom of the map
+  const sv = mapSurvey(), over = (sv ? sv.cameras : []).filter((c) => c.map && pixOver(c.map));
+  const w = $("#map-warn"); w.hidden = !over.length;
+  if (over.length) w.innerHTML = `⚠ <b>Detection cannot be guaranteed where pixels are larger than the bats themselves</b> (over 10 cm per pixel): ${over.map((c) => `${esc(c.label)}, ${cmPix(c.map)} at ${Math.round(c.map.range)} m`).join("; ")}. Bring the range in or use a narrower lens.`;
+}
 function targetPx(m, size = 0.1) { return Math.PI / 4 * (size * 1000 / pixSize(m)) ** 2; }   // pixels on a round target
 const camIcon = (no, sel) => L.divIcon({ className: "cam-pin" + (sel ? " sel" : ""), html: `<span>${no}</span>`, iconSize: [26, 30], iconAnchor: [13, 30] });
 const tipIcon = L.divIcon({ className: "cone-tip", iconSize: [14, 14], iconAnchor: [7, 7] });
@@ -2386,22 +2402,24 @@ function drawMap() {
   for (const cam of (sv ? sv.cameras : [])) {
     const m = cam.map; if (!m) continue;
     const sel = MAPS.sel === cam.id;
-    const cone = L.polygon(conePoints(m), { color: "#2bb7c8", weight: 1.5, fillColor: "#2bb7c8", fillOpacity: sel ? 0.42 : 0.28, interactive: true }).addTo(MAPS.layer);
+    const cone = L.polygon(conePoints(m), { ...coneStyle(m, sel), interactive: true }).addTo(MAPS.layer);
     cone.on("click", () => { MAPS.sel = cam.id; drawMap(); });
     const pin = L.marker([m.lat, m.lon], { draggable: true, icon: camIcon(cam.no, sel), title: cam.label, zIndexOffset: 1000 }).addTo(MAPS.layer);
     const tipAt = geoDest(m.lat, m.lon, m.bearing, m.range);
     const tip = L.marker(tipAt, { draggable: true, icon: tipIcon, title: `Turn ${cam.label} or change how far it reaches`, zIndexOffset: 900 }).addTo(MAPS.layer);
+    const label = () => tip.setTooltipContent(cmPix(m)) && tip.getTooltip() && tip.getTooltip().getElement() && tip.getTooltip().getElement().classList.toggle("over", pixOver(m));
+    tip.bindTooltip(cmPix(m), { permanent: true, direction: "right", offset: [10, 0], className: "pix-label" + (pixOver(m) ? " over" : "") });
     pin.on("click", () => { MAPS.sel = cam.id; drawMap(); });
     pin.on("drag", () => { const p = pin.getLatLng(); m.lat = p.lat; m.lon = p.lng; cone.setLatLngs(conePoints(m)); tip.setLatLng(geoDest(m.lat, m.lon, m.bearing, m.range)); });
     pin.on("dragend", () => { saveCamMap(cam, m); renderMapCams(); });
     tip.on("drag", () => {
       const p = tip.getLatLng(), c = L.latLng(m.lat, m.lon);
       m.bearing = Math.round(geoBearing(c, p)); m.range = Math.max(1, Math.round(c.distanceTo(p)));
-      cone.setLatLngs(conePoints(m)); renderMapCams(true);
+      cone.setLatLngs(conePoints(m)); cone.setStyle(coneStyle(m, sel)); label(); mapWarn(); renderMapCams(true);
     });
     tip.on("dragend", () => { saveCamMap(cam, m); renderMapCams(); });
   }
-  renderMapCams();
+  renderMapCams(); mapWarn();
 }
 // each camera and detector in the Site Plan folds to one line; the one picked
 // on the map opens, and the program remembers which are open
@@ -2431,7 +2449,7 @@ function renderMapCams(quiet) {
   for (const cam of sv.cameras) {
     const m = cam.map, row = el("div", "mc" + (MAPS.sel === cam.id ? " sel" : "")); row.dataset.mc = cam.id;
     row.innerHTML = `<div class="mc-head"><span class="cam-pin-s">${cam.no}</span><b>Camera ${cam.no}</b><input class="mc-name" type="text" maxlength="40" placeholder="Add a name" aria-label="Camera ${cam.no} name" value="${esc(cam.name || "")}"></div>`;
-    mapFold(row, cam.id, cam.label, m ? `${esc(m.model)} ${m.fov}° · facing ${Math.round(m.bearing)}° · ${Math.round(m.range)} m · pixel ${pixSize(m).toFixed(1)} mm` : "Not on the map yet");
+    mapFold(row, cam.id, cam.label, m ? `${esc(m.model)} ${m.fov}° · facing ${Math.round(m.bearing)}° · ${Math.round(m.range)} m · <span class="${pixOver(m) ? "over" : ""}">${cmPix(m)}</span>` : "Not on the map yet");
     row.querySelector(".mc-name").onchange = async (e) => {
       const v = e.target.value.trim();
       try { await api("/api/org", { action: "rename", id: cam.id, name: v }); cam.name = v; cam.label = v ? `Camera ${cam.no}: ${v}` : `Camera ${cam.no}`; drawMap(); } catch (er) { err(er); }
@@ -2520,7 +2538,7 @@ $("#map-add-det").onclick = async () => {
     (sv.detectors = sv.detectors || []).push(d); MAPS.sel = d.id; drawMap(); } catch (e) { err(e); }
 };
 function camStats(m) {
-  return `<b>Pixel size ${pixSize(m).toFixed(1)} mm</b> at ${Math.round(m.range)} m · view ${viewW(m).toFixed(1)} × ${viewH(m).toFixed(1)} m · ${targetPx(m).toFixed(1)} px on a 0.1 m target · ${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}`;
+  return `<b class="${pixOver(m) ? "over" : ""}">Pixel size ${(pixSize(m) / 10).toFixed(1)} cm</b> at ${Math.round(m.range)} m${pixOver(m) ? ' <span class="over">· larger than a bat</span>' : ""} · view ${viewW(m).toFixed(1)} × ${viewH(m).toFixed(1)} m · ${targetPx(m).toFixed(1)} px on a 0.1 m target · ${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}`;
 }
 async function setSite(ll) {
   try {
@@ -2541,7 +2559,7 @@ $("#map-template").onclick = async () => {
 $("#map-print").onclick = () => {
   const pj = mapProject(), sv = mapSurvey(); if (!pj) return;
   const cams = (sv ? sv.cameras : []).filter((c) => c.map);
-  const rows = cams.map((c) => { const m = c.map; return `<tr><td>${c.no}</td><td>${esc(c.label)}</td><td>${esc(m.model)} ${m.fov}°</td><td>${Math.round(m.bearing)}°</td><td>${Math.round(m.range)} m</td><td>${pixSize(m).toFixed(1)} mm</td><td>${targetPx(m).toFixed(2)} px</td><td>${esc(c.surveyor || "")}</td><td>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</td></tr>`; }).join("");
+  const rows = cams.map((c) => { const m = c.map; return `<tr><td>${c.no}</td><td>${esc(c.label)}</td><td>${esc(m.model)} ${m.fov}°</td><td>${Math.round(m.bearing)}°</td><td>${Math.round(m.range)} m</td><td>${(pixSize(m) / 10).toFixed(1)} cm${pixOver(m) ? " ⚠" : ""}</td><td>${targetPx(m).toFixed(2)} px</td><td>${esc(c.surveyor || "")}</td><td>${m.lat.toFixed(6)}, ${m.lon.toFixed(6)}</td></tr>`; }).join("");
   const dets = (sv ? sv.detectors || [] : []);
   const drows = dets.map((d) => `<tr><td>A${d.no}</td><td>${esc(d.name)}</td><td>${esc(d.model)}</td><td>${esc(d.serial)}</td><td>${esc(d.surveyor)}</td><td>${d.range ? Math.round(d.range) + " m" : ""}</td><td>${esc(d.notes)}</td><td>${d.map ? d.map.lat.toFixed(6) + ", " + d.map.lon.toFixed(6) : "not placed"}</td></tr>`).join("");
   const d = new Date();

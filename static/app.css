@@ -537,6 +537,14 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .map-side select,.map-side input{height:32px;padding:0 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);min-width:0}
 .map-side label{display:flex;flex-direction:column;gap:3px}
 .map{flex:1;min-width:0;background:#1a1f1a}
+.map-area{flex:1;min-width:0;position:relative;display:flex;flex-direction:column}
+.map-area .map{flex:1}
+.map-warn{position:absolute;left:12px;right:12px;bottom:28px;z-index:1000;padding:10px 14px;border-radius:10px;background:#3a1214;border:1px solid #e5484d;color:#ffd9da;font-size:13px;line-height:1.45;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.map-warn b{color:#fff}
+.pix-label{background:rgba(10,14,10,.82);color:#e8f3e8;border:1px solid #2bb7c8;font-size:11px;padding:1px 6px;box-shadow:none}
+.pix-label.over{border-color:#e5484d;color:#ffd9da}
+.pix-label::before{display:none}
+.mc-stats .over,.mc-sum .over{color:#ff6b70}
 .map-search{display:flex;gap:6px}
 .map-search input{flex:1}
 .map-results{display:flex;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:4px;font-size:12px}
@@ -577,6 +585,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   body.printing-plan .map-side,body.printing-plan .leaflet-control-zoom,body.printing-plan .leaflet-control-layers,body.printing-plan .cone-tip{display:none!important}
   body.printing-plan .map-wrap{display:block;height:auto}
   body.printing-plan .map{height:150mm;width:100%}
+  body.printing-plan .map-area{display:block}
+  body.printing-plan .map-warn{position:static;margin-top:3mm;background:#fff;color:#a00;border-color:#a00}
   body.printing-plan .plan-print{display:block;color:#000;font:11px/1.4 Arial,sans-serif;margin-top:6mm}
   .plan-print h1{font-size:18px;margin:0 0 2mm}
   .plan-print table{width:100%;border-collapse:collapse;margin-top:3mm}

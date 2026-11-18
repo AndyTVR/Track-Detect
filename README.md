@@ -169,11 +169,18 @@ the recordings to its cameras, or start a new survey from the template.
        it and set how far it reaches (or type the facing in degrees and the
        range in metres). Choose the camera and lens (FLIR A70 29°, 51° or
        95°; FLIR A700 14°, 24°, 42° or 80°; or another angle) and who set it
-       up. Each camera shows its **pixel size** at that range, by
-       trigonometry: the lens sees 2 × range × tan(angle ÷ 2) across,
-       shared between 640 pixels. Pixels are square, so the view is 480/640
-       of that high. Also shown: the view's width and height, and the pixels
-       covering a round 0.1 m target.
+       up. Each camera shows its **pixel size** at that range, worked out
+       as FLIR's FOV calculator does: the lens's spatial resolution (IFOV)
+       × the range, using FLIR's datasheet figures for 640 × 480 (A70: 29°
+       0.84, 51° 1.5, 95° 2.9 mrad; A700: 14° 0.38, 24° 0.67, 42° 1.2,
+       80° 2.6 mrad). 1 mrad at 1 m is 1 mm. For another lens angle it
+       falls back to 2 × range × tan(angle ÷ 2) ÷ 640. Also shown: the
+       view's width and height (from FLIR's field of view for the lens) and
+       the pixels covering a round 0.1 m target. The pixel size is labelled
+       at the end of each cone. If a pixel is over **10 cm** at the camera's
+       range, its cone turns red and a warning along the bottom of the map
+       says detection can't be guaranteed where pixels are larger than the
+       bats themselves.
      - **Acoustic detectors**: **+ Add detector** for each one, with its
        name, surveyor, model (common models are suggested as you type),
        serial number, a rough detection range (drawn as a dashed circle) and

@@ -491,6 +491,7 @@ def _read_project_file(path):
             if q not in state["files"]:
                 state["files"].append(q)
             found += 1
+    org_mod.OPEN.add(new["id"])
     _save_org()
     return {"opened": found, "missing": len(d.get("of") or {}) - found, "project": new["id"]}
 
@@ -709,6 +710,7 @@ def _org_close_project(b, org, out, act):
     n = _node(b.get("id"))
     if not n or n[0] != "project":
         raise UserError("That project no longer exists")
+    org_mod.OPEN.discard(n[1]["id"])
     gone = set(_paths_under(n[1]["id"]))
     _refresh_joins()
     gone |= {vp for vp, cid in JOIN_CAM.items() if _node(cid) and _node(cid)[2] is n[1]}
@@ -823,9 +825,16 @@ def _org_list_projects(b, org, out, act):
                                 "cameras": sum(len(sv["cameras"]) for sv in pj["surveys"]),
                                 "recordings": len(paths), "missing": sum(1 for x in paths if not os.path.exists(x)),
                                 "listed": sum(1 for x in paths if x in state["files"]),
+                                "open": pj["id"] in org_mod.OPEN or any(x in state["files"] for x in paths),
                                 "pre_survey": bool(pj.get("pre_survey")), "template": len(pj.get("template") or []),
                                 "placed": sum(1 for sv in pj["surveys"] for c in sv["cameras"] if c.get("map")),
                                 "dates": sorted({sv["date"] for sv in pj["surveys"] if sv.get("date")})})
+
+
+def _org_reset_session(b, org, out, act):
+    """the window has just opened: nothing listed, no project open"""
+    state["files"], state["current"] = [], None
+    org_mod.OPEN.clear()
 
 
 def _org_open_project(b, org, out, act):
@@ -835,6 +844,8 @@ def _org_open_project(b, org, out, act):
         raise UserError("That project no longer exists")
     if b.get("replace"):
         state["files"] = []
+        org_mod.OPEN.clear()
+    org_mod.OPEN.add(n[1]["id"])
     cids = {c["id"] for sv in n[1]["surveys"] for c in sv["cameras"]}
     found = sorted((x for x, c in org["of"].items() if c in cids and os.path.exists(x)), key=lambda x: (x.lower()))
     for x in found:
@@ -881,6 +892,7 @@ _ORG_ACTIONS = {
     "join": _org_join,
     "list_projects": _org_list_projects,
     "open_project": _org_open_project,
+    "reset_session": _org_reset_session,
     "move_camera": _org_move_camera,
 }
 
@@ -964,7 +976,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-pixwarn"   # must match static/app.js
+APP_VERSION = "2026.11.18-session"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -1232,7 +1244,7 @@ def activity():
     a = int(request.args.get("a", 0))
     b = int(request.args.get("b", n - 1))
     pts = max(50, min(4000, int(request.args.get("points", 1200))))
-    act = r.activity
+    act = r.shown(r.activity)
     rng = [float(np.percentile(act, 1)), float(act.max())] if act is not None and len(act) else None
     return jsonify(values=r.activity_range(a, b, pts), series=r.activity_series(a, b, pts), frames=n, units=r.src.units, range=rng,
                    level=r.state.get("level"), suggested_level=r.state.get("suggested_level"))

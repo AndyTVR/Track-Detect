@@ -142,3 +142,31 @@ def test_spike_at_each_join_is_left_out():
     assert not ign[5000:5010].any()
     evs = detect_events(np.where(ign, -np.inf, x).astype(np.float32), fps, level=0.4)
     assert [(e.f0, e.f1) for e in evs] == [(5000, 5009)]
+
+
+def test_camera_freezes_are_left_out_and_spikes_flattened():
+    """A camera recalibrating freezes the picture for about a second (activity
+    exactly zero), then the scan filters see a jump: a block of equal values.
+    That is left out of events, and left-out spikes are plotted at the
+    background level."""
+    import types
+    import numpy as np
+    from emergence import session
+    from emergence.analysis import detect_events, frozen_mask
+    fps, rng = 19.0, np.random.default_rng(2)
+    x = (0.12 + 0.03 * rng.standard_normal(20000)).astype(np.float32)
+    x[97:116] = 0.0                       # frozen
+    x[116:121] = 1.63                     # the jump, 5 frames
+    x[8000:8008] = 1.4                    # a bat
+    x[12000:12020] = 0.0                  # another freeze, small jump
+    x[19997:] = 380.0                     # end spike
+    m = frozen_mask(x, 5)
+    assert m[97:121].all() and m[12000:12026].all() and not m[8000:8008].any()
+    src = types.SimpleNamespace(fps=fps, units="°C")
+    rec = object.__new__(session.Recording)
+    rec.src = src
+    ign = rec._ignored(x)
+    evs = detect_events(np.where(ign, -np.inf, x).astype(np.float32), fps, level=0.6)
+    assert [(e.f0, e.f1) for e in evs] == [(8000, 8007)]
+    shown = rec.shown(x)
+    assert shown.max() < 2 and abs(shown[19998] - np.median(x)) < 0.05

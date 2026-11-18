@@ -232,6 +232,29 @@ def end_spike(activity: np.ndarray, fps: float, units: str = "°C") -> int | Non
     return max(0, a - int(fps))           # a second of margin before it
 
 
+def frozen_mask(activity: np.ndarray, preroll: int = 5, min_run: int = 3) -> np.ndarray:
+    """Frames where the camera's picture froze, and the few frames after.
+
+    FLIR cameras recalibrate every few minutes (the shutter closes, a NUC):
+    the picture stays exactly the same for about a second, so the activity is
+    flat at zero, then jumps when it moves again. The scan filters compare each
+    frame with one `preroll` frames before, so that jump shows as a block of
+    `preroll` equal values, which can look like an event. A bat can't be seen
+    while the picture is frozen, so the freeze and those frames are left out."""
+    n = len(activity)
+    out = np.zeros(n, bool)
+    if n < 10:
+        return out
+    base = float(np.median(activity))
+    tiny = max(1e-4, 0.02 * abs(base))
+    z = np.abs(activity) < tiny
+    d = np.diff(np.r_[0, z.astype(np.int8), 0])
+    for a, b in zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)):
+        if b - a >= min_run:
+            out[a:min(n, b + int(preroll) + 1)] = True
+    return out
+
+
 def detect_events(activity: np.ndarray, fps: float, level: float | None = None,
                   merge_s: float = 2.0, units: str = "°C", sensitivity: float = 6.0,
                   min_frames: int = 1) -> list[Event]:

@@ -8,7 +8,7 @@ const [URL, DIR, OUT] = process.argv.slice(2);
   await p.addInitScript(() => { try { localStorage.clear(); } catch (e) {} });
   await p.goto(URL); await p.waitForTimeout(800);
   await p.screenshot({ path: OUT + "/0-empty.png" });
-  await p.click("#btn-open"); await p.click("#om-new"); await p.fill("#np-name", "Visual"); await p.click("#np-go"); await p.waitForTimeout(400);
+  await p.click("#sd-new"); await p.fill("#np-name", "Visual"); await p.click("#np-go"); await p.waitForTimeout(400);
   await p.fill("#folder-input", ["rhino front 1.ats", "rhino rear 1.ats", "synthetic.ats"].map((n) => DIR + "/" + n).join("\n"));
   await p.selectOption("#add-cam", "__auto"); await p.waitForTimeout(200);
   await p.locator("#dlg-folder").screenshot({ path: OUT + "/1-add.png" });

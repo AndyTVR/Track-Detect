@@ -71,7 +71,7 @@ def _auto_top(peaks, base):
 
 def activity_drawing(rec, width_mm=174, height_mm=70):
     """The activity trace with the detection level and the events, as vectors."""
-    act, src = rec.activity, rec.src
+    act, src = rec.shown(rec.activity), rec.src
     level = rec.state.get("level")
     evs = rec.state.get("events", [])
     W, H = width_mm * mm, height_mm * mm
@@ -112,7 +112,7 @@ def activity_drawing(rec, width_mm=174, height_mm=70):
     line = []
     for x, v in zip(xs, ys):
         line += [fx(x), fy(v)]
-    traces = [(rec.acts[r["id"]], rec.roi_colour(r["id"])) for r in rec.rois if r["id"] in getattr(rec, "acts", {})]
+    traces = [(rec.shown(rec.acts[r["id"]]), rec.roi_colour(r["id"])) for r in rec.rois if r["id"] in getattr(rec, "acts", {})]
     multi = len(traces) > 1
     if multi:   # several ROIs: each trace in its ROI's colour
         for a, hexc in traces:
@@ -644,7 +644,7 @@ def _write_docx(rec, blocks, out_path, opts):
 def activity_png(rec, width_px=1740, height_px=700):
     """The activity plot as a picture, for the Word report (same content as
     activity_drawing)."""
-    act, src = rec.activity, rec.src
+    act, src = rec.shown(rec.activity), rec.src
     level = rec.state.get("level")
     evs = rec.state.get("events", [])
     W, H = width_px, height_px
@@ -679,7 +679,7 @@ def activity_png(rec, width_px=1740, height_px=700):
         cv2.rectangle(over, (x0, T), (x1, H - Bm), bgr, -1)
         cv2.putText(img, str(e["n"]), ((x0 + x1) // 2 - 8, T - 12), font, 0.7, bgr, 2, cv2.LINE_AA)
     img = cv2.addWeighted(over, 0.15, img, 0.85, 0)
-    traces = [(rec.acts[r["id"]], rec.roi_colour(r["id"])) for r in rec.rois if r["id"] in rec.acts]
+    traces = [(rec.shown(rec.acts[r["id"]]), rec.roi_colour(r["id"])) for r in rec.rois if r["id"] in rec.acts]
     if len(traces) <= 1:
         traces = [(act, "#9AA1AC")]
     for a, hexc in traces:

@@ -11,7 +11,7 @@ from dataclasses import asdict
 
 import numpy as np
 
-from .analysis import SCAN_ID, clean_filters, end_spike, detect_events, roi_mask, scan, scan_multi, suggest, suggested_level, track_window, Event
+from .analysis import SCAN_ID, Pipeline, clean_filters, end_spike, frozen_mask, detect_events, mode_cfg, roi_mask, scan, scan_multi, suggest, suggested_level, track_window, Event
 from .ats import ATSFile
 from .render import Renderer, export_event
 from . import settings as cfg
@@ -383,20 +383,48 @@ class Recording:
         return s if s is not None else max(1, len(act) - 1)
 
     def _ignored(self, act):
-        """Frames left out of events and statistics: the end cut, gaps in a
-        joined recording, and the end of each joined file (cameras often write
-        a few very hot frames as they stop), plus each file's final frame."""
+        """Frames left out of events and statistics, because they come from the
+        camera rather than the survey:
+          - every time the picture froze while the camera recalibrated, and the
+            few frames after, when the scan filters see it jump (frozen_mask);
+          - the end: a very large spike (cameras often write a few very hot
+            frames as they stop), and the final frame (_cut);
+          - in a joined recording, the same end spike at the end of every file,
+            the first few frames of each file after the first (the scan filters
+            compare them with the file before), and the gaps between files."""
         n = len(act)
-        ign = np.zeros(n, bool)
+        fps, units = self.src.fps, self.src.units
+        pre = Pipeline(**mode_cfg("scan")).preroll
+        ign = frozen_mask(act, pre)
         ign[self._cut(act):] = True
         if hasattr(self.src, "gap_mask"):
             ign |= self.src.gap_mask[:n]
-            for a, b in self.src.part_ranges:
-                if b >= n:
+            for k, (a, b) in enumerate(self.src.part_ranges):
+                if a >= n:
                     continue
-                s = end_spike(act[a:b + 1], self.src.fps, self.src.units)
+                b = min(b, n - 1)
+                seg = act[a:b + 1]
+                s = end_spike(seg, fps, units)
                 ign[(a + s) if s is not None else b:b + 1] = True
+                if k:
+                    ign[a:a + pre] = True
         return ign
+
+    def shown(self, act):
+        """A trace as plotted and reported: frames left out because the camera
+        was starting or stopping are drawn at the background level instead of
+        as huge spikes (gaps stay at zero)."""
+        if act is None or not len(act):
+            return act
+        ign = self._ignored(act)
+        if hasattr(self.src, "gap_mask"):
+            ign &= ~self.src.gap_mask[:len(act)]
+        if not ign.any():
+            return act
+        keep = act[~self._ignored(act)]
+        out = act.copy()
+        out[ign] = float(np.median(keep)) if len(keep) else 0.0
+        return out
 
     def _suggest_scanned(self):
         """Suggested level from every ROI's scanned frames, before its end cut."""
@@ -507,7 +535,7 @@ class Recording:
 
     def activity_range(self, a: int, b: int, points: int):
         """Max-pooled combined activity between frames a and b, for the zoomable plot."""
-        act = self.activity
+        act = self.shown(self.activity)
         if act is None:
             return []
         a, b = max(0, int(a)), min(len(act) - 1, int(b))
@@ -517,7 +545,7 @@ class Recording:
         """The same, for each scanned ROI."""
         n = self.src.n_frames
         a, b = max(0, int(a)), min(n - 1, int(b))
-        return {r["id"]: self._pool(self.acts[r["id"]], a, b, points) for r in self.rois if r["id"] in self.acts}
+        return {r["id"]: self._pool(self.shown(self.acts[r["id"]]), a, b, points) for r in self.rois if r["id"] in self.acts}
 
     def event_roi_points(self, ev):
         r = self.roi_by_id(ev.get("roi"))

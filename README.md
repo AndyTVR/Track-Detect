@@ -43,9 +43,13 @@ Double-click the **Track and Detect** desktop shortcut, or **Run Track and
 Detect.bat**. The app opens in its own window. Closing that window, or
 clicking **Quit** in the top bar, closes it.
 
-A start window asks what you'd like to do: **Open existing analysis
-project**, **New analysis project**, **Open existing pre-survey template**
-or **New pre-survey template**. **Skip** carries on with whatever is listed.
+The program opens with nothing loaded: no project and no recordings. A
+start window asks what you'd like to do: **Open existing analysis
+project**, **New analysis project**, **Open existing pre-survey template**,
+**New pre-survey template**, or **Add files without a project**. **Skip**
+closes it. The folder button at the top right opens the same window at any
+time. A project shows in the Recordings list once you've made or opened it;
+**Close project** takes it off again (it stays saved).
 
 A **pre-survey template** is a project planned before the survey: its Site
 Plan opens straight away, so you can find the site and place the cameras
@@ -53,16 +57,16 @@ and acoustic detectors where they will go. Each time the Site Plan is
 closed, it's saved as the project's site plan template. On the night, add
 the recordings to its cameras, or start a new survey from the template.
 
-1. **Add recordings.** Click the folder button in the top bar. It offers:
-   - **New analysis project…**: name a project (and Survey 1's date if you like),
+1. **Add recordings.** Click the folder button in the top bar for the start
+   window:
+   - **New analysis project**: name a project (and Survey 1's date if you like),
      then add recordings straight into it;
-   - **New pre-survey template…** and **Open pre-survey template…**, as in
-     the start window;
-   - **Open analysis project…**: every project you've made, with its surveys,
-     cameras and recordings. **Open** lists all its recordings again (any
-     that have been moved or deleted are skipped);
-   - **Add files…**, also on the **Add Recording** button in the middle of
-     the empty picture.
+   - **Open existing analysis project**: every project you've made, with its
+     surveys, cameras and recordings. **Open** lists all its recordings again
+     (any that have been moved or deleted are skipped);
+   - the pre-survey template options, as above;
+   - **Add files without a project**, also on the **Add Recording** button
+     in the middle of the empty picture.
 
    In the Add dialog: choose individual `.ats` files, a whole survey folder,
    or paste paths, one per line (the box grows as you add lines, then
@@ -145,7 +149,8 @@ the recordings to its cameras, or start a new survey from the template.
      it. The program remembers what you've opened or folded.
    - The Event Log names the camera you're looking at (camera, survey,
      project), or "Unassigned".
-   - The **⚙** beside PROJECT holds the project's options: **Save project**
+   - The save icon beside PROJECT saves the project; the **⚙** next to it
+     holds the project's options: **Save project**
      (everything is saved as you go; this also writes `<project>.tdproject`
      beside its recordings, a project file to keep or share), **Rename**,
      **Site plan**, **New survey** (from the site plan, if there is
@@ -257,6 +262,14 @@ the recordings to its cameras, or start a new survey from the template.
    recording. It never becomes an event, and it doesn't affect the suggested
    level or set the plot's height. It's shaded grey on the plot and noted in
    the PDF report. The final frame of every recording is never used either.
+   In a joined recording the same goes for the spike at the end of each file.
+   **Camera recalibrations** are left out too: every few minutes a FLIR
+   camera's picture freezes for about a second while its shutter
+   recalibrates, then jumps when it moves again, which the scan filters can
+   turn into a short flat "event". The freeze and the 5 frames after it are
+   left out (no bat can be seen while the picture is frozen). On the plot
+   and in reports, the frames left out are drawn at the background level, so
+   a huge end spike doesn't flatten the rest of the trace.
 4. **Set the detection level.** The level box, with **Suggested**, is at
    the top of the Event Log. With several ROIs, each ROI's trace is drawn in
    its colour; click an ROI's name above the plot to hide or show it. Each
@@ -463,7 +476,7 @@ Settings are saved in `settings.json` in the program folder.
 | Exports | Default export folder, which items are ticked, overlays, timestamp text size, file-name order, video quality and slow-motion export (½ or ¼ speed). |
 | Time & units | Pixel values as temperature or raw counts (the colour bar, plot, level and exports follow it; scanned recordings are converted), °C or °F, UK time or UTC, and a camera clock correction in seconds if a camera's clock was wrong. It applies to everything shown, exported and reported. Switching °C/°F converts scans already done; no rescan needed. |
 | Classifications | Your own list for the Classification menu, for example species groups. |
-| Review | Jump to the next unreviewed event after Confirm / Reject. Start playing when an event is selected. |
+| Review | Jump to the next unreviewed event after Confirm / Reject: the list scrolls so the event you just decided (briefly highlighted, with its new status) is at the top and the next one is in full view below it. Start playing when an event is selected. |
 | Report details | Company, contact, analyst and camera for reports. |
 | Shortcuts | A list of keyboard shortcuts. |
 

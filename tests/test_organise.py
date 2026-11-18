@@ -205,3 +205,22 @@ def test_dragging_a_second_file_onto_a_camera_joins_them(td):
     r = td.org(action="move", paths=[b], camera=cid)
     c = [c for pj in r["tree"] for sv in pj["surveys"] for c in sv["cameras"] if c["id"] == cid][0]
     assert r.get("joined") == 1 and c["join"] and c["joined"]
+
+
+def test_new_window_starts_empty_and_close_hides_empty_project(td):
+    """A new window opens nothing; a project shows once made or opened, and
+    closing it takes it off the list even when it has no recordings."""
+    a = td.path("rhino front 1.ats")
+    pid = td.org(action="new_project", name="Empty")["created"]
+    td.org(action="new_project", name="Full")
+    full = [p for p in td.files()["tree"] if p["name"] == "Full"][0]
+    td.add(a, target={"camera": full["surveys"][0]["cameras"][0]["id"]})
+    r = td.org(action="reset_session")
+    assert r["files"] == [] and r["tree"] == [] and r["current"] is None
+    projects = td.org(action="list_projects")["projects"]
+    assert len(projects) == 2 and not any(p["open"] for p in projects)
+    empty = [p for p in projects if p["name"] == "Empty"][0]
+    r = td.org(action="open_project", id=empty["id"])
+    assert [p["name"] for p in r["tree"]] == ["Empty"]
+    r = td.org(action="close_project", id=empty["id"])
+    assert r["tree"] == []

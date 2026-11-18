@@ -35,16 +35,8 @@
     <button id="btn-settings" class="btn icon-btn" aria-haspopup="dialog" title="Settings" aria-label="Settings">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 </button>
-    <span class="open-wrap"><button id="btn-open" class="btn icon-btn" title="Projects and recordings" aria-label="Projects and recordings" aria-haspopup="true" aria-expanded="false" aria-controls="open-menu">
+    <button id="btn-open" class="btn icon-btn" title="Open or start a project" aria-label="Open or start a project">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1"/><path d="M3 7v10a2 2 0 0 0 2 2h13.5a2 2 0 0 0 1.9-1.4L22.5 12a1.5 1.5 0 0 0-1.4-2H8.2a2 2 0 0 0-1.9 1.4L3.5 19"/></svg></button>
-      <div id="open-menu" class="persist-menu open-menu" role="menu" hidden>
-        <button type="button" class="menu-item" id="om-new" role="menuitem">New analysis project…</button>
-        <button type="button" class="menu-item" id="om-open" role="menuitem">Open analysis project…</button>
-        <button type="button" class="menu-item" id="om-add" role="menuitem">Add files…</button>
-        <hr class="menu-sep">
-        <button type="button" class="menu-item" id="om-tnew" role="menuitem">New pre-survey template…</button>
-        <button type="button" class="menu-item" id="om-topen" role="menuitem">Open pre-survey template…</button>
-      </div></span>
     <button id="btn-quit" class="btn" title="Close Track &amp; Detect">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
       Quit</button>
@@ -359,7 +351,7 @@
         <button type="button" id="sd-tnew" class="start-btn"><b>New pre-survey template</b><span class="small muted">Plan camera and detector positions on the map before the survey</span></button>
       </div>
     </div>
-    <div class="row wrap between"><span id="sd-note" class="small muted"></span><button value="cancel" class="btn" id="sd-skip">Skip</button></div>
+    <div class="row wrap between"><span class="row wrap"><button type="button" id="sd-add" class="btn sm">Add files without a project…</button><span id="sd-note" class="small muted"></span></span><button value="cancel" class="btn" id="sd-skip">Skip</button></div>
   </form>
 </dialog>
 

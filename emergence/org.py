@@ -46,6 +46,10 @@ def configure(data, listed):
 # camera are "unassigned". All of it is remembered in cameras.json in the
 # settings folder; each recording is filed by its camera's id.
 _ORG = {"projects": [], "of": {}, "n": 0, "loaded": False}
+# Projects open in this session. Nothing is open when the program starts: a
+# project shows in the list once it's made or opened, or a recording in it is
+# listed, and goes when it's closed.
+OPEN = set()
 _GENERIC_STEMS = {"rec", "record", "recording", "video", "file", "ats", "seq", "sequence", "clip", "capture"}
 
 
@@ -72,6 +76,7 @@ def _org():
     if not _ORG["loaded"]:
         import json, re
         _ORG["loaded"] = True
+        OPEN.clear()
         d = read_json(_cams_path())   # a damaged file is kept as a copy, not overwritten
         if not isinstance(d, dict):
             d = {}
@@ -185,6 +190,7 @@ def _new_project(name=""):
         name = f"Project {k}"
     pj = {"id": _nid("p"), "name": name, "surveys": []}
     _org()["projects"].append(pj)
+    OPEN.add(pj["id"])
     return pj
 
 
@@ -357,18 +363,15 @@ def org_tree(rows):
     recordings from one camera that overlap in time (they shouldn't: one camera
     records one file at a time). Files whose frame rate had to be assumed are
     left out of that check, and 2 s of overlap is allowed for. A project is
-    shown if a listed recording is in it, or if nothing has been put in it yet."""
+    shown if it's open (made or opened this session) or a listed recording is in it."""
     listed = {r["path"] for r in rows}
     byc = {}
     for r in rows:
         byc.setdefault(r["camera_id"], []).append(r)
-    used = {}
-    for p, cid in _org()["of"].items():
-        used.setdefault(cid, set()).add(p)
     tree = []
     for pj in _org()["projects"]:
         cids = [c["id"] for sv in pj["surveys"] for c in sv["cameras"]]
-        shown = any(byc.get(c) for c in cids) or not any(used.get(c) for c in cids)
+        shown = any(byc.get(c) for c in cids) or pj["id"] in OPEN
         if not shown:
             continue
         surveys = []

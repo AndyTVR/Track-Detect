@@ -137,10 +137,8 @@ function addTarget() {
     camera: c === "__auto" ? { auto: true } : c === "__new" || p === "__new" || sv === "__new" ? { name: $("#add-cam-name").value.trim() } : { id: c },
   };
 }
-// the folder button: New project, Open project, Add files
-$("#btn-open").onclick = (e) => { e.stopPropagation(); closeMenus("open"); toggleMenu("#open-menu", "#btn-open"); };
-$("#open-menu").addEventListener("click", (e) => e.stopPropagation());
-$("#om-add").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openAdd(); };
+// the folder button: the same window that greets you when the program opens
+$("#btn-open").onclick = () => showStart(true);
 // New project, or a new pre-survey template (a project planned on the site
 // plan before the survey: where the cameras and detectors will go)
 let NP_PLAN = false;
@@ -153,8 +151,7 @@ function newProject(plan) {
   $("#np-name").value = ""; $("#np-date").value = ""; $("#np-msg").hidden = true; $("#np-warn").hidden = true; $("#np-go").disabled = false;
   loadProjectNames(); $("#dlg-newproj").showModal(); $("#np-name").focus();
 }
-$("#om-new").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); newProject(false); };
-$("#om-tnew").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); newProject(true); };
+
 $("#np-name").addEventListener("input", () => {
   const c = projClash($("#np-name").value);
   $("#np-warn").hidden = !c; $("#np-go").disabled = !!c;
@@ -196,8 +193,7 @@ async function openProjectList(plan) {
         row.innerHTML = `<div><b>${esc(p.name)}</b><br><span class="small muted">${p.template ? `Template: ${plural(p.template, "camera")}` : `${plural(p.placed, "camera")} placed`} · ${plural(p.surveys, "survey")}${p.recordings ? ` · ${plural(p.recordings, "recording")}` : ""}</span></div>`;
         row.appendChild(smallBtn("Open site plan", `Open the site plan of ${p.name}`, async () => {
           try {
-            if (p.recordings && p.listed < p.recordings - p.missing) setFiles(await api("/api/org", { action: "open_project", id: p.id }));
-            else await refreshFiles();
+            setFiles(await api("/api/org", { action: "open_project", id: p.id }));
             $("#dlg-openproj").close(); openMap(p.id);
           } catch (e) { err(e); }
         }, "primary"));
@@ -209,7 +205,7 @@ async function openProjectList(plan) {
       const row = el("div", "op-row");
       const dates = p.dates.length ? " · " + p.dates.map((d) => d.split("-").reverse().join("/")).join(", ") : "";
       row.innerHTML = `<div><b>${esc(p.name)}</b><br><span class="small muted">${plural(p.surveys, "survey")} · ${plural(p.cameras, "camera")} · ${plural(p.recordings, "recording")}${dates}${p.missing ? ` · ${p.missing} not found` : ""}${p.listed ? ` · ${p.listed} already listed` : ""}</span></div>`;
-      const already = p.recordings > 0 && p.listed >= p.recordings - p.missing;
+      const already = p.open && p.listed >= p.recordings - p.missing;
       const b = smallBtn(already ? "Already open" : "Open", already ? `${p.name} is already open: all its recordings are listed` : `List every recording in ${p.name}`, async () => {
         try {
           const o = await api("/api/org", { action: "open_project", id: p.id, replace: $("#op-replace").checked });
@@ -224,16 +220,13 @@ async function openProjectList(plan) {
     $("#op-replace").checked = false; $("#dlg-openproj").showModal();
   } catch (e) { err(e); }
 }
-$("#om-open").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openProjectList(false); };
-$("#om-topen").onclick = () => { toggleMenu("#open-menu", "#btn-open", false); openProjectList(true); };
 // the start window: shown when the program opens
 for (const [id, go] of [["#sd-open", () => openProjectList(false)], ["#sd-new", () => newProject(false)],
-                        ["#sd-topen", () => openProjectList(true)], ["#sd-tnew", () => newProject(true)]])
+                        ["#sd-topen", () => openProjectList(true)], ["#sd-tnew", () => newProject(true)], ["#sd-add", () => openAdd()]])
   $(id).onclick = () => { $("#dlg-start").close(); go(); };
-function showStart() {
-  const n = (S.files || []).length;
-  $("#sd-note").textContent = n ? `${plural(n, "recording")} still listed from last time. Skip to carry on with them.` : "";
-  try { if (sessionStorage.getItem("td-started")) return; sessionStorage.setItem("td-started", "1"); } catch (e) {}
+function showStart(fromButton) {
+  $("#sd-skip").textContent = fromButton ? "Close" : "Skip";
+  $("#sd-note").textContent = "";
   $("#dlg-start").showModal();
 }
 $("#btn-empty-add").onclick = () => openAdd();
@@ -344,7 +337,7 @@ function renderFiles() {
   try { syncCamCycle(); } catch (e) {}
   const box = $("#files"); box.innerHTML = "";
   const tree = S.tree || [], un = S.unassigned || [];
-  if (!S.files.length && !tree.length) { box.innerHTML = '<p class="muted small">Add .ats files, or a whole folder of them, with the folder button at the top.</p>'; return; }
+  if (!S.files.length && !tree.length) { box.innerHTML = '<p class="muted small">No project open. Use the folder button at the top to open or start a project, or add files.</p>'; return; }
   // Unassigned, above the projects
   if (un.length || S.files.length) {
     const ug = el("div", "un-group");
@@ -489,7 +482,11 @@ function projMenu(pj) {
   const m = el("div", "persist-menu pm-menu"); m.hidden = true; m.setAttribute("role", "menu");
   const item = (label, fn, cls = "") => { const i = el("button", "menu-item " + cls, label); i.type = "button"; i.setAttribute("role", "menuitem");
     i.onclick = async (e) => { e.stopPropagation(); m.hidden = true; try { await fn(); } catch (er) { err(er); } }; m.appendChild(i); };
-  item("Save project", async () => { const r = await api("/api/org", { action: "save_project", id: pj.id }); toast(`${pj.name} saved. Project file: ${r.file}`, 8000); });
+  const save = async () => { const r = await api("/api/org", { action: "save_project", id: pj.id }); toast(`${pj.name} saved. Project file: ${r.file}`, 8000); };
+  const sb = el("button", "pm-btn pm-save", '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>');
+  sb.type = "button"; sb.title = `Save project: ${pj.name}`; sb.setAttribute("aria-label", sb.title);
+  sb.onclick = async (e) => { e.stopPropagation(); try { await save(); } catch (er) { err(er); } };
+  item("Save project", save);
   item("Rename…", () => { const i = [...document.querySelectorAll(".proj-name")].find((x) => x.value === pj.name); if (i) { i.focus(); i.select(); } });
   item("Site plan…", () => openMap(pj.id));
   item(pj.template ? `New survey from site plan (${plural(pj.template, "camera")})` : "New survey", async () => {
@@ -497,7 +494,7 @@ function projMenu(pj) {
   if (pj.template) item("Stop using the site plan template", () => org({ action: "clear_template", project: pj.id }));
   const first = pj.paths[0];
   if (first) item("Open recordings folder", () => api("/api/open-path", { path: first.replace(/[\\/][^\\/]*$/, "") }));
-  item("Close project", async () => { const r = await org({ action: "close_project", id: pj.id }); if (S.rec && !fileRow(S.rec.path)) location.reload(); toast(`${pj.name} closed (${plural(r.closed, "recording")} taken off the list). Open it again from the folder button > Open project.`, 7000); });
+  item("Close project", async () => { const r = await org({ action: "close_project", id: pj.id }); if (S.rec && !fileRow(S.rec.path)) location.reload(); toast(`${pj.name} closed (${plural(r.closed, "recording")} taken off the list). Open it again from the folder button > Open existing analysis project.`, 7000); });
   item("Reset all decisions…", async () => {
     if (!confirm(`Reset every Confirm, Reject and classification on all recordings in ${pj.name}? Scans and comments are kept.`)) return;
     const r = await org({ action: "reset_project", id: pj.id }); if (S.rec) { S.rec = await api("/api/recording"); renderEvents(); drawPlot(); }
@@ -505,7 +502,7 @@ function projMenu(pj) {
   item("Delete project…", async () => { if (!confirm(`Delete project ${pj.name}? Its recordings move to Unassigned; no files are deleted.`)) return; await org({ action: "delete", id: pj.id }); }, "danger");
   b.onclick = (e) => { e.stopPropagation(); const open = m.hidden; document.querySelectorAll(".pm-menu").forEach((x) => (x.hidden = true)); m.hidden = !open; };
   m.addEventListener("click", (e) => e.stopPropagation());
-  wrap.append(b, m); return wrap;
+  wrap.append(sb, b, m); return wrap;
 }
 document.addEventListener("click", () => document.querySelectorAll(".pm-menu").forEach((x) => (x.hidden = true)));
 async function scanGroup(node, what) {
@@ -622,7 +619,7 @@ const toggleImage = (open) => toggleMenu("#image-menu", "#btn-image", open, "#pa
 // only one dropdown open at a time
 function closeMenus(except) {
   for (const [k, m, b] of [["persist", "#persist-menu", "#btn-persist"], ["image", "#image-menu", "#btn-image"],
-                           ["roi", "#roi-menu", "#btn-roi-pick"], ["open", "#open-menu", "#btn-open"]])
+                           ["roi", "#roi-menu", "#btn-roi-pick"]])
     if (k !== except && !$(m).hidden) toggleMenu(m, b, false);
 }
 $("#btn-persist").onclick = (e) => { e.stopPropagation(); closeMenus("persist"); togglePersist(); };
@@ -866,7 +863,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-pixwarn";
+const APP_VERSION = "2026.11.18-session";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1606,6 +1603,22 @@ $("#btn-level-reset").onclick = () => setLevel(null, true);
 
 // ------------------------------------------------------------ events
 function evById(n) { return S.rec.events.find((e) => e.n === n); }
+// After Confirm or Reject moves on: scroll the list smoothly so the event just
+// decided (with its new status, briefly highlighted) is at the top and the next
+// one is in full view below it.
+function showAdvance(prevN, nextN) {
+  const box = $("#events"), pc = box.querySelector(`[data-ev="${prevN}"]`), nc = box.querySelector(`[data-ev="${nextN}"]`);
+  if (!nc) return;
+  if (pc) { pc.classList.add("ev-done"); setTimeout(() => pc.classList.remove("ev-done"), 1600); }
+  const top = (c) => c.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+  let y = pc && top(pc) < top(nc) ? top(pc) - 4 : top(nc) - 4;
+  const nBottom = top(nc) + nc.offsetHeight + 4;
+  if (nBottom - y > box.clientHeight) y = nBottom - box.clientHeight;   // the next event must be fully in view
+  box.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+  // the list may be below the fold on a small screen: bring the next event into the window too
+  const r = nc.getBoundingClientRect();
+  if (r.bottom > window.innerHeight || r.top < 0) nc.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
 async function selectEvent(n) {
   stopPlay(); S.sel = n; const e = evById(n);
   const pad = winPad();
@@ -1622,7 +1635,7 @@ async function decide(n, body) {
     if (S.cfg && S.cfg.review.auto_advance && (body.status === "confirmed" || body.status === "rejected")) {
       const evs = S.rec.events, i = evs.findIndex((e) => e.n === n);
       const next = [...evs.slice(i + 1), ...evs.slice(0, i)].find((e) => e.status === "todo");
-      if (next) selectEvent(next.n); else toast("All events reviewed.");
+      if (next) { await selectEvent(next.n); showAdvance(n, next.n); } else toast("All events reviewed.");
     }
   } catch (e) { err(e); }
 }
@@ -2267,7 +2280,15 @@ $("#st-import-file").onchange = async () => {
   try { const r = await api("/api/settings"); ST.saved = r.settings; await loadPalettes(); applySettings(r.settings, true); } catch (e) {}
   await checkBeta();
   setInterval(checkBeta, 3600e3);   // the trial can end while the program is open
-  refreshFiles().then(() => api("/api/files").then((r) => { if (r.current) openRec(r.current); })).catch(() => {}).finally(showStart);
+  // A new window starts with nothing open: no project, no recordings, and the
+  // start window asks what to do. Reloading the same window (Ctrl+F5) keeps
+  // what's open.
+  let fresh = true;
+  try { fresh = !sessionStorage.getItem("td-started"); sessionStorage.setItem("td-started", "1"); } catch (e) {}
+  if (fresh) {
+    try { setFiles(await api("/api/org", { action: "reset_session" })); } catch (e) {}
+    showStart();
+  } else refreshFiles().then(() => api("/api/files").then((r) => { if (r.current) openRec(r.current); })).catch(() => {});
 })();
 syncLock(); drawLimits();
 pollJobs();

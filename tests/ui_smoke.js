@@ -36,12 +36,12 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
     check("Site Plan details collapse with ▾", (await st())[1] === true);
   }
   await p.click("#map-close"); await p.waitForTimeout(500);
-  await p.click("#btn-open"); await p.click("#om-topen"); await p.waitForTimeout(500);
+  await p.click("#btn-open"); await p.click("#sd-topen"); await p.waitForTimeout(500);
   check("template listed under Open pre-survey template", /Plan A/.test(await p.textContent("#op-list")));
   await p.keyboard.press("Escape"); await p.waitForTimeout(200);
-  check("top bar has four buttons", (await p.$$(".actions > button, .actions .open-wrap > button")).length === 4);
+  check("top bar has four buttons", (await p.$$(".actions > button")).length === 4);
   // new project, add files sorted by name
-  await p.click("#btn-open"); await p.click("#om-new"); await p.fill("#np-name", "Smoke"); await p.click("#np-go"); await p.waitForTimeout(500);
+  await p.click("#btn-open"); check("folder button opens the start window", await p.isVisible("#dlg-start")); await p.click("#sd-new"); await p.fill("#np-name", "Smoke"); await p.click("#np-go"); await p.waitForTimeout(500);
   await p.fill("#folder-input", ["rhino front 1.ats", "rhino front 2.ats", "rhino rear 1.ats", "synthetic.ats"].map((n) => DIR + "/" + n).join("\n"));
   await p.selectOption("#add-cam", "__auto");
   await Promise.all([p.waitForResponse((r) => r.url().includes("/api/add")), p.click("#btn-folder-ok")]); await p.waitForTimeout(1500);
@@ -87,6 +87,12 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
     await p.locator(".ev-head").first().click(); await p.waitForTimeout(300);
     await p.locator("[data-act=confirmed]").click(); await p.waitForTimeout(400);
     check("event confirmed", /Bat|Confirmed/.test(await p.locator(".ev").first().textContent()));
+    if (evs.length >= 2) {
+      await p.waitForTimeout(700);
+      const vis = await p.evaluate(() => { const box = $("#events").getBoundingClientRect(), c = document.querySelector(`[data-ev="${S.sel}"]`).getBoundingClientRect();
+        return S.sel !== S.rec.events[0].n && c.top >= box.top - 1 && c.bottom <= box.bottom + 1; });
+      check("after Confirm: next event selected and in view", vis);
+    }
   }
   // a longer job: progress shows over the plot, then goes
   await p.click("#btn-export-camera"); await p.waitForTimeout(200); await p.click("#cv-go");
@@ -108,7 +114,8 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   await p.click("#map-add-det"); await p.waitForTimeout(400);
   check("site plan has a camera and a detector", (await p.$$(".cam-pin")).length === 1 && (await p.$$("#map-dets .mc")).length === 1);
   await p.click("#map-close"); await p.waitForTimeout(400);
-  await p.locator(".pm-btn").first().click(); await p.waitForTimeout(150);
+  check("save button beside the project ⚙", await p.locator(".pm-save").count() >= 1);
+  await p.locator(".pm-btn:not(.pm-save)").first().click(); await p.waitForTimeout(150);
   check("project menu has Save project", (await p.$$eval(".pm-menu:not([hidden]) .menu-item", (i) => i.map((x) => x.textContent))).includes("Save project"));
   await p.keyboard.press("Escape"); await p.click("body", { position: { x: 5, y: 600 } });
   // settings open and save

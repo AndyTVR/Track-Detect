@@ -115,3 +115,16 @@ def test_frames_and_times(td):
     assert r.status_code == 200
     r = td.client.get("/api/times?path=" + p)
     assert r.status_code in (200, 204)
+
+
+def test_camera_video_of_a_joined_camera_is_named_after_the_camera(td):
+    """Exporting the camera video from a joined recording names the file after
+    the project, survey and camera, and the job reports time left."""
+    a, b = td.path("rhino front 1.ats"), td.path("rhino front 2.ats")
+    cid = td.org(action="new_project", name="Vid")["created"]
+    r = td.add(a, b, target={"camera": cid})
+    td.post("/api/open", {"path": r["first"]})
+    out = td.post("/api/export-camera", {"mode": "raw"})
+    assert out["path"].endswith("Vid_Survey1_Camera_1.mp4") and out["recordings"] == 1
+    jobs = td.wait_jobs()
+    assert jobs[-1]["state"] == "done" and "started" in jobs[-1]

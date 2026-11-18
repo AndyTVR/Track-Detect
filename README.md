@@ -182,7 +182,7 @@ the recordings to its cameras, or start a new survey from the template.
        falls back to 2 × range × tan(angle ÷ 2) ÷ 640. Also shown: the
        view's width and height (from FLIR's field of view for the lens) and
        the pixels covering a round 0.1 m target. The pixel size is labelled
-       at the end of each cone. If a pixel is over **10 cm** at the camera's
+       at the end of each cone. If a pixel is over **5 cm** at the camera's
        range, its cone turns red and a warning along the bottom of the map
        says detection can't be guaranteed where pixels are larger than the
        bats themselves.
@@ -377,6 +377,13 @@ the recordings to its cameras, or start a new survey from the template.
    exports folder, named after the project, survey and camera. Long
    recordings take a while, roughly as long as the footage or less;
    progress shows over the Event Log.
+
+   **Jobs panel**: at the bottom of the right-hand side, every export, report
+   and scan started in this window is listed while it runs, with a progress
+   bar, roughly how long is left and **Cancel**; anything waiting is listed
+   under it. When one finishes it says so (✓ Saved: the file name, with
+   **Show in folder**), or that it failed and why. **Clear** tidies the
+   finished ones away.
 
    **Save events CSV** writes a table of events for the report, with their
    comments. If there are any comments, it also writes `<name>_comments.csv`

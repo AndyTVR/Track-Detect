@@ -863,7 +863,7 @@ loadPalettes();
 
 // The page and the program must be the same version: if the black window is
 // still running an older copy, say so instead of failing silently.
-const APP_VERSION = "2026.11.18-glide";
+const APP_VERSION = "2026.11.18-jobs";
 (async () => {
   let v = null;
   try { const r = await fetch("/api/version"); if (r.ok) v = (await r.json()).version; } catch (e) {}
@@ -1168,6 +1168,7 @@ $("#so-go").onclick = async () => {
 // what's queued. While the open recording is being scanned, its plot fills in
 // as the scan goes (read every second; it doesn't slow the scan).
 function showJobProgress(all, active) {
+  renderDock(all);
   const ov = $("#job-overlay");
   const fails = all.filter((j) => j.state === "error" && !(S.seenErr || (S.seenErr = new Set())).has(j.id));
   for (const j of fails) { S.seenErr.add(j.id); if (S.watch && S.watch.has(j.id)) toast(`${j.label} failed: ${j.error}`, 9000); }
@@ -1182,6 +1183,45 @@ function showJobProgress(all, active) {
   const mine = run.kind === "scan" && S.rec && run.path === S.rec.path && run.state === "running";
   ov.classList.toggle("live", mine);
   if (mine) liveScanPlot();
+}
+// The jobs panel at the bottom of the right-hand side: what's running (with
+// time left and Cancel), what's waiting, and what has just finished, with
+// where its file went. Only jobs this window saw are listed.
+function fmtLeft(s) {
+  if (s == null) return "working out the time left…";
+  if (s < 60) return "under a minute left";
+  const m = Math.round(s / 60);
+  return m < 90 ? `about ${m} min left` : `about ${Math.floor(m / 60)} h ${m % 60} min left`;
+}
+function renderDock(all) {
+  const dock = $("#jobs-dock");
+  S.seenJobs = S.seenJobs || new Set(); S.dockGone = S.dockGone || new Set();
+  for (const j of all) if (j.state === "queued" || j.state === "running") S.seenJobs.add(j.id);
+  const mine = all.filter((j) => S.seenJobs.has(j.id) && !S.dockGone.has(j.id));
+  const live = mine.filter((j) => j.state === "running").concat(mine.filter((j) => j.state === "queued"));
+  const ended = mine.filter((j) => !["queued", "running"].includes(j.state)).slice(-3).reverse();
+  dock.hidden = !live.length && !ended.length;
+  if (dock.hidden) { dock.innerHTML = ""; return; }
+  let h = `<div class="jd-head"><span class="small strong">Jobs</span>${ended.length && !live.length ? '<button type="button" class="btn xs" data-jd-clear>Clear</button>' : ""}</div>`;
+  for (const j of live.slice(0, 4)) {
+    const pct = Math.round(100 * j.done / Math.max(1, j.total));
+    h += j.state === "running"
+      ? `<div class="jd-row run"><div class="jd-top"><span class="jd-label">${esc(j.label)}</span><b>${pct}%</b></div>
+         <div class="jd-bar"><i style="width:${pct}%"></i></div>
+         <div class="jd-top small muted"><span>${fmtLeft(j.eta_s)}</span><button type="button" class="btn xs" data-jd-cancel>Cancel</button></div></div>`
+      : `<div class="jd-row wait"><span class="jd-label">${esc(j.label)}</span><span class="small muted">waiting</span></div>`;
+  }
+  if (live.length > 4) h += `<p class="small muted">${live.length - 4} more waiting</p>`;
+  for (const j of ended) {
+    const files = (j.result && (j.result.files || (j.result.report ? [j.result.report] : []))) || [];
+    const what = j.state === "done" ? (files.length ? `✓ Saved: ${esc(files.length === 1 ? files[0].split(/[\\/]/).pop() : `${files.length} files`)}` : `✓ ${esc(j.label)} finished`)
+      : j.state === "cancelled" ? `Cancelled: ${esc(j.label)}` : `✗ ${esc(j.label)} failed: ${esc(j.error || "")}`;
+    h += `<div class="jd-row ${j.state}"><span class="jd-label">${what}</span>${files.length ? `<button type="button" class="btn xs" data-jd-open="${esc(files[0])}">Show in folder</button>` : ""}</div>`;
+  }
+  dock.innerHTML = h;
+  dock.querySelectorAll("[data-jd-cancel]").forEach((b) => (b.onclick = () => api("/api/jobs/cancel", {}).catch(err)));
+  dock.querySelectorAll("[data-jd-open]").forEach((b) => (b.onclick = () => api("/api/open-path", { path: b.dataset.jdOpen.replace(/[\\/][^\\/]*$/, "") }).catch(err)));
+  const c = dock.querySelector("[data-jd-clear]"); if (c) c.onclick = () => { for (const j of ended) S.dockGone.add(j.id); renderDock(all); };
 }
 async function liveScanPlot() {
   if (S.liveBusy || Date.now() - (S.liveAt || 0) < 900) return;
@@ -2356,14 +2396,14 @@ function vfov(m) { return (m.lens !== "custom" && LENS_V[m.fov]) || 2 * Math.ata
 function viewW(m) { return 2 * m.range * Math.tan(m.fov * Math.PI / 360); }       // metres across at the range
 function viewH(m) { return 2 * m.range * Math.tan(vfov(m) * Math.PI / 360); }     // metres high at the range
 function pixSize(m) { return ifov(m) * m.range; }                                  // mm, one pixel at the range
-const PIX_LIMIT_MM = 100;   // above 10 cm a pixel is larger than a bat: detection can't be guaranteed
+const PIX_LIMIT_MM = 50;   // above 5 cm per pixel, detection of bats can't be guaranteed
 function pixOver(m) { return pixSize(m) > PIX_LIMIT_MM; }
 function cmPix(m) { return `${(pixSize(m) / 10).toFixed(1)} cm per pixel`; }
 function coneStyle(m, sel) { const c = pixOver(m) ? "#e5484d" : "#2bb7c8"; return { color: c, weight: 1.5, fillColor: c, fillOpacity: sel ? 0.42 : 0.28 }; }
 function mapWarn() {   // the warning along the bottom of the map
   const sv = mapSurvey(), over = (sv ? sv.cameras : []).filter((c) => c.map && pixOver(c.map));
   const w = $("#map-warn"); w.hidden = !over.length;
-  if (over.length) w.innerHTML = `⚠ <b>Detection cannot be guaranteed where pixels are larger than the bats themselves</b> (over 10 cm per pixel): ${over.map((c) => `${esc(c.label)}, ${cmPix(c.map)} at ${Math.round(c.map.range)} m`).join("; ")}. Bring the range in or use a narrower lens.`;
+  if (over.length) w.innerHTML = `⚠ <b>Detection cannot be guaranteed where pixels are larger than the bats themselves</b> (over 5 cm per pixel): ${over.map((c) => `${esc(c.label)}, ${cmPix(c.map)} at ${Math.round(c.map.range)} m`).join("; ")}. Bring the range in or use a narrower lens.`;
 }
 function targetPx(m, size = 0.1) { return Math.PI / 4 * (size * 1000 / pixSize(m)) ** 2; }   // pixels on a round target
 const camIcon = (no, sel) => L.divIcon({ className: "cam-pin" + (sel ? " sel" : ""), html: `<span>${no}</span>`, iconSize: [26, 30], iconAnchor: [13, 30] });

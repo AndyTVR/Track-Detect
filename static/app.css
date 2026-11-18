@@ -118,6 +118,17 @@ kbd{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400}
 .events{display:flex;flex-direction:column;gap:8px;max-height:64vh;overflow-y:auto;padding-right:4px}
 .ev{padding:12px 14px;border-radius:10px;background:var(--panel);border:2px solid var(--line)}
 .ev.sel{background:var(--panel2);border-color:var(--blue)}
+/* jobs panel at the bottom of the right-hand side */
+.jobs-dock{margin-top:auto;position:sticky;bottom:12px;z-index:5;box-shadow:0 4px 18px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.jd-head{display:flex;justify-content:space-between;align-items:center}
+.jd-row{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.jd-row.wait,.jd-row.done,.jd-row.cancelled,.jd-row.error{flex-direction:row;justify-content:space-between;align-items:center;gap:8px}
+.jd-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.jd-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jd-row.error .jd-label{white-space:normal;color:#ff8a8e}
+.jd-row.done .jd-label{color:var(--accent)}
+.jd-bar{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden}
+.jd-bar i{display:block;height:100%;background:var(--accent);transition:width .6s linear}
 .ev.ev-done{animation:evdone 1.6s ease-out}
 @keyframes evdone{0%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
 @media (prefers-reduced-motion:reduce){.ev.ev-done{animation:none;outline:2px solid var(--accent)}}

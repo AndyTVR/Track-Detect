@@ -708,7 +708,7 @@ class Jobs:
             job, fn = self.q.get()
             self._cancel.clear()
             self.current = job
-            job["state"] = "running"
+            job["state"], job["started"] = "running", time.time()
 
             def progress(d, t):
                 job["done"], job["total"] = d, t
@@ -719,7 +719,16 @@ class Jobs:
             except Exception as e:  # report, keep the worker alive
                 job["state"], job["error"] = "error", f"{e}"
                 traceback.print_exc()
+            job["finished"] = time.time()
             self.current = None
 
     def snapshot(self):
-        return [dict(j, result=None if isinstance(j["result"], (bytes,)) else j["result"]) for j in self.history]
+        out = []
+        now = time.time()
+        for j in self.history:
+            d = dict(j, result=None if isinstance(j["result"], (bytes,)) else j["result"])
+            if j["state"] == "running" and j.get("started") and j["done"] > 0:   # time left, from the pace so far
+                el = now - j["started"]
+                d["eta_s"] = round(el * (j["total"] - j["done"]) / j["done"]) if el > 3 else None
+            out.append(d)
+        return out

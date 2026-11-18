@@ -976,7 +976,7 @@ def frame():
     return resp
 
 
-APP_VERSION = "2026.11.18-glide"   # must match static/app.js
+APP_VERSION = "2026.11.18-jobs"   # must match static/app.js
 
 
 @app.get("/api/version")
@@ -1328,8 +1328,12 @@ def export_camera():
     from emergence.render import export_recordings_video, safe_name
     b = request.json or {}
     cur = state["current"]
-    cid = _org()["of"].get(cur) if cur else None
-    if cid:
+    cid = (_org()["of"].get(cur) or JOIN_CAM.get(cur)) if cur else None
+    if cid and cur in JOIN_CAM:   # a joined recording: it already is the whole camera
+        pj, sv, c = _node(cid)[2], _node(cid)[3], _node(cid)[1]
+        paths = [cur]
+        name = f"{pj['name']}_Survey{sv['no']}{('_' + sv['date']) if sv.get('date') else ''}_{camera_label(c).replace(': ', '_')}"
+    elif cid:
         pj, sv, c = _place(cur)
         rows = sorted([_file_row(p) for p in _paths_under(cid) if os.path.exists(p)], key=lambda x: (x["start"] or "", x["name"]))
         paths = [x["path"] for x in rows]

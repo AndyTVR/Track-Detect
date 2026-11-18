@@ -19,14 +19,14 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   await p.click("#map-add-cam"); await p.waitForTimeout(800);
   await p.keyboard.type("Rear"); await p.keyboard.press("Enter"); await p.waitForTimeout(600);
   check("Site Plan adds a camera, placed and named", await p.evaluate(() => { const sv = mapSurvey(); return sv.cameras.length === 2 && !!sv.cameras[1].map && sv.cameras[1].name === "Rear"; }));
-  {  // a camera whose pixels are over 10 cm at its range: red cone and a warning
+  {  // a camera whose pixels are over 5 cm at its range: red cone and a warning
     await p.evaluate(() => { const c = mapSurvey().cameras[1]; c.map.range = 60; saveCamMap(c, c.map); drawMap(); });   // 95° at 60 m: 17.4 cm
     await p.waitForTimeout(300);
-    check("pixels over 10 cm: warning shows", await p.isVisible("#map-warn") && /cannot be guaranteed/.test(await p.textContent("#map-warn")));
-    check("pixels over 10 cm: cone turns red", await p.evaluate(() => [...document.querySelectorAll("#map path.leaflet-interactive")].some((x) => x.getAttribute("stroke") === "#e5484d")));
+    check("pixels over 5 cm: warning shows", await p.isVisible("#map-warn") && /cannot be guaranteed/.test(await p.textContent("#map-warn")));
+    check("pixels over 5 cm: cone turns red", await p.evaluate(() => [...document.querySelectorAll("#map path.leaflet-interactive")].some((x) => x.getAttribute("stroke") === "#e5484d")));
     check("pixel size labelled on the map", /cm per pixel/.test(await p.textContent("#map")));
     await p.evaluate(() => { const c = mapSurvey().cameras[1]; c.map.range = 15; saveCamMap(c, c.map); drawMap(); }); await p.waitForTimeout(300);
-    check("pixels under 10 cm: no warning", !(await p.isVisible("#map-warn")));
+    check("pixels under 5 cm: no warning", !(await p.isVisible("#map-warn")));
   }
   {  // details fold: the new (picked) camera is open, the other folded; its fold button closes it
     const st = () => p.evaluate(() => [...document.querySelectorAll("#map-cams .mc")].map((r) => r.classList.contains("folded")));
@@ -97,7 +97,10 @@ const check = (name, cond, info = "") => (cond ? ok : bad).push(name + (cond ? "
   // a longer job: progress shows over the plot, then goes
   await p.click("#btn-export-camera"); await p.waitForTimeout(200); await p.click("#cv-go");
   check("progress shows over the plot", await p.waitForSelector("#job-overlay", { state: "visible", timeout: 8000 }).then(() => true, () => false));
+  check("jobs panel shows the export running", await p.isVisible("#jobs-dock") && /Camera video/.test(await p.textContent("#jobs-dock")));
   check("progress goes when done", await p.waitForSelector("#job-overlay", { state: "hidden", timeout: 120000 }).then(() => true, () => false));
+  await p.waitForTimeout(900);
+  check("jobs panel says the video is saved, with Show in folder", /Saved: .*\.mp4/.test(await p.textContent("#jobs-dock")) && await p.locator("[data-jd-open]").count() >= 1, await p.textContent("#jobs-dock"));
   // viewing modes and the Detection menu
   for (const m of ["path", "blend", "custom", "raw"]) { await p.click(`.mode[data-mode=${m}]`); await p.waitForTimeout(250); }
   await p.click(".mode[data-mode=blend]"); await p.click("#btn-persist"); await p.waitForTimeout(200);
